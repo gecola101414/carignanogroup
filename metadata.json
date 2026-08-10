@@ -1,0 +1,6 @@
+{
+  "name": "Gestionale RSA - ERP Sociosanitario",
+  "description": "Sistema gestionale ERP per Case di Riposo e RSA con cartella clinica, somministrazione farmaci, ristorazione, turnistica ed economia.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
