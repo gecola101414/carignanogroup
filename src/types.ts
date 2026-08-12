@@ -154,6 +154,23 @@ export interface Shift {
   note?: string;
 }
 
+export interface BachecaNotice {
+  id: string;
+  dataOra: string;
+  autore: string;
+  titolo: string;
+  testo: string;
+  visti: string[]; // usernames of staff/admin who acknowledged
+}
+
+export interface ChatWhatsAppMessage {
+  id: string;
+  dataOra: string;
+  autore: string;
+  messaggio: string;
+  ruoloAutore?: "admin" | "staff";
+}
+
 export interface FamilyVisit {
   id: string;
   ospiteId: string;

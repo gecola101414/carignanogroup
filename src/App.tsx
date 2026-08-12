@@ -14,7 +14,9 @@ import {
   FinancialRecord, 
   InventoryItem,
   DayMealPlan,
-  UserCredential
+  UserCredential,
+  BachecaNotice,
+  ChatWhatsAppMessage
 } from "./types";
 
 import { Navbar } from "./components/Navbar";
@@ -25,6 +27,8 @@ import { MedicationCartView } from "./components/MedicationCartView";
 import { RoomsView } from "./components/RoomsView";
 import { DailyLogsView } from "./components/DailyLogsView";
 import { StaffShiftsView } from "./components/StaffShiftsView";
+import { BachecaView } from "./components/BachecaView";
+import { ChatWhatsAppView } from "./components/ChatWhatsAppView";
 import { VisitsView } from "./components/VisitsView";
 import { FinancialsView } from "./components/FinancialsView";
 import { PaiAssistantView } from "./components/PaiAssistantView";
@@ -56,10 +60,34 @@ export default function App() {
   const [financials, setFinancials] = useState<FinancialRecord[]>(() => storage.getFinancials());
   const [inventory, setInventory] = useState<InventoryItem[]>(() => storage.getInventory());
   const [meals, setMeals] = useState<DayMealPlan[]>(() => storage.getMeals());
-
   // UI state
   const [activeTab, setActiveTab] = useState<TabType>("dashboard");
   const [selectedResident, setSelectedResident] = useState<Resident | null>(null);
+
+  const [bacheca, setBacheca] = useState<BachecaNotice[]>(() => storage.getBacheca());
+  const [chatMessages, setChatMessages] = useState<ChatWhatsAppMessage[]>(() => storage.getChat());
+
+  const handleUpdateBacheca = useCallback((newBachecaOrUpdater: BachecaNotice[] | ((prev: BachecaNotice[]) => BachecaNotice[])) => {
+    setBacheca(prev => {
+      const next = typeof newBachecaOrUpdater === "function" ? newBachecaOrUpdater(prev) : newBachecaOrUpdater;
+      storage.setBacheca(next);
+      return next;
+    });
+  }, []);
+
+  const handleUpdateChat = useCallback((newChatOrUpdater: ChatWhatsAppMessage[] | ((prev: ChatWhatsAppMessage[]) => ChatWhatsAppMessage[])) => {
+    setChatMessages(prev => {
+      const next = typeof newChatOrUpdater === "function" ? newChatOrUpdater(prev) : newChatOrUpdater;
+      storage.setChat(next);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (currentUser?.role === 'staff' && activeTab !== 'shifts' && activeTab !== 'logs' && activeTab !== 'bacheca' && activeTab !== 'chat') {
+      setActiveTab('shifts');
+    }
+  }, [currentUser, activeTab]);
   
   // Use the logged-in user's name as the active operator
   const activeOperator = currentUser ? (currentUser.role === 'admin' ? `Admin ${currentUser.username}` : `Staff ${currentUser.username}`) : "";
@@ -487,6 +515,7 @@ export default function App() {
         }}
         activeOperator={activeOperator}
         onChangeOperator={() => {}}
+        userRole={currentUser.role}
       />
 
       {/* Main Tab Navigation */}
@@ -502,6 +531,7 @@ export default function App() {
         pendingMedsCount={pendingMedsCount}
         unreadLogsCount={unreadLogsCount}
         unpaidFeesCount={unpaidFeesCount}
+        unreadBachecaCount={bacheca.filter(b => !b.visti.includes(currentUser ? (currentUser.role === 'admin' ? `Admin ${currentUser.username}` : currentUser.username) : "")).length}
       />
 
       {/* Main Container View Area */}
@@ -572,6 +602,12 @@ export default function App() {
             onAddLog={handleAddLog}
             onUpdateLog={handleUpdateLog}
             activeOperator={activeOperator}
+            currentUser={currentUser}
+            staff={staff}
+            shifts={shifts}
+            bacheca={bacheca}
+            onAddBacheca={(n) => handleUpdateBacheca(prev => [n, ...prev])}
+            onUpdateBacheca={(n) => handleUpdateBacheca(prev => prev.map(item => item.id === n.id ? n : item))}
           />
         )}
 
@@ -586,6 +622,25 @@ export default function App() {
             onRefreshShifts={syncWithServer}
             isPublicView={currentUser.role === 'staff'}
             currentUser={currentUser}
+          />
+        )}
+
+        {activeTab === "bacheca" && (
+          <BachecaView
+            bacheca={bacheca}
+            currentUser={currentUser}
+            onAddBacheca={(n) => handleUpdateBacheca(prev => [n, ...prev])}
+            onUpdateBacheca={(n) => handleUpdateBacheca(prev => prev.map(item => item.id === n.id ? n : item))}
+          />
+        )}
+
+        {activeTab === "chat" && (
+          <ChatWhatsAppView
+            chatMessages={chatMessages}
+            currentUser={currentUser}
+            activeOperator={activeOperator}
+            onSendMessage={(msg) => handleUpdateChat(prev => [...prev, msg])}
+            staff={staff}
           />
         )}
 

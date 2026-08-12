@@ -777,6 +777,35 @@ export const INITIAL_CREDENTIALS: any[] = [
     username: staff.nome,
     role: "staff",
     passwordHash: "1234",
-    mustChange: false
+    mustChange: true
   }))
 ];
+
+export const INITIAL_BACHECA: any[] = [
+  {
+    id: "bach-1",
+    dataOra: "2026-08-11 09:00",
+    autore: "VANNUCCI (Direzione)",
+    titolo: "Aggiornamento Protocolli Sanitari & Cambio Turni Estivi",
+    testo: "Si ricorda a tutto il personale OSS e Infermieristico di verificare attentamente i turni estivi pubblicati e di firmare la presa visione di ogni avviso in Bacheca.",
+    visti: ["VANNUCCI"]
+  }
+];
+
+export const INITIAL_WHATSAPP_CHAT: any[] = [
+  {
+    id: "chat-1",
+    dataOra: "2026-08-11 08:30",
+    autore: "VANNUCCI",
+    messaggio: "Buongiorno a tutti, ricordate di verificare le consegne della mattina prima del cambio turno.",
+    ruoloAutore: "admin"
+  },
+  {
+    id: "chat-2",
+    dataOra: "2026-08-11 08:45",
+    autore: "Marta",
+    messaggio: "Buongiorno direttore, tutto regolare nel reparto A.",
+    ruoloAutore: "staff"
+  }
+];
+

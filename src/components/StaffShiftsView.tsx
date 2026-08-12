@@ -95,7 +95,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     return `${year}-${month}-${day}`;
   });
   const [dragActionMode, setDragActionMode] = useState<"move" | "copy">("move");
-  const [showHelpGuide, setShowHelpGuide] = useState<boolean>(true);
+  const [showHelpGuide, setShowHelpGuide] = useState<boolean>(false);
 
   // Modal States
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
@@ -1200,14 +1200,7 @@ function importaTurniResidenzaVannucci() {
             <span>Richiedi / Inserisci Ferie</span>
           </button>
 
-          <button
-            onClick={() => setShowExportModal(true)}
-            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md transition-all cursor-pointer"
-            title="Esporta per Google Sheets / Excel, Stampa PDF o Condividi con i dipendenti"
-          >
-            <Share2 className="w-4 h-4" />
-            <span>Condividi / Esporta</span>
-          </button>
+
 
           {!isPublicView && (
             <button

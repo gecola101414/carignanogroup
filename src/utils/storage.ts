@@ -11,7 +11,9 @@ import {
   FinancialRecord, 
   InventoryItem,
   DayMealPlan,
-  UserCredential
+  UserCredential,
+  BachecaNotice,
+  ChatWhatsAppMessage
 } from "../types";
 
 import { 
@@ -27,7 +29,9 @@ import {
   INITIAL_FINANCIALS, 
   INITIAL_INVENTORY,
   INITIAL_MEAL_PLAN,
-  INITIAL_CREDENTIALS
+  INITIAL_CREDENTIALS,
+  INITIAL_BACHECA,
+  INITIAL_WHATSAPP_CHAT
 } from "../mockData";
 
 const STORAGE_KEYS = {
@@ -46,7 +50,9 @@ const STORAGE_KEYS = {
   VISITS: "casafamiglia_visits_v1",
   FINANCIALS: "casafamiglia_financials_v1",
   INVENTORY: "casafamiglia_inventory_v1",
-  MEALS: "casafamiglia_meals_v1"
+  MEALS: "casafamiglia_meals_v1",
+  BACHECA: "casafamiglia_bacheca_v1",
+  CHAT: "casafamiglia_chat_v1"
 };
 
 function getItem<T>(key: string, fallback: T): T {
@@ -114,14 +120,14 @@ export const storage = {
           ...existing,
           username: s.nome,
           role: "staff",
-          mustChange: false
+          mustChange: existing.passwordHash === "1234"
         };
       }
       return {
         username: s.nome,
         role: "staff",
         passwordHash: "1234",
-        mustChange: false
+        mustChange: true
       };
     });
 
@@ -144,6 +150,12 @@ export const storage = {
 
   getMeals: (): DayMealPlan[] => getItem(STORAGE_KEYS.MEALS, INITIAL_MEAL_PLAN),
   setMeals: (data: DayMealPlan[]) => setItem(STORAGE_KEYS.MEALS, data),
+
+  getBacheca: (): BachecaNotice[] => getItem(STORAGE_KEYS.BACHECA, INITIAL_BACHECA),
+  setBacheca: (data: BachecaNotice[]) => setItem(STORAGE_KEYS.BACHECA, data),
+
+  getChat: (): ChatWhatsAppMessage[] => getItem(STORAGE_KEYS.CHAT, INITIAL_WHATSAPP_CHAT),
+  setChat: (data: ChatWhatsAppMessage[]) => setItem(STORAGE_KEYS.CHAT, data),
 
   resetToDefaults: () => {
     Object.values(STORAGE_KEYS).forEach(k => localStorage.removeItem(k));
