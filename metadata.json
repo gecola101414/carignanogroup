@@ -1,6 +1,8 @@
 {
-  "name": "Gestionale RSA - ERP Sociosanitario",
-  "description": "Sistema gestionale ERP per Case di Riposo e RSA con cartella clinica, somministrazione farmaci, ristorazione, turnistica ed economia.",
+  "name": "RESIDENZA VANNUCCI",
+  "description": "Sistema gestionale completo per case famiglia e strutture per anziani: anagrafica ospiti, cartella socio-sanitaria, somministrazione farmaci, diario consegne, gestione turni OSS, piano assistenziale PAI e reportistica.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

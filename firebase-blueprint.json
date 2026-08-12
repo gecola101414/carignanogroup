@@ -1,0 +1,49 @@
+{
+  "entities": {
+    "Shift": {
+      "title": "Shift",
+      "description": "Work shift for staff member",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "staffId": { "type": "string" },
+        "data": { "type": "string" },
+        "orarioInizio": { "type": "string" },
+        "orarioFine": { "type": "string" },
+        "tipoTurno": { "type": "string" },
+        "note": { "type": "string" }
+      },
+      "required": ["id", "staffId", "data", "orarioInizio", "orarioFine", "tipoTurno"]
+    },
+    "StaffMember": {
+      "title": "StaffMember",
+      "description": "Staff member details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nome": { "type": "string" },
+        "cognome": { "type": "string" },
+        "ruolo": { "type": "string" },
+        "telefono": { "type": "string" },
+        "email": { "type": "string" },
+        "codiceFiscale": { "type": "string" },
+        "attivo": { "type": "boolean" },
+        "coloreBadge": { "type": "string" },
+        "orarioMattina": { "type": "string" },
+        "orarioPomeriggio": { "type": "string" },
+        "orarioNotte": { "type": "string" }
+      },
+      "required": ["id", "nome", "cognome", "ruolo"]
+    }
+  },
+  "firestore": {
+    "/shifts/{shiftId}": {
+      "schema": { "$ref": "#/entities/Shift" },
+      "description": "Collection of work shifts"
+    },
+    "/staff/{staffId}": {
+      "schema": { "$ref": "#/entities/StaffMember" },
+      "description": "Collection of staff members"
+    }
+  }
+}
