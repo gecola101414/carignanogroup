@@ -686,10 +686,10 @@ export default function App() {
       <footer className="bg-slate-900 text-slate-400 text-xs py-6 border-t border-slate-800 mt-auto">
         <div className="max-w-7xl mx-auto px-4 text-center space-y-1">
           <p className="font-semibold text-slate-300">
-            RESIDENZA VANNUCCI — Casa Famiglia & Residenza Assistita per Anziani
+            GESTIONALE — Casa Famiglia & Residenza Assistita per Anziani
           </p>
           <p className="text-slate-500">
-            Sistema di Gestione Socio-Sanitaria, Somministrazione Terapie e PAI Integrato con AI Gemini • Italia
+            @2026 AETERNA - GIMONDO DOMENICO
           </p>
         </div>
       </footer>
