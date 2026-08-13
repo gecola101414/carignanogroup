@@ -28,11 +28,15 @@ export function LoginScreen({ credentials, onLogin, onUpdatePassword }: LoginScr
     }
 
     if (user.mustChange) {
-      setNeedsPasswordChange(user);
-      setError("");
+      // Ritardo di 200ms per dare tempo a Chrome di gestire il submit senza crashare
+      setTimeout(() => {
+        setNeedsPasswordChange(user);
+        setError("");
+      }, 200);
     } else {
-      // Evita crash di Chrome ritardando l'unmount
-      setTimeout(() => onLogin(user), 50);
+      setTimeout(() => {
+        onLogin(user);
+      }, 200);
     }
   };
 
@@ -48,8 +52,10 @@ export function LoginScreen({ credentials, onLogin, onUpdatePassword }: LoginScr
     }
     
     if (needsPasswordChange) {
-      onUpdatePassword(needsPasswordChange.username, newPassword);
-      setTimeout(() => onLogin({ ...needsPasswordChange, passwordHash: newPassword, mustChange: false }), 50);
+      setTimeout(() => {
+        onUpdatePassword(needsPasswordChange.username, newPassword);
+        onLogin({ ...needsPasswordChange, passwordHash: newPassword, mustChange: false });
+      }, 200);
     }
   };
 
@@ -59,7 +65,6 @@ export function LoginScreen({ credentials, onLogin, onUpdatePassword }: LoginScr
         <div className="absolute -top-40 -right-40 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl"></div>
         <div className="absolute bottom-0 left-10 w-72 h-72 bg-indigo-500/10 rounded-full blur-3xl"></div>
       </div>
-
       <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
         <div className="p-8 bg-gradient-to-br from-slate-50 to-slate-100 border-b border-slate-200 text-center">
           <div className="w-16 h-16 mx-auto bg-gradient-to-tr from-emerald-500 to-teal-400 rounded-2xl flex items-center justify-center shadow-lg mb-4">
@@ -68,7 +73,6 @@ export function LoginScreen({ credentials, onLogin, onUpdatePassword }: LoginScr
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">RESIDENZA VANNUCCI</h1>
           <p className="text-slate-500 text-sm mt-1 font-medium">Portale Operativo & Coordinamento</p>
         </div>
-
         <div className="p-8">
           {error && (
             <div className="mb-6 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg flex items-start gap-2">
@@ -77,8 +81,9 @@ export function LoginScreen({ credentials, onLogin, onUpdatePassword }: LoginScr
             </div>
           )}
 
-          {!needsPasswordChange ? (
-            <div className="space-y-5" onKeyDown={e => { if (e.key === 'Enter') handleLogin(e as any); }}>
+          {/* Form Login: Mantenuto sempre nel DOM e nascosto via CSS per evitare crash di Chrome Password Manager */}
+          <div style={{ display: !needsPasswordChange ? 'block' : 'none' }}>
+            <form onSubmit={handleLogin} className="space-y-5">
               <div className="space-y-1.5">
                 <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                   <User className="w-4 h-4 text-slate-400" />
@@ -86,9 +91,11 @@ export function LoginScreen({ credentials, onLogin, onUpdatePassword }: LoginScr
                 </label>
                 <select
                   value={username}
-                  name="username" autoComplete="username" onChange={e => setUsername(e.target.value)}
+                  name="username"
+                  autoComplete="username"
+                  onChange={e => setUsername(e.target.value)}
                   className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-shadow outline-none text-slate-800 font-medium"
-                  required
+                  required={!needsPasswordChange}
                 >
                   <option value="" disabled>-- Seleziona il tuo Nome Utente --</option>
                   {credentials.map(c => (
@@ -98,7 +105,6 @@ export function LoginScreen({ credentials, onLogin, onUpdatePassword }: LoginScr
                   ))}
                 </select>
               </div>
-
               <div className="space-y-1.5">
                 <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                   <Lock className="w-4 h-4 text-slate-400" />
@@ -107,34 +113,36 @@ export function LoginScreen({ credentials, onLogin, onUpdatePassword }: LoginScr
                 <input
                   type="password"
                   value={password}
-                  name="password" autoComplete="current-password" onChange={e => setPassword(e.target.value)}
+                  name="password"
+                  autoComplete="current-password"
+                  onChange={e => setPassword(e.target.value)}
                   className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-shadow outline-none"
                   placeholder="••••••••"
-                  required
+                  required={!needsPasswordChange}
                 />
               </div>
-
               <button
-                type="button"
-                onClick={handleLogin}
+                type="submit"
                 className="w-full py-3.5 mt-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 group"
               >
                 <span>Accedi al Sistema</span>
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </button>
-            </div>
-          ) : (
-            <div className="space-y-5" onKeyDown={e => { if (e.key === 'Enter') handleChangePassword(e as any); }}>
+            </form>
+          </div>
+
+          {/* Form Aggiornamento Password */}
+          <div style={{ display: needsPasswordChange ? 'block' : 'none' }}>
+            <form onSubmit={handleChangePassword} className="space-y-5">
               <div className="mb-4 text-center">
                 <div className="inline-flex items-center justify-center w-12 h-12 bg-amber-100 text-amber-600 rounded-full mb-3">
                   <ShieldCheck className="w-6 h-6" />
                 </div>
                 <h2 className="text-lg font-bold text-slate-800">Aggiornamento Sicurezza</h2>
                 <p className="text-sm text-slate-500 mt-1">
-                  Ciao {needsPasswordChange.username}, essendo il tuo primo accesso devi impostare una nuova password personale.
+                  Ciao {needsPasswordChange?.username}, essendo il tuo primo accesso devi impostare una nuova password personale.
                 </p>
               </div>
-
               <div className="space-y-1.5">
                 <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                   <KeyRound className="w-4 h-4 text-slate-400" />
@@ -143,35 +151,37 @@ export function LoginScreen({ credentials, onLogin, onUpdatePassword }: LoginScr
                 <input
                   type="password"
                   value={newPassword}
-                  name="newPassword" autoComplete="new-password" onChange={e => setNewPassword(e.target.value)}
+                  name="newPassword"
+                  autoComplete="new-password"
+                  onChange={e => setNewPassword(e.target.value)}
                   className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-shadow outline-none"
                   placeholder="Nuova password..."
-                  required
+                  required={!!needsPasswordChange}
                 />
               </div>
-
               <div className="space-y-1.5">
                 <label className="text-sm font-semibold text-slate-700">Conferma Password</label>
                 <input
                   type="password"
                   value={confirmPassword}
-                  name="confirmPassword" autoComplete="new-password" onChange={e => setConfirmPassword(e.target.value)}
+                  name="confirmPassword"
+                  autoComplete="new-password"
+                  onChange={e => setConfirmPassword(e.target.value)}
                   className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-shadow outline-none"
                   placeholder="Ripeti password..."
-                  required
+                  required={!!needsPasswordChange}
                 />
               </div>
-
               <button
-                type="button"
-                onClick={handleChangePassword}
+                type="submit"
                 className="w-full py-3.5 mt-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2"
               >
                 <span>Salva ed Entra</span>
                 <ArrowRight className="w-5 h-5" />
               </button>
-            </div>
-          )}
+            </form>
+          </div>
+
         </div>
       </div>
     </div>
