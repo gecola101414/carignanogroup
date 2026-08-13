@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import fs from 'fs';
+
+const content = `import React, { useState } from 'react';
 import { UserCredential } from '../types';
 import { KeyRound, User, Lock, ArrowRight, ShieldCheck, Activity, Loader2 } from 'lucide-react';
 
@@ -211,3 +213,7 @@ export function LoginScreen({ credentials, onLogin, onUpdatePassword }: LoginScr
     </div>
   );
 }
+`;
+
+fs.writeFileSync('src/components/LoginScreen.tsx', content);
+console.log('LoginScreen completely rewritten for Chrome isolation.');
