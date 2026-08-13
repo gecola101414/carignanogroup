@@ -152,6 +152,7 @@ export interface Shift {
   orarioFine: string; // "14:00"
   tipoTurno: "Mattina" | "Pomeriggio" | "Notte" | "Reperibilità" | "Riposo" | "Ferie";
   note?: string;
+  struttura?: string; // "Struttura 1", "Struttura 2", "Struttura 3"
 }
 
 export interface BachecaNotice {

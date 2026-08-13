@@ -108,10 +108,25 @@ export const storage = {
   getShiftsUpdatedAt: (): string | null => localStorage.getItem(STORAGE_KEYS.SHIFTS_UPDATED_AT),
 
   getCredentials: (): UserCredential[] => {
-    const storedCreds = getItem(STORAGE_KEYS.CREDENTIALS, INITIAL_CREDENTIALS);
+    let storedCreds = getItem(STORAGE_KEYS.CREDENTIALS, INITIAL_CREDENTIALS);
     const currentStaff = getItem(STORAGE_KEYS.STAFF, INITIAL_STAFF);
     
-    const adminCred = storedCreds.find(c => c.role === 'admin') || { username: "VANNUCCI", role: "admin", passwordHash: "Antonio@2010", mustChange: true };
+    let adminCreds = storedCreds.filter(c => c.role === 'admin' && c.username !== "VANNUCCI");
+    storedCreds = storedCreds.filter(c => c.username !== "VANNUCCI");
+    
+    // Assicura che i 4 amministratori di base ci siano sempre
+    const baseAdmins = [
+      { username: "BEPPE", role: "admin", passwordHash: "Beppe2024!", mustChange: true },
+      { username: "DEBORAH", role: "admin", passwordHash: "Deborah2024!", mustChange: true },
+      { username: "CLAUDIA", role: "admin", passwordHash: "Claudia2024!", mustChange: true }
+    ];
+    
+    baseAdmins.forEach(ba => {
+      if (!adminCreds.find(c => c.username.toLowerCase() === ba.username.toLowerCase())) {
+        adminCreds.push(ba);
+        storedCreds.push(ba); // Aggiungiamo anche nello stored originario cosí puó essere salvato poi
+      }
+    });
     
     const staffCreds: UserCredential[] = currentStaff.map(s => {
       const existing = storedCreds.find(c => c.username.toLowerCase() === s.nome.toLowerCase());
@@ -131,7 +146,7 @@ export const storage = {
       };
     });
 
-    return [adminCred, ...staffCreds];
+    return [...adminCreds, ...staffCreds];
   },
   setCredentials: (data: UserCredential[], updatedAt?: string) => {
     setItem(STORAGE_KEYS.CREDENTIALS, data);

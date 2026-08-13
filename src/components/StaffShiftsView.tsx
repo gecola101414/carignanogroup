@@ -37,7 +37,10 @@ import {
   RefreshCw,
   UserPlus,
   UserX,
-  Palmtree
+  Palmtree,
+  Lock,
+  Unlock,
+  AlertTriangle
 } from "lucide-react";
 import { StaffMember, Shift, UserCredential } from "../types";
 import { firestoreSync } from "../lib/firebase";
@@ -57,6 +60,25 @@ export const getFullMonthName = (d: Date | string): string => {
   if (!d) return "";
   const date = typeof d === "string" ? new Date(d.includes("T") ? d : `${d}T12:00:00`) : d;
   return ITALIAN_MONTHS[date.getMonth()] || "";
+};
+
+export const formatItalianDateString = (dateStr: string): string => {
+  if (!dateStr) return "";
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) return dateStr;
+  const parts = dateStr.split("-");
+  if (parts.length === 3) {
+    const year = parts[0];
+    const month = parts[1];
+    const day = parts[2];
+    return `${day}/${month}/${year}`;
+  }
+  return dateStr;
+};
+
+export const formatItalianVerbalDate = (dateStr: string): string => {
+  if (!dateStr) return "";
+  const date = new Date(dateStr.includes("T") ? dateStr : `${dateStr}T12:00:00`);
+  return `${getFullWeekdayName(date)}, ${date.getDate()} ${getFullMonthName(date)} ${date.getFullYear()}`;
 };
 
 interface StaffShiftsViewProps {
@@ -86,7 +108,8 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
 }) => {
   // Calendar Navigation State
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
-  const [viewMode, setViewMode] = useState<"mobile" | "week" | "month" | "roster">(isPublicView ? "mobile" : "week");
+  const [viewMode, setViewMode] = useState<"week" | "month" | "roster">("week");
+  const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
   const [selectedMobileDate, setSelectedMobileDate] = useState<string>(() => {
     const d = new Date();
     const year = d.getFullYear();
@@ -121,6 +144,154 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   // Undo State
   const [lastDeletedShifts, setLastDeletedShifts] = useState<Shift[] | null>(null);
 
+  // Locked Days State
+  const [lockedDays, setLockedDays] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("lockedDays");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const toggleLockDay = (dateStr: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    setLockedDays(prev => {
+      const isCurrentlyLocked = prev.includes(dateStr);
+      const next = isCurrentlyLocked
+        ? prev.filter(d => d !== dateStr)
+        : [...prev, dateStr];
+      localStorage.setItem("lockedDays", JSON.stringify(next));
+      showToast(
+        isCurrentlyLocked 
+          ? `🔓 Giorno sbloccato con successo!` 
+          : `🔒 Giorno completato e bloccato contro modifiche accidentali!`
+      );
+      return next;
+    });
+  };
+
+  // Real-time helper: monthly stats for shift & hour count in current month
+  const getMemberMonthlyStats = (memberId: string) => {
+    const currentMonth = currentDate.getMonth(); // 0-11
+    const currentYear = currentDate.getFullYear();
+    
+    // Filter shifts of this member that fall into the current month
+    const memberShifts = shifts.filter(s => {
+      if (s.staffId !== memberId) return false;
+      const parts = s.data.split("-");
+      if (parts.length !== 3) return false;
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10) - 1; // 0-indexed month
+      return y === currentYear && m === currentMonth;
+    });
+
+    let shiftCount = 0;
+    let totalHours = 0;
+
+    memberShifts.forEach(s => {
+      if (s.tipoTurno === "Riposo" || s.tipoTurno === "Ferie") {
+        return;
+      }
+      
+      shiftCount++;
+
+      // Calculate hours between orarioInizio and orarioFine
+      const startParts = s.orarioInizio.split(":");
+      const endParts = s.orarioFine.split(":");
+      if (startParts.length === 2 && endParts.length === 2) {
+        const sh = parseInt(startParts[0], 10);
+        const sm = parseInt(startParts[1], 10);
+        const eh = parseInt(endParts[0], 10);
+        const em = parseInt(endParts[1], 10);
+
+        const startMinutes = sh * 60 + sm;
+        const endMinutes = eh * 60 + em;
+
+        let diffMinutes = endMinutes - startMinutes;
+        if (diffMinutes < 0) {
+          // Night shift crossing midnight (e.g. 21:00 to 07:00)
+          diffMinutes += 24 * 60;
+        }
+        
+        totalHours += diffMinutes / 60;
+      }
+    });
+
+    return { shiftCount, totalHours: Math.round(totalHours * 10) / 10 };
+  };
+
+  // Real-time helper: weekly stats for shift & hour count in current displayed week
+  const getMemberWeeklyStats = (memberId: string) => {
+    const weekDayStrings = weekDays.map(d => formatDateYMD(d));
+    
+    // Filter shifts of this member that fall into the current week
+    const memberShifts = shifts.filter(s => s.staffId === memberId && weekDayStrings.includes(s.data));
+
+    let shiftCount = 0;
+    let totalHours = 0;
+
+    memberShifts.forEach(s => {
+      if (s.tipoTurno === "Riposo" || s.tipoTurno === "Ferie") {
+        return;
+      }
+      
+      shiftCount++;
+
+      // Calculate hours between orarioInizio and orarioFine
+      const startParts = s.orarioInizio.split(":");
+      const endParts = s.orarioFine.split(":");
+      if (startParts.length === 2 && endParts.length === 2) {
+        const sh = parseInt(startParts[0], 10);
+        const sm = parseInt(startParts[1], 10);
+        const eh = parseInt(endParts[0], 10);
+        const em = parseInt(endParts[1], 10);
+
+        const startMinutes = sh * 60 + sm;
+        const endMinutes = eh * 60 + em;
+
+        let diffMinutes = endMinutes - startMinutes;
+        if (diffMinutes < 0) {
+          // Night shift crossing midnight (e.g. 21:00 to 07:00)
+          diffMinutes += 24 * 60;
+        }
+        
+        totalHours += diffMinutes / 60;
+      }
+    });
+
+    return { shiftCount, totalHours: Math.round(totalHours * 10) / 10 };
+  };
+
+  // Real-time helper: check if member has at least one rest day in the current week (weekDays)
+  const hasRestDayInCurrentWeek = (memberId: string) => {
+    return weekDays.some(day => {
+      const dayStr = formatDateYMD(day);
+      return shifts.some(s => s.staffId === memberId && s.data === dayStr && s.tipoTurno === "Riposo");
+    });
+  };
+
+  // Helper to check if a day is complete: Mattina + Pomeriggio for each structure (1, 2, 3) + at least 1 Notte
+  const isDayComplete = (dateStr: string): boolean => {
+    const dayShifts = shifts.filter(s => s.data === dateStr);
+    
+    const hasMattina1 = dayShifts.some(s => s.tipoTurno === "Mattina" && (s.struttura === "Vannucci 1" || s.struttura === "Struttura 1"));
+    const hasPomeriggio1 = dayShifts.some(s => s.tipoTurno === "Pomeriggio" && (s.struttura === "Vannucci 1" || s.struttura === "Struttura 1"));
+    
+    const hasMattina2 = dayShifts.some(s => s.tipoTurno === "Mattina" && (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2"));
+    const hasPomeriggio2 = dayShifts.some(s => s.tipoTurno === "Pomeriggio" && (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2"));
+    
+    const hasMattina3 = dayShifts.some(s => s.tipoTurno === "Mattina" && (s.struttura === "Vannucci 3" || s.struttura === "Struttura 3"));
+    const hasPomeriggio3 = dayShifts.some(s => s.tipoTurno === "Pomeriggio" && (s.struttura === "Vannucci 3" || s.struttura === "Struttura 3"));
+    
+    const hasNotte = dayShifts.some(s => s.tipoTurno === "Notte");
+    
+    return hasMattina1 && hasPomeriggio1 && hasMattina2 && hasPomeriggio2 && hasMattina3 && hasPomeriggio3 && hasNotte;
+  };
+
   // Drag & Drop State
   const [holdingDayDate, setHoldingDayDate] = useState<string | null>(null);
   const [dragOverTargetDate, setDragOverTargetDate] = useState<string | null>(null);
@@ -141,6 +312,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   const [newOrarioInizio, setNewOrarioInizio] = useState<string>("07:00");
   const [newOrarioFine, setNewOrarioFine] = useState<string>("14:00");
   const [newNote, setNewNote] = useState<string>("");
+  const [newStruttura, setNewStruttura] = useState<string>("Vannucci 1");
 
   // Vacation / Ferie Form State
   const [showVacationModal, setShowVacationModal] = useState<boolean>(false);
@@ -228,6 +400,8 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   const [editShiftDate, setEditShiftDate] = useState<string>("");
   const [editShiftInizio, setEditShiftInizio] = useState<string>("");
   const [editShiftFine, setEditShiftFine] = useState<string>("");
+  const [editShiftStruttura, setEditShiftStruttura] = useState<string>("Vannucci 1");
+  const [editShiftNote, setEditShiftNote] = useState<string>("");
 
   // Helper: Get start of current week (Monday)
   const getStartOfWeek = (d: Date) => {
@@ -239,10 +413,10 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
 
   const startOfWeek = getStartOfWeek(currentDate);
 
-  // Get array of 7 dates for the week
-  const weekDays = Array.from({ length: 7 }, (_, i) => {
+  // Get array of 8 dates for the week (Starting from Previous Sunday)
+  const weekDays = Array.from({ length: 8 }, (_, i) => {
     const d = new Date(startOfWeek);
-    d.setDate(d.getDate() + i);
+    d.setDate(d.getDate() + (i - 1));
     return d;
   });
 
@@ -379,19 +553,106 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     }
   };
 
+  // Automatic Shift Suggestion
+  const suggestNextShift = (targetStaffId: string, targetDateStr: string, currentStruttura: string) => {
+    // 1. Read existing shifts on this day for the structure to find what's missing
+    const dayShifts = shifts.filter(s => s.data === targetDateStr && s.struttura === currentStruttura);
+    const hasMattina = dayShifts.some(s => s.tipoTurno === "Mattina");
+    const hasPomeriggio = dayShifts.some(s => s.tipoTurno === "Pomeriggio");
+    const hasNotte = shifts.some(s => s.data === targetDateStr && s.tipoTurno === "Notte");
+
+    let proposedType: "Mattina" | "Pomeriggio" | "Notte" | "Riposo" = "Mattina";
+    if (!hasMattina) proposedType = "Mattina";
+    else if (!hasPomeriggio) proposedType = "Pomeriggio";
+    else if (!hasNotte) proposedType = "Notte";
+    else proposedType = "Riposo";
+
+    // 2. Read staff member's PREVIOUS shift to respect 11-hour rule
+    const targetDateObj = new Date(targetDateStr);
+    targetDateObj.setDate(targetDateObj.getDate() - 1);
+    const prevDateStr = formatDateYMD(targetDateObj);
+    
+    // Check if staff worked yesterday
+    const prevShifts = shifts.filter(s => s.staffId === targetStaffId && s.data === prevDateStr);
+    let lastEndTimeMin = 0; // End time of last shift in minutes from 00:00 of prevDateStr
+    
+    prevShifts.forEach(s => {
+       const endParts = s.orarioFine.split(":");
+       if (endParts.length === 2) {
+          let mins = parseInt(endParts[0], 10) * 60 + parseInt(endParts[1], 10);
+          // If night shift, it ends the next day (targetDateStr)
+          if (s.tipoTurno === "Notte" || (parseInt(s.orarioFine.split(":")[0], 10) < parseInt(s.orarioInizio.split(":")[0], 10))) {
+              mins += 24 * 60; // Represents time on the target day
+          }
+          if (mins > lastEndTimeMin) {
+              lastEndTimeMin = mins;
+          }
+       }
+    });
+
+    const staffProfile = staff.find(s => s.id === targetStaffId);
+    let startProposed = "07:00";
+    let endProposed = "14:00";
+    
+    if (proposedType === "Mattina") {
+      startProposed = staffProfile?.orarioMattina?.split("-")[0]?.trim() || "07:00";
+      endProposed = staffProfile?.orarioMattina?.split("-")[1]?.trim() || "14:00";
+    } else if (proposedType === "Pomeriggio") {
+      startProposed = staffProfile?.orarioPomeriggio?.split("-")[0]?.trim() || "14:00";
+      endProposed = staffProfile?.orarioPomeriggio?.split("-")[1]?.trim() || "21:00";
+    } else if (proposedType === "Notte") {
+      startProposed = staffProfile?.orarioNotte?.split("-")[0]?.trim() || "21:00";
+      endProposed = staffProfile?.orarioNotte?.split("-")[1]?.trim() || "07:00";
+    }
+
+    // Convert startProposed to minutes from 00:00 of targetDateStr
+    const startParts = startProposed.split(":");
+    const startMin = parseInt(startParts[0], 10) * 60 + parseInt(startParts[1], 10);
+
+    // Absolute minutes for next shift start (relative to prevDateStr 00:00)
+    const nextStartAbsoluteMin = startMin + 24 * 60; 
+    const restMins = nextStartAbsoluteMin - lastEndTimeMin;
+    
+    if (lastEndTimeMin > 0 && restMins < 11 * 60) {
+        // Less than 11 hours rest! 
+        if (proposedType === "Mattina" && restMins >= 10 * 60) {
+            // E.g. ended at 21:00 yesterday -> 10h rest until 07:00. Switch to 08:00
+            startProposed = "08:00";
+            endProposed = "15:00";
+        } else if (proposedType === "Mattina" || proposedType === "Notte") {
+            // If we can't do Mattina, push to Pomeriggio
+            proposedType = "Pomeriggio";
+            startProposed = staffProfile?.orarioPomeriggio?.split("-")[0]?.trim() || "14:00";
+            endProposed = staffProfile?.orarioPomeriggio?.split("-")[1]?.trim() || "21:00";
+        }
+    }
+    
+    return {
+        tipo: proposedType as "Mattina" | "Pomeriggio" | "Notte" | "Riposo",
+        inizio: startProposed,
+        fine: endProposed
+    };
+  };
+
   // Open modal prefilled with person and date
   const handleOpenAddModal = (staffId?: string, dateStr?: string) => {
     if (isPublicView) return;
-    if (staffId) setNewStaffId(staffId);
-    if (dateStr) setNewDate(dateStr);
-    
-    // Auto preset times for staff
-    const selectedStaff = staff.find(s => s.id === (staffId || newStaffId));
-    if (selectedStaff?.orarioMattina) {
-      const parts = selectedStaff.orarioMattina.split("-").map(s => s.trim());
-      setNewOrarioInizio(parts[0] || "07:00");
-      setNewOrarioFine(parts[1] || "14:00");
+    if (dateStr && lockedDays.includes(dateStr)) {
+      showToast("🔒 Questo giorno è completato e bloccato contro modifiche accidentali!");
+      return;
     }
+    
+    const targetStaffId = staffId || newStaffId;
+    const targetDate = dateStr || newDate;
+    
+    setNewStaffId(targetStaffId);
+    setNewDate(targetDate);
+    
+    // Auto preset times smartly based on structure and previous shifts
+    const suggested = suggestNextShift(targetStaffId, targetDate, newStruttura);
+    setNewTipoTurno(suggested.tipo);
+    setNewOrarioInizio(suggested.inizio);
+    setNewOrarioFine(suggested.fine);
 
     setShowAddModal(true);
   };
@@ -404,6 +665,11 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       return;
     }
 
+    if (lockedDays.includes(newDate)) {
+      showToast("🔒 Questo giorno è bloccato! Sbloccalo prima di aggiungere un turno.");
+      return;
+    }
+
     const shiftObj: Shift = {
       id: `shift-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       staffId: newStaffId,
@@ -411,7 +677,8 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       tipoTurno: newTipoTurno,
       orarioInizio: newOrarioInizio,
       orarioFine: newOrarioFine,
-      note: newNote
+      note: newNote,
+      struttura: newTipoTurno === "Notte" || newTipoTurno === "Riposo" || newTipoTurno === "Ferie" ? "" : newStruttura
     };
 
     onAddShift(shiftObj);
@@ -425,6 +692,11 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     if (e) e.stopPropagation();
     const targetShift = shifts.find(s => s.id === shiftId);
     if (!targetShift) return;
+
+    if (lockedDays.includes(targetShift.data)) {
+      showToast("🔒 Questo giorno è bloccato! Sbloccalo prima di cancellare.");
+      return;
+    }
 
     setLastDeletedShifts([targetShift]);
     if (onDeleteShift) {
@@ -440,6 +712,10 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   const handleRequestDeleteDay = (dateYMD: string, e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
+    if (lockedDays.includes(dateYMD)) {
+      showToast("🔒 Questo giorno è bloccato! Sbloccalo prima di procedere.");
+      return;
+    }
     const dayShifts = shifts.filter(s => s.data === dateYMD);
     if (dayShifts.length === 0) {
       showToast("Nessun turno presente da cancellare in questo giorno.");
@@ -451,6 +727,11 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   // Execute Delete ALL Shifts for a Day
   const handleExecuteDeleteDayShifts = () => {
     if (!confirmDeleteDayDate) return;
+    if (lockedDays.includes(confirmDeleteDayDate)) {
+      showToast("🔒 Questo giorno è bloccato! Sbloccalo prima di procedere.");
+      setConfirmDeleteDayDate(null);
+      return;
+    }
     const dayShifts = shifts.filter(s => s.data === confirmDeleteDayDate);
     setLastDeletedShifts(dayShifts);
 
@@ -509,6 +790,11 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     curDate.setDate(curDate.getDate() + 1);
     const nextDateStr = formatDateYMD(curDate);
 
+    if (lockedDays.includes(nextDateStr)) {
+      showToast("🔒 Impossibile copiare: il giorno di destinazione è bloccato!");
+      return;
+    }
+
     const staffMember = staff.find(st => st.id === shift.staffId);
     const times = getStaffHoursForShiftType(staffMember, shift.tipoTurno, shift.orarioInizio, shift.orarioFine);
 
@@ -546,6 +832,11 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     const d = new Date(sourceDateYMD);
     d.setDate(d.getDate() + 7);
     const targetDateYMD = formatDateYMD(d);
+
+    if (lockedDays.includes(targetDateYMD)) {
+      showToast("🔒 Impossibile copiare: il giorno di destinazione (+7 giorni) è bloccato!");
+      return;
+    }
 
     // Erase old shifts on target date before adding copied ones
     const existingShiftsWithoutTarget = shifts.filter(s => s.data !== targetDateYMD);
@@ -654,6 +945,23 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
 
     try {
       const data = JSON.parse(rawData);
+
+      if (lockedDays.includes(targetDateYMD)) {
+        showToast("🔒 Impossibile rilasciare: questo giorno è bloccato!");
+        return;
+      }
+
+      if (data.type === "single_shift" && !dragActionMode && data.sourceDate && lockedDays.includes(data.sourceDate)) {
+        // Moving single shift out of locked day is blocked
+        showToast("🔒 Impossibile spostare un turno da un giorno bloccato!");
+        return;
+      }
+
+      if (data.type === "day" && lockedDays.includes(data.sourceDateYMD)) {
+        // Moving/Copying day out of locked day
+        showToast("🔒 Il giorno di origine è bloccato!");
+        return;
+      }
 
       // Check if any modifier key (Shift, Ctrl, Alt, Meta, Fn, CapsLock, NumLock) was held
       const isModifierHeld = e.shiftKey || e.ctrlKey || e.altKey || e.metaKey ||
@@ -783,6 +1091,11 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   const handleSaveShiftEdit = () => {
     if (!selectedShiftForDetail || !onUpdateShifts) return;
 
+    if (lockedDays.includes(selectedShiftForDetail.data) || (editShiftDate && lockedDays.includes(editShiftDate))) {
+      showToast("🔒 Questo giorno è bloccato! Sbloccalo prima di modificare il turno.");
+      return;
+    }
+
     const updatedShifts = shifts.map(s => {
       if (s.id === selectedShiftForDetail.id) {
         return {
@@ -790,7 +1103,9 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
           staffId: editShiftStaffId || s.staffId,
           data: editShiftDate || s.data,
           orarioInizio: editShiftInizio || s.orarioInizio,
-          orarioFine: editShiftFine || s.orarioFine
+          orarioFine: editShiftFine || s.orarioFine,
+          struttura: editShiftStruttura || s.struttura,
+          note: editShiftNote
         };
       }
       return s;
@@ -798,16 +1113,23 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
 
     onUpdateShifts(updatedShifts);
     setSelectedShiftForDetail(null);
+    setEditShiftNote("");
     showToast("✅ Turno aggiornato con successo!");
   };
 
   // Open Edit Shift Modal
   const handleOpenDetailModal = (s: Shift) => {
+    if (lockedDays.includes(s.data)) {
+      showToast("🔒 Questo giorno è bloccato! Non è possibile modificare i turni in questo giorno.");
+      return;
+    }
     setSelectedShiftForDetail(s);
     setEditShiftStaffId(s.staffId);
     setEditShiftDate(s.data);
     setEditShiftInizio(s.orarioInizio);
     setEditShiftFine(s.orarioFine);
+    setEditShiftStruttura(s.struttura || "Vannucci 1");
+    setEditShiftNote(s.note || "");
   };
 
   // Save Staff Member Custom Profile & Hours
@@ -941,16 +1263,170 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     showToast("Programmazione settimanale generata con orari memorizzati!");
   };
 
+  const checkPotentialShiftValidity = (
+    staffId: string,
+    dateStr: string,
+    tipoTurno: string,
+    struttura: string,
+    inizio: string,
+    fine: string,
+    shiftIdToIgnore?: string
+  ): { valid: boolean; reason?: string } => {
+    if (tipoTurno === "Riposo" || tipoTurno === "Ferie") return { valid: true };
+
+    // 1. Check duplicate structure and tipoTurno
+    const sameShifts = shifts.filter(s => 
+      s.data === dateStr && 
+      s.struttura === struttura && 
+      s.tipoTurno === tipoTurno && 
+      s.id !== shiftIdToIgnore &&
+      s.tipoTurno !== "Riposo" &&
+      s.tipoTurno !== "Ferie"
+    );
+    if (sameShifts.length > 0) {
+      return { valid: false, reason: `Turno ${tipoTurno} già coperto in ${struttura}` };
+    }
+
+    // 2. Check 11-hour rule with PREVIOUS day's shifts
+    const targetDateObj = new Date(dateStr);
+    targetDateObj.setDate(targetDateObj.getDate() - 1);
+    const prevDateStr = formatDateYMD(targetDateObj);
+    
+    const prevShifts = shifts.filter(s => s.staffId === staffId && s.data === prevDateStr && s.id !== shiftIdToIgnore && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie");
+    
+    let lastEndTimeMin = 0; 
+    prevShifts.forEach(s => {
+       const endParts = s.orarioFine.split(":");
+       if (endParts.length === 2) {
+          let mins = parseInt(endParts[0], 10) * 60 + parseInt(endParts[1], 10);
+          if (s.tipoTurno === "Notte" || (parseInt(s.orarioFine.split(":")[0], 10) < parseInt(s.orarioInizio.split(":")[0], 10))) {
+              mins += 24 * 60; 
+          }
+          if (mins > lastEndTimeMin) {
+              lastEndTimeMin = mins;
+          }
+       }
+    });
+
+    const startParts = inizio.split(":");
+    const startMin = parseInt(startParts[0], 10) * 60 + parseInt(startParts[1], 10);
+    const nextStartAbsoluteMin = startMin + 24 * 60; 
+    
+    if (lastEndTimeMin > 0 && (nextStartAbsoluteMin - lastEndTimeMin) < 11 * 60) {
+      return { valid: false, reason: "Non rispetta le 11 ore di riposo dal turno precedente" };
+    }
+    
+    // 3. Check 11-hour rule with SAME day's shifts
+    const sameDayShifts = shifts.filter(s => s.staffId === staffId && s.data === dateStr && s.id !== shiftIdToIgnore && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie");
+    let sameDayViolation = false;
+    sameDayShifts.forEach(s => {
+      const sStartParts = s.orarioInizio.split(":");
+      const sStartMin = parseInt(sStartParts[0], 10) * 60 + parseInt(sStartParts[1], 10);
+      
+      const sEndParts = s.orarioFine.split(":");
+      let sEndMin = parseInt(sEndParts[0], 10) * 60 + parseInt(sEndParts[1], 10);
+      if (s.tipoTurno === "Notte" || (parseInt(s.orarioFine.split(":")[0], 10) < parseInt(s.orarioInizio.split(":")[0], 10))) {
+          sEndMin += 24 * 60;
+      }
+
+      const newStartParts = inizio.split(":");
+      const newStartMin = parseInt(newStartParts[0], 10) * 60 + parseInt(newStartParts[1], 10);
+      
+      const newEndParts = fine.split(":");
+      let newEndMin = parseInt(newEndParts[0], 10) * 60 + parseInt(newEndParts[1], 10);
+      if (tipoTurno === "Notte" || (parseInt(fine.split(":")[0], 10) < parseInt(inizio.split(":")[0], 10))) {
+          newEndMin += 24 * 60;
+      }
+      
+      if (newEndMin <= sStartMin) {
+          if ((sStartMin - newEndMin) < 11 * 60) sameDayViolation = true;
+      } else if (sEndMin <= newStartMin) {
+          if ((newStartMin - sEndMin) < 11 * 60) sameDayViolation = true;
+      } else {
+          sameDayViolation = true;
+      }
+    });
+
+    if (sameDayViolation) {
+      return { valid: false, reason: "Non rispetta le 11 ore di riposo tra turni nello stesso giorno" };
+    }
+
+    // 4. Check 11-hour rule with NEXT day's shifts
+    const nextDateObj = new Date(dateStr);
+    nextDateObj.setDate(nextDateObj.getDate() + 1);
+    const nextDateStr = formatDateYMD(nextDateObj);
+    
+    const nextShifts = shifts.filter(s => s.staffId === staffId && s.data === nextDateStr && s.id !== shiftIdToIgnore && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie");
+    
+    const myEndParts = fine.split(":");
+    let myEndMin = parseInt(myEndParts[0], 10) * 60 + parseInt(myEndParts[1], 10);
+    if (tipoTurno === "Notte" || (parseInt(fine.split(":")[0], 10) < parseInt(inizio.split(":")[0], 10))) {
+        myEndMin += 24 * 60; 
+    }
+    
+    let earliestNextStartMin = 48 * 60; 
+    nextShifts.forEach(s => {
+       const nStartParts = s.orarioInizio.split(":");
+       if (nStartParts.length === 2) {
+          let mins = parseInt(nStartParts[0], 10) * 60 + parseInt(nStartParts[1], 10) + 24 * 60;
+          if (mins < earliestNextStartMin) earliestNextStartMin = mins;
+       }
+    });
+    
+    if (earliestNextStartMin < 48 * 60 && (earliestNextStartMin - myEndMin) < 11 * 60) {
+      return { valid: false, reason: "Non rispetta le 11 ore di riposo prima del turno del giorno successivo" };
+    }
+    
+    return { valid: true };
+  };
+
+  const checkShiftValidity = (shift: Shift) => {
+    return checkPotentialShiftValidity(shift.staffId, shift.data, shift.tipoTurno, shift.struttura, shift.orarioInizio, shift.orarioFine, shift.id);
+  };
+
+  const isStrutturaSatura = (struttura: string, data: string, shiftIdToIgnore?: string) => {
+    const dayShifts = shifts.filter(s => s.data === data && s.struttura === struttura && s.id !== shiftIdToIgnore);
+    const hasMattina = dayShifts.some(s => s.tipoTurno === "Mattina");
+    const hasPomeriggio = dayShifts.some(s => s.tipoTurno === "Pomeriggio");
+    return hasMattina && hasPomeriggio;
+  };
+
   // Badge Color Styles for Turno Types (Varies color dynamically if shift hours are customized!)
-  const getShiftBadgeStyle = (tipo: string, start?: string, end?: string) => {
+  const getShiftBadgeStyle = (tipo: string, start?: string, end?: string, struttura?: string) => {
+    // 1. TURNO DI NOTTE: Sempre Nero per tutte le strutture
+    if (tipo === "Notte") {
+      return "bg-slate-900 text-slate-100 border-slate-950 hover:bg-slate-950 font-black shadow-xs ring-1 ring-slate-800/80";
+    }
+
+    // 2. FERIE: Sempre Ambra/Giallo
+    if (tipo === "Ferie") {
+      return "bg-amber-400 text-amber-950 border-amber-500 hover:bg-amber-300 font-black shadow-xs ring-2 ring-amber-500/50";
+    }
+
+    // 3. RIPOSO: Sempre Grigio chiaro
+    if (tipo === "Riposo") {
+      return "bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200";
+    }
+
+    // 4. STRUTTURE COLORI DIVERSI (per Mattina, Pomeriggio, Reperibilità, ecc.)
+    const normStruttura = struttura || "";
+    if (normStruttura === "Vannucci 1" || normStruttura === "Struttura 1") {
+      // Arancione / Orange
+      return "bg-orange-100 text-orange-950 border-orange-300 hover:bg-orange-200 font-bold shadow-2xs ring-1 ring-orange-400/50";
+    } else if (normStruttura === "Vannucci 2" || normStruttura === "Struttura 2") {
+      // Giallo / Yellow
+      return "bg-yellow-100/80 text-yellow-950 border-yellow-200 hover:bg-yellow-150 font-bold shadow-2xs ring-1 ring-yellow-400/60";
+    } else if (normStruttura === "Vannucci 3" || normStruttura === "Struttura 3") {
+      // Verde / Green
+      return "bg-emerald-100 text-emerald-950 border-emerald-300 hover:bg-emerald-200 font-bold shadow-2xs ring-1 ring-emerald-400/50";
+    }
+
+    // 5. FALLBACK IN ASSENZA DI STRUTTURA SPECIFICATA
     const isStandardMattina = tipo === "Mattina" && (start === "07:00" || !start) && (end === "14:00" || !end);
     const isStandardPomeriggio = tipo === "Pomeriggio" && (start === "14:00" || !start) && (end === "21:00" || !end);
-    const isStandardNotte = tipo === "Notte" && (start === "21:00" || !start) && (end === "07:00" || !end);
     const isStandardReperibilita = tipo === "Reperibilità" && (start === "00:00" || !start) && (end === "23:59" || !end);
-    const isStandardRiposo = tipo === "Riposo" && (start === "00:00" || !start) && (end === "00:00" || !end);
-    const isStandardFerie = tipo === "Ferie";
 
-    const isStandard = isStandardMattina || isStandardPomeriggio || isStandardNotte || isStandardReperibilita || isStandardRiposo || isStandardFerie;
+    const isStandard = isStandardMattina || isStandardPomeriggio || isStandardReperibilita;
 
     if (isStandard) {
       switch (tipo) {
@@ -958,39 +1434,20 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
           return "bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200";
         case "Pomeriggio":
           return "bg-indigo-100 text-indigo-900 border-indigo-300 hover:bg-indigo-200";
-        case "Notte":
-          return "bg-slate-800 text-purple-200 border-slate-700 hover:bg-slate-900";
         case "Reperibilità":
           return "bg-emerald-100 text-emerald-900 border-emerald-300 hover:bg-emerald-200";
-        case "Riposo":
-          return "bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200";
-        case "Ferie":
-          return "bg-amber-400 text-amber-950 border-amber-500 hover:bg-amber-300 font-black shadow-xs ring-2 ring-amber-500/50";
         default:
           return "bg-blue-100 text-blue-900 border-blue-200";
       }
     } else {
-      // CUSTOM NON-STANDARD HOURS -> Vibrant distinct colors with custom hour badge ring!
-      if (tipo === "Ferie") {
-        return "bg-amber-400 text-amber-950 border-amber-500 hover:bg-amber-300 font-black shadow-xs ring-2 ring-amber-500/50";
-      } else if (tipo === "Mattina") {
-        if (start && start < "07:00") {
-          return "bg-yellow-200 text-amber-950 border-yellow-400 hover:bg-yellow-300 ring-2 ring-yellow-500/80 shadow-xs font-black";
-        } else if (start && start > "07:30") {
-          return "bg-orange-100 text-orange-950 border-orange-400 hover:bg-orange-200 ring-2 ring-orange-500/80 shadow-xs font-black";
-        }
-        return "bg-amber-200 text-amber-950 border-amber-400 hover:bg-amber-300 ring-2 ring-amber-500/80 shadow-xs font-black";
+      if (tipo === "Mattina") {
+        return "bg-amber-200 text-amber-950 border-amber-400 hover:bg-amber-300 ring-1 ring-amber-500/80 shadow-2xs font-bold";
       } else if (tipo === "Pomeriggio") {
-        if (start && start > "14:30") {
-          return "bg-cyan-100 text-cyan-950 border-cyan-400 hover:bg-cyan-200 ring-2 ring-cyan-500/80 shadow-xs font-black";
-        }
-        return "bg-violet-100 text-violet-950 border-violet-400 hover:bg-violet-200 ring-2 ring-violet-500/80 shadow-xs font-black";
-      } else if (tipo === "Notte") {
-        return "bg-indigo-950 text-amber-300 border-amber-400 hover:bg-indigo-900 ring-2 ring-amber-400/80 shadow-xs font-black";
+        return "bg-violet-100 text-violet-950 border-violet-400 hover:bg-violet-200 ring-1 ring-violet-500/80 shadow-2xs font-bold";
       } else if (tipo === "Reperibilità") {
-        return "bg-teal-100 text-teal-950 border-teal-400 hover:bg-teal-200 ring-2 ring-teal-500/80 shadow-xs font-black";
+        return "bg-teal-100 text-teal-950 border-teal-400 hover:bg-teal-200 ring-1 ring-teal-500/80 shadow-2xs font-bold";
       } else {
-        return "bg-rose-100 text-rose-950 border-rose-300 hover:bg-rose-200 ring-2 ring-rose-400/80 shadow-xs font-black";
+        return "bg-rose-100 text-rose-950 border-rose-300 hover:bg-rose-200 ring-1 ring-rose-400/80 shadow-2xs font-bold";
       }
     }
   };
@@ -1018,7 +1475,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `Tabellone_Turni_${getFullMonthName(weekDays[0])}_${weekDays[0].getFullYear()}.csv`);
+    link.setAttribute("download", `Tabellone_Turni_${getFullMonthName(weekDays[1])}_${weekDays[1].getFullYear()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1306,278 +1763,139 @@ function importaTurniResidenzaVannucci() {
       {/* Navigation Controls & View Mode Tabs */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
         
-        {/* Date Selector Controls */}
-        <div className="flex items-center gap-2">
+        {/* Date Selector Controls - Prominent & Visible Buttons for easy navigation */}
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={viewMode === "month" ? handlePrevMonth : handlePrevWeek}
-            className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-700 transition-all cursor-pointer"
+            className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 border-2 border-indigo-200 text-indigo-700 font-extrabold rounded-xl text-xs flex items-center gap-2 shadow-2xs transition-all cursor-pointer transform active:scale-95"
             title={viewMode === "month" ? "Mese precedente" : "Settimana precedente"}
           >
-            <ChevronLeft className="w-5 h-5" />
+            <ChevronLeft className="w-4 h-4 text-indigo-700 stroke-[3px]" />
+            <span>{viewMode === "month" ? "Mese Prec." : "Settimana Prec."}</span>
           </button>
 
           <button
             onClick={handleToday}
-            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-xl text-xs transition-all cursor-pointer"
+            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold rounded-xl text-xs border border-slate-300 transition-all cursor-pointer transform active:scale-95"
           >
             Oggi
           </button>
 
           <button
             onClick={viewMode === "month" ? handleNextMonth : handleNextWeek}
-            className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-700 transition-all cursor-pointer"
+            className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 border-2 border-indigo-200 text-indigo-700 font-extrabold rounded-xl text-xs flex items-center gap-2 shadow-2xs transition-all cursor-pointer transform active:scale-95"
             title={viewMode === "month" ? "Mese successivo" : "Settimana successiva"}
           >
-            <ChevronRight className="w-5 h-5" />
+            <span>{viewMode === "month" ? "Mese Succ." : "Settimana Succ."}</span>
+            <ChevronRight className="w-4 h-4 text-indigo-700 stroke-[3px]" />
           </button>
 
           <span className="text-sm font-extrabold text-slate-800 ml-2">
             {viewMode === "month"
               ? `Mese di ${getFullMonthName(currentDate).toUpperCase()} ${currentDate.getFullYear()}`
-              : `Settimana dal ${weekDays[0].getDate()} ${getFullMonthName(weekDays[0])} al ${weekDays[6].getDate()} ${getFullMonthName(weekDays[6])} ${weekDays[6].getFullYear()}`
+              : `Settimana dal ${weekDays[1].getDate()} ${getFullMonthName(weekDays[1])} al ${weekDays[7].getDate()} ${getFullMonthName(weekDays[7])} ${weekDays[7].getFullYear()}`
             }
           </span>
         </div>
 
-        {/* View Switcher */}
-        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold overflow-x-auto max-w-full">
-          <button
-            onClick={() => setViewMode("mobile")}
-            className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap flex items-center gap-1 ${
-              viewMode === "mobile" ? "bg-indigo-600 text-white shadow font-extrabold" : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            📱 Vista Smartphone
-          </button>
-          <button
-            onClick={() => setViewMode("week")}
-            className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-              viewMode === "week" ? "bg-white text-indigo-700 shadow font-extrabold" : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            Calendario Settimanale
-          </button>
-          <button
-            onClick={() => setViewMode("month")}
-            className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-              viewMode === "month" ? "bg-white text-indigo-700 shadow font-extrabold" : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            Calendario Mensile
-          </button>
-          <button
-            onClick={() => setViewMode("roster")}
-            className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-              viewMode === "roster" ? "bg-white text-indigo-700 shadow font-extrabold" : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            Schede Operatori ({staff.length})
-          </button>
+        {/* View Switcher & Full Screen Controls */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold overflow-x-auto max-w-full">
+            <button
+              onClick={() => setViewMode("week")}
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                viewMode === "week" ? "bg-white text-indigo-700 shadow font-extrabold" : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Calendario Settimanale
+            </button>
+            <button
+              onClick={() => setViewMode("month")}
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                viewMode === "month" ? "bg-white text-indigo-700 shadow font-extrabold" : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Calendario Mensile
+            </button>
+            <button
+              onClick={() => setViewMode("roster")}
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                viewMode === "roster" ? "bg-white text-indigo-700 shadow font-extrabold" : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Schede Operatori ({staff.length})
+            </button>
+          </div>
+
+          {(viewMode === "week" || viewMode === "month") && (
+            <button
+              onClick={() => setIsFullScreen(!isFullScreen)}
+              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition-all cursor-pointer whitespace-nowrap"
+              title={isFullScreen ? "Esci da Schermo Intero" : "Attiva Schermo Intero"}
+            >
+              <span>{isFullScreen ? "Esci Schermo Intero ✖" : "🖥️ Schermo Intero"}</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* MOBILE SMARTPHONE DAY CARDS VIEW */}
-      {viewMode === "mobile" && (
-        <div className="space-y-5">
-          {/* Mobile Day Selector Bar (Horizontally scrollable) */}
-          <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-sm space-y-2">
-            <div className="flex items-center justify-between text-xs font-extrabold text-slate-800 px-1">
-              <span className="flex items-center gap-1.5">
-                <CalendarDays className="w-4 h-4 text-indigo-600" />
-                <span>Seleziona Giorno da Consultare:</span>
-              </span>
-              <span className="text-[10px] text-slate-500 font-normal">Scorri orizzontalmente →</span>
-            </div>
 
-            <div className="flex items-center gap-2 overflow-x-auto pb-1.5 pt-1">
-              {weekDays.map((d) => {
-                const dYMD = formatDateYMD(d);
-                const isSelected = dYMD === selectedMobileDate;
-                const isToday = dYMD === todayStr;
-                const shiftsCount = shifts.filter(s => s.data === dYMD).length;
-
-                return (
-                  <button
-                    key={dYMD}
-                    type="button"
-                    onClick={() => setSelectedMobileDate(dYMD)}
-                    className={`flex flex-col items-center justify-center p-2.5 rounded-2xl border text-center transition-all cursor-pointer shrink-0 min-w-[110px] ${
-                      isSelected
-                        ? "bg-indigo-600 text-white border-indigo-700 shadow-md scale-105"
-                        : isToday
-                        ? "bg-indigo-50 border-indigo-300 text-indigo-950 font-bold"
-                        : "bg-slate-50 border-slate-200/80 text-slate-700 hover:bg-slate-100"
-                    }`}
-                  >
-                    <span className="text-[10px] uppercase font-black tracking-wider opacity-85">
-                      {getFullWeekdayName(d)}
-                    </span>
-                    <span className="text-base font-black my-0.5">
-                      {d.getDate()} {getFullMonthName(d)}
-                    </span>
-                    <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold mt-0.5 ${
-                      isSelected ? "bg-indigo-500/50 text-white" : "bg-slate-200/80 text-slate-700"
-                    }`}>
-                      {shiftsCount} turni
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Selected Day Header & Shift List */}
-          {(() => {
-            const activeDateObj = new Date(selectedMobileDate.includes("T") ? selectedMobileDate : `${selectedMobileDate}T12:00:00`);
-            const activeDayName = getFullWeekdayName(activeDateObj);
-            const activeMonthName = getFullMonthName(activeDateObj);
-            const activeDayShifts = shifts.filter(s => s.data === selectedMobileDate);
-
-            return (
-              <div className="space-y-4">
-                <div className="bg-gradient-to-r from-indigo-900 via-indigo-950 to-slate-900 text-white p-5 rounded-2xl border border-indigo-800 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="px-2.5 py-0.5 bg-amber-500 text-slate-950 font-black text-[10px] rounded-full uppercase tracking-wider">
-                        {activeDateObj.getDay() === 0 || activeDateObj.getDay() === 6 ? "Festivo / Weekend" : "Giorno Feriale"}
-                      </span>
-                      {selectedMobileDate === todayStr && (
-                        <span className="px-2.5 py-0.5 bg-emerald-500 text-white font-bold text-[10px] rounded-full uppercase">
-                          Oggi
-                        </span>
-                      )}
-                    </div>
-                    <h3 className="text-xl font-black mt-1 capitalize text-white">
-                      {activeDayName} {activeDateObj.getDate()} {activeMonthName} {activeDateObj.getFullYear()}
-                    </h3>
-                    <p className="text-xs text-indigo-200 mt-0.5">
-                      {activeDayShifts.length === 0
-                        ? "Nessun turno programmato per questo giorno"
-                        : `In totale ci sono ${activeDayShifts.length} turni assegnati`}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const prev = new Date(activeDateObj);
-                        prev.setDate(prev.getDate() - 1);
-                        setSelectedMobileDate(formatDateYMD(prev));
-                      }}
-                      className="px-3 py-2 bg-indigo-800/80 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 transition-all cursor-pointer border border-indigo-600"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                      <span>Giorno Prec.</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const next = new Date(activeDateObj);
-                        next.setDate(next.getDate() + 1);
-                        setSelectedMobileDate(formatDateYMD(next));
-                      }}
-                      className="px-3 py-2 bg-indigo-800/80 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 transition-all cursor-pointer border border-indigo-600"
-                    >
-                      <span>Giorno Succ.</span>
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* List of Staff Members and their Shift on this day */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {staff.map((member) => {
-                    const memberShifts = activeDayShifts.filter(s => s.staffId === member.id);
-
-                    return (
-                      <div
-                        key={member.id}
-                        className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-sm hover:shadow-md transition-all flex flex-col justify-between gap-3"
-                      >
-                        {/* Staff Info Header */}
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div
-                              className="w-10 h-10 rounded-full flex items-center justify-center font-extrabold text-white text-sm shadow-xs shrink-0"
-                              style={{ backgroundColor: member.coloreBadge }}
-                            >
-                              {member.nome[0]}{member.cognome[0]}
-                            </div>
-                            <div>
-                              <h4 className="font-extrabold text-slate-900 text-sm">{member.nome} {member.cognome}</h4>
-                              <p className="text-xs text-slate-500 font-medium">{member.ruolo}</p>
-                            </div>
-                          </div>
-
-                          {!isPublicView && (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenAddModal(member.id, selectedMobileDate)}
-                              className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-xl transition-all cursor-pointer text-xs font-bold flex items-center gap-1"
-                              title="Aggiungi turno per questo operatore"
-                            >
-                              <Plus className="w-4 h-4" />
-                              <span className="hidden sm:inline">Turno</span>
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Shift Cards for this member on this day */}
-                        {memberShifts.length === 0 ? (
-                          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 text-slate-500 text-xs font-medium flex items-center gap-2">
-                            <span className="text-base">🌴</span>
-                            <span>Riposo / Nessun turno assegnato</span>
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            {memberShifts.map((s) => (
-                              <div
-                                key={s.id}
-                                onClick={() => handleOpenDetailModal(s)}
-                                className={`p-3.5 rounded-xl border text-xs font-bold flex items-center justify-between cursor-pointer transition-all shadow-2xs ${getShiftBadgeStyle(s.tipoTurno, s.orarioInizio, s.orarioFine)}`}
-                              >
-                                <div className="space-y-0.5">
-                                  <div className="flex items-center gap-2 text-sm font-extrabold">
-                                    {s.tipoTurno === "Mattina" && <span>🌅 Turno Mattina</span>}
-                                    {s.tipoTurno === "Pomeriggio" && <span>🌆 Turno Pomeriggio</span>}
-                                    {s.tipoTurno === "Notte" && <span>🌙 Turno Notte</span>}
-                                    {s.tipoTurno === "Reperibilità" && <span>📞 Reperibilità</span>}
-                                    {s.tipoTurno === "Riposo" && <span>🌴 Riposo / Ferie</span>}
-                                  </div>
-                                  <div className="font-mono text-xs opacity-90 flex items-center gap-1">
-                                    <Clock className="w-3.5 h-3.5" />
-                                    <span>Orario: {s.orarioInizio} — {s.orarioFine}</span>
-                                  </div>
-                                  {s.note && (
-                                    <p className="text-[11px] font-normal italic text-slate-700 pt-1">
-                                      Note: {s.note}
-                                    </p>
-                                  )}
-                                </div>
-
-                                <span className="text-[10px] px-2.5 py-1 bg-white/80 rounded-lg text-slate-900 border border-slate-200/80 shrink-0 font-bold">
-                                  Dettagli →
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-      )}
 
       {/* WEEKLY CALENDAR MATRIX VIEW */}
       {viewMode === "week" && (
-        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden relative group/calendar">
+        <div className={isFullScreen ? "fixed inset-0 z-45 bg-slate-50 p-4 sm:p-6 overflow-auto flex flex-col h-screen" : ""}>
+          {isFullScreen && (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-indigo-900 text-white p-4 rounded-xl mb-4 shadow-md shrink-0 gap-3">
+              <div className="flex items-center gap-3">
+                <span className="p-2 bg-indigo-800 rounded-lg">
+                  <span className="font-extrabold text-xs sm:text-sm">🖥️ Modalità Tutto Schermo (Settimanale)</span>
+                </span>
+                <div>
+                  <h3 className="font-bold text-xs sm:text-sm">Gestionale — Tabella dei Turni</h3>
+                  <p className="text-[10px] sm:text-[11px] text-indigo-200">Stai lavorando in modalità focalizzata a tutto schermo</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 self-stretch sm:self-auto justify-between sm:justify-end">
+                <button
+                  onClick={handlePrevWeek}
+                  className="px-3 py-1.5 bg-indigo-800 hover:bg-indigo-700 border border-indigo-600 text-white rounded-lg text-[10px] sm:text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                  title="Settimana Precedente"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5 stroke-[3px]" />
+                  <span>Prec.</span>
+                </button>
+                
+                <button
+                  onClick={() => setCurrentDate(new Date())}
+                  className="px-3 py-1.5 bg-indigo-950 hover:bg-indigo-900 border border-indigo-700 text-white rounded-lg text-[10px] sm:text-xs font-bold transition-all cursor-pointer"
+                  title="Vai a oggi"
+                >
+                  Oggi
+                </button>
+
+                <button
+                  onClick={handleNextWeek}
+                  className="px-3 py-1.5 bg-indigo-800 hover:bg-indigo-700 border border-indigo-600 text-white rounded-lg text-[10px] sm:text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                  title="Settimana Successiva"
+                >
+                  <span>Succ.</span>
+                  <ChevronRight className="w-3.5 h-3.5 stroke-[3px]" />
+                </button>
+
+                <span className="text-[10px] sm:text-xs font-semibold bg-indigo-800 px-3 py-1.5 rounded-lg border border-indigo-700 whitespace-nowrap">
+                  Settimana dal {weekDays[1].getDate()} {getFullMonthName(weekDays[1])} al {weekDays[7].getDate()} {getFullMonthName(weekDays[7])} {weekDays[7].getFullYear()}
+                </span>
+                
+                <button
+                  onClick={() => setIsFullScreen(false)}
+                  className="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer shadow flex items-center gap-1.5"
+                >
+                  <span>Esci Schermo Intero ✖</span>
+                </button>
+              </div>
+            </div>
+          )}
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden relative group/calendar flex-1 flex flex-col">
           
           {/* FLOATING DRAG & CLICK EDGE ZONES FOR PREV/NEXT WEEK (0px LAYOUT IMPACT) */}
           <div
@@ -1625,89 +1943,119 @@ function importaTurniResidenzaVannucci() {
             <table className="w-full text-left border-collapse min-w-[1150px] sm:min-w-[1300px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-xs font-extrabold text-slate-700">
-                  <th className="p-4 w-48 min-w-[190px] border-r border-slate-200 sticky top-0 left-0 z-40 bg-slate-100 shadow-xs">Operatore / Ruolo</th>
+                  <th className="p-4 w-48 min-w-[190px] border-r border-slate-200 sticky top-0 left-0 z-40 bg-slate-100 shadow-xs">
+                    <span className="md:hidden">Operatore</span>
+                    <span className="hidden md:inline">Operatore / Ruolo</span>
+                  </th>
                   {weekDays.map((day, idx) => {
                     const dateYMD = formatDateYMD(day);
                     const isToday = dateYMD === todayStr;
                     const isDragOver = dragOverTargetDate === dateYMD;
                     const isHolding = holdingDayDate === dateYMD;
                     const dayShiftsCount = shifts.filter(s => s.data === dateYMD).length;
+                    
+                    const isReferenceDay = idx === 0; // Domenica precedente (riferimento)
+                    const isEffectivelyLocked = lockedDays.includes(dateYMD) || isReferenceDay;
 
                     return (
                       <th
                         key={idx}
-                        draggable={!isPublicView}
+                        draggable={!isPublicView && !isEffectivelyLocked}
                         onDragStart={(e) => {
-                          if (!isPublicView) handleDragStartDay(e, dateYMD);
+                          if (!isPublicView && !isReferenceDay) handleDragStartDay(e, dateYMD);
                         }}
                         onDragOver={(e) => {
-                          if (!isPublicView) {
+                          if (!isPublicView && !isReferenceDay) {
                             e.preventDefault();
                             setDragOverTargetDate(dateYMD);
                           }
                         }}
                         onDragLeave={() => setDragOverTargetDate(null)}
                         onDrop={(e) => {
-                          if (!isPublicView) handleDropOnCell(e, "", dateYMD);
+                          if (!isPublicView && !isReferenceDay) handleDropOnCell(e, "", dateYMD);
                         }}
                         onMouseDown={(e) => {
-                          if (!isPublicView) handleMouseDownDay(dateYMD, e);
+                          if (!isPublicView && !isReferenceDay) handleMouseDownDay(dateYMD, e);
                         }}
                         onMouseUp={handleMouseUpDay}
                         onTouchStart={(e) => {
-                          if (!isPublicView) handleMouseDownDay(dateYMD, e);
+                          if (!isPublicView && !isReferenceDay) handleMouseDownDay(dateYMD, e);
                         }}
                         onTouchEnd={handleMouseUpDay}
-                        className={`p-3 text-center border-r border-slate-200 last:border-r-0 transition-all select-none relative group min-w-[135px] sm:min-w-[155px] sticky top-0 z-30 bg-slate-50 ${
-                          isPublicView ? "" : "cursor-grab active:cursor-grabbing"
+                        className={`p-3 text-center transition-all select-none relative group min-w-[135px] sm:min-w-[155px] sticky top-0 z-30 ${
+                          isPublicView || isReferenceDay ? "" : "cursor-grab active:cursor-grabbing"
                         } ${
-                          isDragOver
+                          isDayComplete(dateYMD) && !isReferenceDay
+                            ? "border-x-2 border-t-2 border-emerald-500 shadow-xs"
+                            : "border-r border-slate-200 last:border-r-0"
+                        } ${
+                          isReferenceDay
+                            ? "bg-slate-100/90 text-slate-500 border-x-4 border-slate-300 shadow-inner"
+                            : isDragOver
                             ? "bg-indigo-100 text-indigo-900 border-indigo-400 ring-2 ring-indigo-400"
                             : isHolding
                             ? "bg-amber-200 text-amber-950 animate-pulse"
                             : isToday
                             ? "bg-indigo-50/80 text-indigo-900"
-                            : "hover:bg-slate-100/80"
+                            : "bg-slate-50 hover:bg-slate-100/80"
                         }`}
                       >
                         {/* Long Press Visual Indicator */}
-                        {isHolding && (
+                        {isHolding && !isReferenceDay && (
                           <div className="absolute top-0 left-0 right-0 h-1 bg-amber-500 animate-pulse" />
                         )}
 
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="uppercase text-[9px] font-black tracking-wider text-slate-500 group-hover:text-indigo-600">
+                        <div className={`flex flex-col items-center justify-center space-y-1.5 py-1 ${isReferenceDay ? 'opacity-80' : ''}`}>
+                          {isReferenceDay && (
+                            <span className="absolute -top-1 bg-slate-300 text-slate-700 text-[9px] px-2 py-0.5 rounded-b-md font-bold shadow-sm">RIFERIMENTO</span>
+                          )}
+                          <span className="uppercase text-[11px] font-black tracking-widest text-indigo-600/90 flex items-center gap-1 justify-center">
                             {getFullWeekdayName(day)}
                           </span>
-
-                          {!isPublicView && (
-                            <div className="flex items-center gap-1">
-                              {/* COPY DAY TO NEXT WEEK BUTTON */}
-                              <button
-                                type="button"
-                                onClick={(e) => handleCopyDayToNextWeek(dateYMD, e)}
-                                className="p-1 rounded bg-amber-100 hover:bg-amber-500 text-amber-800 hover:text-white transition-all text-[9px] font-bold flex items-center gap-0.5 shadow-2xs cursor-pointer z-10"
-                                title="Copia intero giorno nella settimana successiva (+7 gg)"
-                              >
-                                <Copy className="w-3 h-3" />
-                              </button>
-
-                              {/* TRASH ICON FOR ENTIRE DAY */}
-                              <button
-                                type="button"
-                                onClick={(e) => handleRequestDeleteDay(dateYMD, e)}
-                                className="p-1 rounded bg-rose-100 hover:bg-rose-600 text-rose-700 hover:text-white transition-all text-[9px] font-semibold flex items-center gap-0.5 shadow-2xs cursor-pointer z-10"
-                                title="Cancella tutti i turni di questo giorno"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          )}
+                          <div className={`text-sm sm:text-base font-extrabold tracking-tight ${isToday ? "text-indigo-800 bg-indigo-50 px-2.5 py-1 rounded-xl border border-indigo-200" : "text-slate-800"} flex items-center justify-center gap-1`}>
+                            {day.getDate()} {getFullMonthName(day)} {day.getFullYear()}
+                          </div>
                         </div>
 
-                        <div className={`text-base font-black ${isToday ? "text-indigo-600" : "text-slate-800"}`}>
-                          {day.getDate()} {getFullMonthName(day)}
-                        </div>
+                        {!isPublicView && !isReferenceDay && (
+                          <>
+                            {/* LOCK TOGGLE BUTTON */}
+                            <button
+                              type="button"
+                              onClick={(e) => toggleLockDay(dateYMD, e)}
+                              className="absolute top-2 left-2 p-1 rounded-lg transition-all duration-150 transform hover:scale-125 cursor-pointer z-40"
+                              title={lockedDays.includes(dateYMD) ? "Sblocca questo giorno" : "Blocca questo giorno per evitare modifiche accidentali"}
+                            >
+                              {lockedDays.includes(dateYMD) ? (
+                                <Lock className="w-4 h-4 text-rose-600 fill-rose-600/10" />
+                              ) : (
+                                <Unlock className="w-4 h-4 text-slate-400" />
+                              )}
+                            </button>
+
+                            {/* TRASH ICON FOR ENTIRE DAY */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                if (lockedDays.includes(dateYMD)) {
+                                  showToast("🔒 Giorno bloccato! Sbloccalo prima di cancellare.");
+                                  return;
+                                }
+                                handleRequestDeleteDay(dateYMD, e);
+                              }}
+                              className="absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-150 transform hover:scale-125 hover:shadow-md hover:ring-2 hover:ring-rose-300 bg-rose-100 hover:bg-rose-600 text-rose-700 hover:text-white cursor-pointer z-40"
+                              title="Cancella tutti i turni di questo giorno"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
+
+                        {isReferenceDay && (
+                          <div className="absolute top-2 left-2 p-1 z-40">
+                            <Lock className="w-4 h-4 text-slate-400 opacity-60" />
+                          </div>
+                        )}
 
                         <div className="text-[10px] text-slate-500 mt-0.5 font-medium flex items-center justify-center gap-1">
                           <Layers className="w-3 h-3 text-slate-400" />
@@ -1732,125 +2080,204 @@ function importaTurniResidenzaVannucci() {
                       }}
                       title={isPublicView ? `${member.nome} ${member.cognome} - ${member.ruolo}` : "Clicca per modificare la scheda e gli orari predefiniti"}
                     >
-                      <div className="flex items-center gap-2.5">
-                        <div
-                          className="w-8 h-8 rounded-full flex items-center justify-center font-extrabold text-white text-xs shadow-xs shrink-0"
-                          style={{ backgroundColor: member.coloreBadge }}
-                        >
-                          {member.nome[0]}{member.cognome[0]}
-                        </div>
-                        <div className="overflow-hidden">
-                          <div className="font-bold text-slate-900 text-xs flex items-center gap-1">
-                            <span>{member.nome} {member.cognome}</span>
-                            {!isPublicView && <Edit3 className="w-3 h-3 text-slate-400 opacity-0 group-hover/staff:opacity-100 transition-opacity" />}
+                      <div className="flex flex-col space-y-1.5">
+                        <div className="flex items-center gap-2.5">
+                          <div
+                            className="w-8 h-8 rounded-full flex items-center justify-center font-extrabold text-white text-xs shadow-xs shrink-0"
+                            style={{ backgroundColor: member.coloreBadge }}
+                          >
+                            {member.nome[0]}{member.cognome[0]}
                           </div>
-                          <div className="text-[10px] text-slate-500 truncate">{member.ruolo}</div>
+                          <div className="overflow-hidden">
+                            <div className="font-bold text-slate-900 text-xs flex items-center gap-1">
+                              <span>{member.nome} {member.cognome}</span>
+                              {!isPublicView && <Edit3 className="w-3 h-3 text-slate-400 opacity-0 group-hover/staff:opacity-100 transition-opacity" />}
+                            </div>
+                            <div className="text-[10px] text-slate-500 truncate hidden md:block">{member.ruolo}</div>
+                          </div>
+                        </div>
+
+                        {/* Real-time stats display in weekly view: separated weekly and monthly to prevent confusion */}
+                        <div className="flex flex-col gap-1 mt-1.5 pt-1.5 border-t border-slate-100">
+                          {/* WEEKLY HOURS & SHIFTS (PROMINENT) */}
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span className="text-[9px] font-black bg-amber-50 hover:bg-amber-100/80 text-amber-800 px-1.5 py-0.5 rounded border border-amber-200/80 flex items-center gap-0.5 shadow-2xs" title="Ore lavorate nella settimana visualizzata">
+                              ⏱️ Sett: {getMemberWeeklyStats(member.id).totalHours} ore ({getMemberWeeklyStats(member.id).shiftCount}T)
+                            </span>
+                          </div>
+                          
+                          {/* MONTHLY HOURS & REST DAYS */}
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span className="text-[9px] font-bold bg-indigo-50/80 text-indigo-700 px-1 rounded border border-indigo-100" title="Turni effettuati nel mese">
+                              Mese: {getMemberMonthlyStats(member.id).shiftCount}T
+                            </span>
+                            <span className="text-[9px] font-bold bg-emerald-50/80 text-emerald-700 px-1 rounded border border-emerald-100" title="Ore lavorate nel mese">
+                              {getMemberMonthlyStats(member.id).totalHours} ore
+                            </span>
+                            {hasRestDayInCurrentWeek(member.id) ? (
+                              <span className="text-[9px] font-bold bg-sky-50 text-sky-700 px-1 rounded border border-sky-100 flex items-center gap-0.5" title="Giorno di riposo presente nella settimana corrente">
+                                🏖️ Riposo OK
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-bold bg-rose-50 text-rose-700 px-1 rounded border border-rose-100 flex items-center gap-0.5 animate-pulse" title="NESSUN riposo pianificato nella settimana corrente!">
+                                ⚠️ No Riposo
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </td>
 
-                    {/* 7 Days Cells */}
+                    {/* 8 Days Cells (weekDays contains Previous Sunday + Mon-Sun) */}
                     {weekDays.map((day, dIdx) => {
                       const dateYMD = formatDateYMD(day);
                       const cellKey = `${member.id}_${dateYMD}`;
                       const isToday = dateYMD === todayStr;
                       const isDragOverCell = dragOverCellKey === cellKey;
                       const dayShifts = shifts.filter(s => s.staffId === member.id && s.data === dateYMD);
+                      
+                      const isReferenceDay = dIdx === 0; // Domenica precedente (riferimento)
+                      const isEffectivelyLocked = lockedDays.includes(dateYMD) || isReferenceDay;
 
                       return (
                         <td
                           key={dIdx}
                           onDoubleClick={() => {
-                            if (!isPublicView) handleOpenAddModal(member.id, dateYMD);
+                            if (isPublicView) return;
+                            if (isReferenceDay) {
+                              showToast("🗓️ Questo giorno è un riferimento della settimana precedente (Sola lettura).");
+                              return;
+                            }
+                            if (isEffectivelyLocked) {
+                              showToast("🔒 Questo giorno è completato e bloccato contro modifiche accidentali!");
+                              return;
+                            }
+                            handleOpenAddModal(member.id, dateYMD);
                           }}
                           onDragOver={(e) => {
-                            if (!isPublicView) handleDragOverCell(e, cellKey);
+                            if (!isPublicView && !isEffectivelyLocked) handleDragOverCell(e, cellKey);
                           }}
                           onDragLeave={handleDragLeaveCell}
                           onDrop={(e) => {
-                            if (!isPublicView) handleDropOnCell(e, member.id, dateYMD);
+                            if (!isPublicView && !isReferenceDay) handleDropOnCell(e, member.id, dateYMD);
                           }}
-                          className={`p-2 border-r border-slate-200 last:border-r-0 align-top h-24 transition-all relative group/cell ${
-                            isPublicView ? "" : "cursor-pointer"
+                          className={`p-2 transition-all relative group/cell h-24 align-top ${
+                            isPublicView || isReferenceDay ? "" : "cursor-pointer"
                           } ${
-                            isDragOverCell
+                            isDayComplete(dateYMD) && !isReferenceDay
+                              ? "border-x-2 border-emerald-500 shadow-2xs"
+                              : "border-r border-slate-200 last:border-r-0"
+                          } ${
+                            isReferenceDay
+                              ? "bg-slate-100/60 opacity-90"
+                              : isDragOverCell
                               ? "bg-indigo-100/70 border-2 border-indigo-500 shadow-inner"
                               : isToday
                               ? "bg-indigo-50/20"
                               : ""
                           }`}
-                          title={isPublicView ? `${member.nome} — Turni del giorno` : "Doppio clic per aggiungere un turno in questo giorno"}
+                          title={isPublicView ? `${member.nome} — Turni del giorno` : isReferenceDay ? "Giorno di riferimento (sola lettura)" : lockedDays.includes(dateYMD) ? "🔒 Questo giorno è bloccato!" : "Doppio clic per aggiungere un turno in questo giorno"}
                         >
                           <div className="flex flex-col h-full justify-between space-y-1">
-                            <div className="space-y-1.5">
-                              {dayShifts.map(s => (
+                            <div className={`space-y-1.5 ${isReferenceDay ? 'grayscale-[30%]' : ''}`}>
+                              {dayShifts.map(s => {
+                                const validity = checkShiftValidity(s);
+                                const isInvalid = !validity.valid && !isReferenceDay;
+                                return (
                                 <div
                                   key={s.id}
-                                  draggable={!isPublicView && s.tipoTurno !== "Ferie"}
+                                  draggable={!isPublicView && s.tipoTurno !== "Ferie" && !isEffectivelyLocked}
                                   onDragStart={(e) => {
-                                    if (!isPublicView && s.tipoTurno !== "Ferie") handleDragStartSingleShift(e, s);
+                                    if (!isPublicView && s.tipoTurno !== "Ferie" && !isReferenceDay) handleDragStartSingleShift(e, s);
                                   }}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleOpenDetailModal(s);
                                   }}
                                   className={`group/shift p-1.5 rounded-lg border text-[11px] font-bold transition-all shadow-2xs relative flex flex-col ${
-                                    isPublicView || s.tipoTurno === "Ferie" ? "cursor-pointer hover:shadow-md" : "cursor-grab active:cursor-grabbing"
-                                  } ${getShiftBadgeStyle(s.tipoTurno)} ${
+                                    isPublicView || s.tipoTurno === "Ferie" || isEffectivelyLocked ? "cursor-pointer hover:shadow-md" : "cursor-grab active:cursor-grabbing"
+                                  } ${getShiftBadgeStyle(s.tipoTurno, s.orarioInizio, s.orarioFine, s.struttura)} ${
                                     s.tipoTurno === "Ferie" ? "animate-pulse ring-2 ring-amber-500 ring-offset-1 border-amber-500 border-2" : ""
+                                  } ${
+                                    isInvalid ? "animate-pulse ring-4 ring-red-600 ring-offset-1 !border-red-600 !bg-red-100 !text-red-900" : ""
                                   }`}
-                                  title={isPublicView ? `${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine}) - Clicca per dettagli` : s.tipoTurno === "Ferie" ? "Ferie inamovibili - Clicca per dettagli" : "Trascina per spostare o duplicare, oppure clicca per dettagli"}
+                                  title={isInvalid ? `⚠️ ERRORE: ${validity.reason}` : isPublicView ? `${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine}) - Clicca per dettagli` : s.tipoTurno === "Ferie" ? "Ferie inamovibili - Clicca per dettagli" : isReferenceDay ? "Turno di riferimento - Clicca per dettagli" : lockedDays.includes(dateYMD) ? "Giorno bloccato - Clicca per dettagli" : "Trascina per spostare o duplicare, oppure clicca per dettagli"}
                                 >
                                   {/* Shift Header & Trash Hover Button */}
                                   <div className="flex items-center justify-between gap-1">
                                     <div className="flex items-center gap-1">
-                                      {!isPublicView && <GripVertical className="w-3 h-3 text-slate-400 group-hover/shift:text-indigo-600 transition-colors" />}
+                                      {!isPublicView && !isEffectivelyLocked && <GripVertical className={`w-3 h-3 ${isInvalid ? 'text-red-500' : 'text-slate-400 group-hover/shift:text-indigo-600'} transition-colors`} />}
                                       <span>{s.tipoTurno}</span>
                                     </div>
 
-                                    <div className="flex items-center gap-1">
-                                      {s.tipoTurno === "Mattina" && <Sun className="w-3 h-3 text-amber-600" />}
-                                      {s.tipoTurno === "Pomeriggio" && <Sunset className="w-3 h-3 text-indigo-600" />}
-                                      {s.tipoTurno === "Notte" && <Moon className="w-3 h-3 text-purple-300" />}
+                                    <div className="flex items-center gap-1.5">
+                                      {isInvalid && (
+                                        <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
+                                      )}
+                                      {s.tipoTurno === "Mattina" && <Sun className="w-5.5 h-5.5 text-amber-500 animate-spin-slow" />}
+                                      {s.tipoTurno === "Pomeriggio" && <Sunset className="w-5.5 h-5.5 text-indigo-500" />}
+                                      {s.tipoTurno === "Notte" && <Moon className="w-5.5 h-5.5 text-slate-400" />}
+                                      {s.note && s.note.trim().length > 0 && s.note !== "Programmazione automatica" && (
+                                        <span className="relative flex h-2.5 w-2.5 ml-0.5" title={`Nota: ${s.note}`}>
+                                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-600"></span>
+                                        </span>
+                                      )}
 
                                       {!isPublicView && (
                                         <>
-                                          {/* HOVER COPY BUTTON FOR SINGLE SHIFT */}
-                                          <button
-                                            type="button"
-                                            onClick={(e) => handleCopySingleShift(s, e)}
-                                            className="p-1 rounded bg-amber-500 hover:bg-amber-600 text-white opacity-0 group-hover/shift:opacity-100 transition-opacity shadow-xs z-10"
-                                            title="Copia questo singolo turno nel giorno successivo"
-                                          >
-                                            <Copy className="w-3 h-3" />
-                                          </button>
-
-                                          {/* HOVER TRASH ICON FOR SINGLE SHIFT */}
-                                          <button
-                                            type="button"
-                                            onClick={(e) => handleDeleteSingleShift(s.id, e)}
-                                            className="p-1 rounded bg-rose-600 hover:bg-rose-700 text-white opacity-0 group-hover/shift:opacity-100 transition-opacity shadow-xs z-10"
-                                            title="Elimina questo singolo turno"
-                                          >
-                                            <Trash2 className="w-3 h-3" />
-                                          </button>
+                                          {/* HOVER TRASH ICON FOR SINGLE SHIFT (SHOW LOCK IF DAY IS LOCKED) */}
+                                          {lockedDays.includes(dateYMD) ? (
+                                            <span className="p-1 rounded bg-slate-100 text-slate-500 opacity-0 group-hover/shift:opacity-100 transition-all duration-150" title="Questo giorno è completato e bloccato">
+                                              <Lock className="w-3.5 h-3.5 text-emerald-600" />
+                                            </span>
+                                          ) : (
+                                            <button
+                                              type="button"
+                                              onClick={(e) => handleDeleteSingleShift(s.id, e)}
+                                              className="p-1 rounded bg-rose-600 hover:bg-rose-700 text-white opacity-0 group-hover/shift:opacity-100 transition-all duration-150 shadow-xs z-10 cursor-pointer transform hover:scale-110"
+                                              title="Elimina questo singolo turno"
+                                            >
+                                              <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                          )}
                                         </>
                                       )}
                                     </div>
                                   </div>
 
-                                  <div className="flex items-center justify-between text-[9px] font-mono opacity-80 mt-0.5">
+                                  <div className="flex items-center justify-between text-[9px] font-mono opacity-90 mt-0.5 border-t border-black/5 pt-1">
                                     <span>{s.orarioInizio} - {s.orarioFine}</span>
+                                    {s.struttura && s.tipoTurno !== "Notte" && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie" && (
+                                      <span className="bg-white/95 text-slate-800 px-2 py-1 rounded-md text-[9px] font-extrabold border border-black/10 uppercase tracking-tight flex items-center gap-1 shadow-3xs">
+                                        {(s.struttura === "Vannucci 1" || s.struttura === "Struttura 1") ? (
+                                          <span>Vannucci <strong className="text-[15px] sm:text-[17px] font-black text-orange-600 leading-none">1</strong></span>
+                                        ) : (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2") ? (
+                                          <span>Vannucci <strong className="text-[15px] sm:text-[17px] font-black text-yellow-600 leading-none">2</strong></span>
+                                        ) : (
+                                          <span>Vannucci <strong className="text-[15px] sm:text-[17px] font-black text-emerald-600 leading-none">3</strong></span>
+                                        )}
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
-                              ))}
+                              );
+                            })}
                             </div>
 
                             {/* SUBTLE HOVER ADD ICON FOR CELL (DOUBLE-CLICK PRIMARY) */}
-                            {!isPublicView && dayShifts.length === 0 && (
-                              <div className="h-full min-h-[50px] flex items-center justify-center text-slate-300 group-hover/cell:text-indigo-500 transition-colors">
-                                <Plus className="w-4 h-4 opacity-0 group-hover/cell:opacity-100 transition-opacity" />
-                              </div>
+                            {!isPublicView && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenAddModal(member.id, dateYMD);
+                                }}
+                                className="absolute bottom-1.5 right-1.5 p-1 rounded-full bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-400 opacity-40 sm:opacity-0 group-hover/cell:opacity-100 transition-all cursor-pointer z-20 shadow-3xs flex items-center justify-center border border-slate-200"
+                                title="Aggiungi Turno"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                              </button>
                             )}
                           </div>
                         </td>
@@ -1862,11 +2289,64 @@ function importaTurniResidenzaVannucci() {
             </table>
           </div>
         </div>
+      </div>
       )}
 
       {/* MONTHLY CALENDAR MATRIX VIEW (Staff × Days of Month) */}
       {viewMode === "month" && (
-        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden relative group/calendar">
+        <div className={isFullScreen ? "fixed inset-0 z-45 bg-slate-50 p-4 sm:p-6 overflow-auto flex flex-col h-screen" : ""}>
+          {isFullScreen && (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-indigo-900 text-white p-4 rounded-xl mb-4 shadow-md shrink-0 gap-3">
+              <div className="flex items-center gap-3">
+                <span className="p-2 bg-indigo-800 rounded-lg">
+                  <span className="font-extrabold text-xs sm:text-sm">🖥️ Modalità Tutto Schermo (Mensile)</span>
+                </span>
+                <div>
+                  <h3 className="font-bold text-xs sm:text-sm">Gestionale — Tabella dei Turni</h3>
+                  <p className="text-[10px] sm:text-[11px] text-indigo-200">Stai lavorando in modalità focalizzata a tutto schermo</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 self-stretch sm:self-auto justify-between sm:justify-end">
+                <button
+                  onClick={handlePrevMonth}
+                  className="px-3 py-1.5 bg-indigo-800 hover:bg-indigo-700 border border-indigo-600 text-white rounded-lg text-[10px] sm:text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                  title="Mese Precedente"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5 stroke-[3px]" />
+                  <span>Prec.</span>
+                </button>
+                
+                <button
+                  onClick={() => setCurrentDate(new Date())}
+                  className="px-3 py-1.5 bg-indigo-950 hover:bg-indigo-900 border border-indigo-700 text-white rounded-lg text-[10px] sm:text-xs font-bold transition-all cursor-pointer"
+                  title="Vai a oggi"
+                >
+                  Oggi
+                </button>
+
+                <button
+                  onClick={handleNextMonth}
+                  className="px-3 py-1.5 bg-indigo-800 hover:bg-indigo-700 border border-indigo-600 text-white rounded-lg text-[10px] sm:text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                  title="Mese Successivo"
+                >
+                  <span>Succ.</span>
+                  <ChevronRight className="w-3.5 h-3.5 stroke-[3px]" />
+                </button>
+
+                <span className="text-[10px] sm:text-xs font-semibold bg-indigo-800 px-3 py-1.5 rounded-lg border border-indigo-700 whitespace-nowrap">
+                  Mese di {getFullMonthName(currentDate).toUpperCase()} {currentDate.getFullYear()}
+                </span>
+                
+                <button
+                  onClick={() => setIsFullScreen(false)}
+                  className="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer shadow flex items-center gap-1.5"
+                >
+                  <span>Esci Schermo Intero ✖</span>
+                </button>
+              </div>
+            </div>
+          )}
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden relative group/calendar flex-1 flex flex-col">
           
           {/* FLOATING DRAG & CLICK EDGE ZONES FOR PREV/NEXT MONTH (0px LAYOUT IMPACT) */}
           <div
@@ -1928,7 +2408,7 @@ function importaTurniResidenzaVannucci() {
                     return (
                       <th
                         key={idx}
-                        draggable={true}
+                        draggable={!lockedDays.includes(dateYMD)}
                         onDragStart={(e) => handleDragStartDay(e, dateYMD)}
                         onDragOver={(e) => {
                           e.preventDefault();
@@ -1940,7 +2420,11 @@ function importaTurniResidenzaVannucci() {
                         onMouseUp={handleMouseUpDay}
                         onTouchStart={(e) => handleMouseDownDay(dateYMD, e)}
                         onTouchEnd={handleMouseUpDay}
-                        className={`p-0.5 text-center border-r border-slate-200 last:border-r-0 cursor-grab active:cursor-grabbing transition-all select-none relative group/mhead sticky top-0 z-30 bg-slate-50 ${
+                        className={`p-0.5 text-center cursor-grab active:cursor-grabbing transition-all select-none relative group/mhead sticky top-0 z-30 ${
+                          isDayComplete(dateYMD)
+                            ? "border-x-2 border-t-2 border-emerald-500 z-10 shadow-xs"
+                            : "border-r border-slate-200 last:border-r-0"
+                        } ${
                           isDragOver
                             ? "bg-indigo-100 text-indigo-900 border-indigo-400 ring-2 ring-indigo-400 z-10"
                             : isHolding
@@ -1949,7 +2433,7 @@ function importaTurniResidenzaVannucci() {
                             ? "bg-indigo-100 text-indigo-900 border-indigo-300"
                             : isWeekend
                             ? "bg-amber-50/80 text-amber-950"
-                            : "hover:bg-slate-100/80"
+                            : "bg-slate-50 hover:bg-slate-100/80"
                         }`}
                         title={`Giorno ${day.getDate()} ${getFullMonthName(day)} (${dayShiftsCount} turni). Trascina per spostare o duplicare l'intero giorno.`}
                       >
@@ -1958,7 +2442,7 @@ function importaTurniResidenzaVannucci() {
                           <div className="absolute top-0 left-0 right-0 h-1 bg-amber-500 animate-pulse" />
                         )}
 
-                        <div className="text-[8px] font-black uppercase text-slate-400 group-hover/mhead:text-indigo-600">
+                        <div className="text-[8px] font-black uppercase text-slate-400 group-hover/mhead:text-indigo-600 flex items-center justify-center gap-0.5">
                           {day.toLocaleDateString("it-IT", { weekday: "narrow" })}
                         </div>
 
@@ -1968,24 +2452,37 @@ function importaTurniResidenzaVannucci() {
 
                         {/* Action buttons on hover */}
                         {!isPublicView && (
-                          <div className="flex items-center justify-center gap-0.5 opacity-0 group-hover/mhead:opacity-100 transition-opacity">
+                          <>
+                            {/* LOCK TOGGLE BUTTON (ALWAYS VISIBLE, RED CLOSED WHEN LOCKED, GRAY OPEN WHEN UNLOCKED) */}
                             <button
                               type="button"
-                              onClick={(e) => handleCopyDayToNextWeek(dateYMD, e)}
-                              className="p-0.5 rounded bg-amber-100 hover:bg-amber-500 text-amber-800 hover:text-white transition-all text-[8px] font-bold shadow-2xs cursor-pointer z-10"
-                              title="Copia intero giorno (+7 gg)"
+                              onClick={(e) => toggleLockDay(dateYMD, e)}
+                              className="absolute top-1 left-1 p-0.5 rounded-sm transition-all duration-150 transform hover:scale-125 cursor-pointer z-40"
+                              title={lockedDays.includes(dateYMD) ? "Sblocca questo giorno" : "Blocca questo giorno"}
                             >
-                              <Copy className="w-2 h-2" />
+                              {lockedDays.includes(dateYMD) ? (
+                                <Lock className="w-3 h-3 text-rose-600 fill-rose-600/10" />
+                              ) : (
+                                <Unlock className="w-3 h-3 text-slate-400" />
+                              )}
                             </button>
+
+                            {/* TRASH ICON (ONLY SHOWN ON HOVER, HIGHLIGHT ON HOVER) */}
                             <button
                               type="button"
-                              onClick={(e) => handleRequestDeleteDay(dateYMD, e)}
-                              className="p-0.5 rounded bg-rose-100 hover:bg-rose-600 text-rose-700 hover:text-white transition-all text-[8px] font-semibold shadow-2xs cursor-pointer z-10"
+                              onClick={(e) => {
+                                if (lockedDays.includes(dateYMD)) {
+                                  showToast("🔒 Questo giorno è bloccato!");
+                                  return;
+                                }
+                                handleRequestDeleteDay(dateYMD, e);
+                              }}
+                              className="absolute top-1 right-1 p-0.5 rounded-sm opacity-0 group-hover/mhead:opacity-100 transition-all duration-150 transform hover:scale-125 hover:shadow-md hover:ring-1 hover:ring-rose-300 bg-rose-100 hover:bg-rose-600 text-rose-700 hover:text-white cursor-pointer z-40"
                               title="Cancella turni del giorno"
                             >
-                              <Trash2 className="w-2 h-2" />
+                              <Trash2 className="w-2.5 h-2.5" />
                             </button>
-                          </div>
+                          </>
                         )}
                       </th>
                     );
@@ -2017,7 +2514,16 @@ function importaTurniResidenzaVannucci() {
                           <div className="font-bold text-slate-900 text-[10px] sm:text-xs truncate">
                             {member.nome} {member.cognome[0]}.
                           </div>
-                          <div className="text-[8px] text-slate-400 truncate hidden sm:block">{member.ruolo}</div>
+                          <div className="text-[8px] text-slate-400 truncate hidden md:block">{member.ruolo}</div>
+                          {/* Compact real-time stats in monthly view */}
+                          <div className="mt-1 flex flex-col gap-0.5 text-[8px] font-bold">
+                            <span className="text-[8px] text-indigo-700 bg-indigo-50/85 px-1 py-0.2 rounded border border-indigo-100 whitespace-nowrap">
+                              📅 {getMemberMonthlyStats(member.id).shiftCount} turni
+                            </span>
+                            <span className="text-[8px] text-emerald-700 bg-emerald-50/85 px-1 py-0.2 rounded border border-emerald-100 whitespace-nowrap">
+                              ⏱️ {getMemberMonthlyStats(member.id).totalHours} ore
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -2035,17 +2541,26 @@ function importaTurniResidenzaVannucci() {
                         <td
                           key={dIdx}
                           onDoubleClick={() => {
-                            if (!isPublicView) handleOpenAddModal(member.id, dateYMD);
+                            if (isPublicView) return;
+                            if (lockedDays.includes(dateYMD)) {
+                              showToast("🔒 Questo giorno è completato e bloccato contro modifiche accidentali!");
+                              return;
+                            }
+                            handleOpenAddModal(member.id, dateYMD);
                           }}
                           onDragOver={(e) => {
-                            if (!isPublicView) handleDragOverCell(e, cellKey);
+                            if (!isPublicView && !lockedDays.includes(dateYMD)) handleDragOverCell(e, cellKey);
                           }}
                           onDragLeave={handleDragLeaveCell}
                           onDrop={(e) => {
                             if (!isPublicView) handleDropOnCell(e, member.id, dateYMD);
                           }}
-                          className={`p-0.5 border-r border-slate-200 last:border-r-0 align-middle h-10 text-center transition-all relative group/cell ${
+                          className={`p-0.5 transition-all relative group/cell text-center align-middle h-10 ${
                             isPublicView ? "" : "cursor-pointer"
+                          } ${
+                            isDayComplete(dateYMD)
+                              ? "border-x-2 border-emerald-500 shadow-2xs"
+                              : "border-r border-slate-200 last:border-r-0"
                           } ${
                             isDragOverCell
                               ? "bg-indigo-100 border-2 border-indigo-500 shadow-inner"
@@ -2055,7 +2570,7 @@ function importaTurniResidenzaVannucci() {
                               ? "bg-amber-50/20"
                               : ""
                           }`}
-                          title={`${member.nome}: ${dayShifts.length ? dayShifts.map(s => `${s.tipoTurno} (${s.orarioInizio}-${s.orarioFine})`).join(", ") : "Nessun turno"}.`}
+                          title={lockedDays.includes(dateYMD) ? `🔒 ${member.nome}: Giorno Bloccato` : `${member.nome}: ${dayShifts.length ? dayShifts.map(s => `${s.tipoTurno} (${s.orarioInizio}-${s.orarioFine})`).join(", ") : "Nessun turno"}.`}
                         >
                           <div className="flex flex-wrap items-center justify-center gap-0.5 h-full">
                             {dayShifts.length > 0 ? (
@@ -2067,12 +2582,12 @@ function importaTurniResidenzaVannucci() {
                                 else if (s.tipoTurno === "Reperibilità") badgeText = "R";
                                 else if (s.tipoTurno === "Riposo") badgeText = "💤";
 
-                                const badgeStyle = getShiftBadgeStyle(s.tipoTurno, s.orarioInizio, s.orarioFine);
+                                const badgeStyle = getShiftBadgeStyle(s.tipoTurno, s.orarioInizio, s.orarioFine, s.struttura);
 
                                 return (
                                   <div
                                     key={s.id}
-                                    draggable={!isPublicView && s.tipoTurno !== "Ferie"}
+                                    draggable={!isPublicView && s.tipoTurno !== "Ferie" && !lockedDays.includes(dateYMD)}
                                     onDragStart={(e) => {
                                       if (!isPublicView && s.tipoTurno !== "Ferie") handleDragStartSingleShift(e, s);
                                     }}
@@ -2080,22 +2595,33 @@ function importaTurniResidenzaVannucci() {
                                       e.stopPropagation();
                                       handleOpenDetailModal(s);
                                     }}
-                                    className={`px-0.5 py-0.5 rounded text-[9px] font-black border shadow-2xs hover:scale-110 transition-transform flex items-center justify-center min-w-[16px] ${
-                                      isPublicView || s.tipoTurno === "Ferie" ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"
+                                    className={`px-0.5 py-0.5 rounded text-[9px] font-black border shadow-2xs hover:scale-110 transition-transform flex items-center justify-center min-w-[16px] relative ${
+                                      isPublicView || s.tipoTurno === "Ferie" || lockedDays.includes(dateYMD) ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"
                                     } ${badgeStyle} ${
                                       s.tipoTurno === "Ferie" ? "animate-pulse ring-1 ring-amber-500 border-amber-500 border-2" : ""
                                     }`}
-                                    title={s.tipoTurno === "Ferie" ? `Ferie inamovibili - Clicca per dettagli` : `${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine}) - Clicca per dettagli`}
+                                    title={s.tipoTurno === "Ferie" ? `Ferie inamovibili - Clicca per dettagli` : lockedDays.includes(dateYMD) ? `Giorno Bloccato: ${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine})` : `${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine}) - Clicca per dettagli`}
                                   >
                                     {badgeText}
+                                    {s.note && s.note.trim().length > 0 && s.note !== "Programmazione automatica" && (
+                                      <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-rose-600 rounded-full border border-white" title={`Nota: ${s.note}`} />
+                                    )}
                                   </div>
                                 );
                               })
                             ) : (
-                              !isPublicView && (
-                                <span className="text-[9px] text-slate-300 opacity-0 group-hover/cell:opacity-100 transition-opacity font-bold">
+                              !isPublicView && !lockedDays.includes(dateYMD) && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenAddModal(member.id, dateYMD);
+                                  }}
+                                  className="w-5 h-5 rounded-full bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-400 opacity-40 sm:opacity-0 group-hover/cell:opacity-100 transition-all flex items-center justify-center font-bold text-xs cursor-pointer shadow-3xs"
+                                  title="Aggiungi Turno"
+                                >
                                   +
-                                </span>
+                                </button>
                               )
                             )}
                           </div>
@@ -2108,6 +2634,7 @@ function importaTurniResidenzaVannucci() {
             </table>
           </div>
         </div>
+      </div>
       )}
 
       {/* ROSTER / OPERATOR CARDS VIEW */}
@@ -2221,10 +2748,10 @@ function importaTurniResidenzaVannucci() {
                       <div
                         key={s.id}
                         onClick={() => handleOpenDetailModal(s)}
-                        className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center justify-between cursor-pointer ${getShiftBadgeStyle(s.tipoTurno)}`}
+                        className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center justify-between cursor-pointer ${getShiftBadgeStyle(s.tipoTurno, s.orarioInizio, s.orarioFine, s.struttura)}`}
                       >
                         <div>
-                          <span>{s.tipoTurno} • {s.data}</span>
+                          <span>{s.tipoTurno} • {formatItalianDateString(s.data)} {s.struttura ? `(${s.struttura})` : ""}</span>
                           <div className="text-[10px] font-mono opacity-80">{s.orarioInizio} - {s.orarioFine}</div>
                         </div>
                         <Trash2
@@ -2258,136 +2785,309 @@ function importaTurniResidenzaVannucci() {
 
             <form onSubmit={handleFormSubmit} className="space-y-4 text-xs">
               
-              {/* Select Staff Member */}
-              <div>
-                <label className="block font-semibold mb-1">Operatore *</label>
-                <select
-                  value={newStaffId}
-                  onChange={e => {
-                    setNewStaffId(e.target.value);
-                    handleSelectPreset(newTipoTurno, e.target.value);
-                  }}
-                  className="w-full border p-2.5 rounded-xl font-medium bg-slate-50 focus:bg-white"
-                >
-                  {staff.map(s => (
-                    <option key={s.id} value={s.id}>{s.nome} {s.cognome} ({s.ruolo})</option>
-                  ))}
-                </select>
+              {/* Informazione Operatore - locked/evidenziato */}
+              <div className="bg-indigo-600/10 border-2 border-indigo-500/30 p-4 rounded-2xl flex items-center justify-between shadow-xs">
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-indigo-700 block mb-1">Collaboratore Individuato</span>
+                  <span className="text-xl font-extrabold text-indigo-950 block leading-none">
+                    {staff.find(st => st.id === newStaffId) ? `${staff.find(st => st.id === newStaffId)?.nome} ${staff.find(st => st.id === newStaffId)?.cognome}` : "Operatore"}
+                  </span>
+                  <span className="text-xs font-semibold text-slate-500 block mt-1 uppercase tracking-wide">
+                    💼 {staff.find(st => st.id === newStaffId)?.ruolo || "Staff"}
+                  </span>
+                </div>
+                <div className="w-12 h-12 rounded-full bg-indigo-600 text-white font-black flex items-center justify-center text-base border-2 border-white shadow-md uppercase">
+                  {(() => {
+                    const activeStaff = staff.find(st => st.id === newStaffId);
+                    return activeStaff ? `${activeStaff.nome.charAt(0)}${activeStaff.cognome.charAt(0)}` : "OP";
+                  })()}
+                </div>
               </div>
 
-              {/* Select Date */}
-              <div>
-                <label className="block font-semibold mb-1">Data Turno *</label>
-                <input
-                  type="date"
-                  required
-                  value={newDate}
-                  onChange={e => setNewDate(e.target.value)}
-                  className="w-full border p-2.5 rounded-xl font-medium bg-slate-50 focus:bg-white"
-                />
+              {/* Data del Turno - Grande e per esteso */}
+              <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-2xl text-center shadow-3xs">
+                <span className="text-[10px] font-black uppercase tracking-widest text-amber-800 block mb-1">Data Turno</span>
+                <span className="text-base font-extrabold text-slate-800 block capitalize">
+                  📅 {formatItalianVerbalDate(newDate)}
+                </span>
+              </div>
+
+              {/* Scelta Struttura - tre pulsanti indipendenti con colori specifici */}
+              <div className="space-y-1.5">
+                <label className="block font-black text-slate-700 tracking-wide uppercase text-[10px]">Struttura di Assegnazione *</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(() => {
+                    const sat1 = isStrutturaSatura("Vannucci 1", newDate);
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => !sat1 && setNewStruttura("Vannucci 1")}
+                        disabled={sat1}
+                        title={sat1 ? "Struttura satura (Mattina e Pomeriggio già assegnati)" : ""}
+                        className={`p-3 rounded-xl border font-black transition-all text-center text-xs flex flex-col items-center justify-center ${
+                          sat1 ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400 grayscale" :
+                          "cursor-pointer " + (newStruttura === "Vannucci 1"
+                            ? "bg-orange-500 text-white border-orange-600 ring-4 ring-orange-500/20 scale-102"
+                            : "bg-orange-50/50 text-orange-950 border-orange-200 hover:bg-orange-100")
+                        }`}
+                      >
+                        <span className="text-[11px]">Vannucci</span>
+                        <strong className="text-base font-black leading-none">1</strong>
+                      </button>
+                    );
+                  })()}
+                  {(() => {
+                    const sat2 = isStrutturaSatura("Vannucci 2", newDate);
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => !sat2 && setNewStruttura("Vannucci 2")}
+                        disabled={sat2}
+                        title={sat2 ? "Struttura satura (Mattina e Pomeriggio già assegnati)" : ""}
+                        className={`p-3 rounded-xl border font-black transition-all text-center text-xs flex flex-col items-center justify-center ${
+                          sat2 ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400 grayscale" :
+                          "cursor-pointer " + (newStruttura === "Vannucci 2"
+                            ? "bg-yellow-400 text-yellow-950 border-yellow-500 ring-4 ring-yellow-400/25 scale-102"
+                            : "bg-yellow-50/50 text-yellow-950 border-yellow-200 hover:bg-yellow-100")
+                        }`}
+                      >
+                        <span className="text-[11px]">Vannucci</span>
+                        <strong className="text-base font-black leading-none">2</strong>
+                      </button>
+                    );
+                  })()}
+                  {(() => {
+                    const sat3 = isStrutturaSatura("Vannucci 3", newDate);
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => !sat3 && setNewStruttura("Vannucci 3")}
+                        disabled={sat3}
+                        title={sat3 ? "Struttura satura (Mattina e Pomeriggio già assegnati)" : ""}
+                        className={`p-3 rounded-xl border font-black transition-all text-center text-xs flex flex-col items-center justify-center ${
+                          sat3 ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400 grayscale" :
+                          "cursor-pointer " + (newStruttura === "Vannucci 3"
+                            ? "bg-emerald-600 text-white border-emerald-700 ring-4 ring-emerald-600/20 scale-102"
+                            : "bg-emerald-50/50 text-emerald-950 border-emerald-200 hover:bg-emerald-100")
+                        }`}
+                      >
+                        <span className="text-[11px]">Vannucci</span>
+                        <strong className="text-base font-black leading-none">3</strong>
+                      </button>
+                    );
+                  })()}
+                </div>
               </div>
 
               {/* Shift Presets */}
-              <div>
-                <label className="block font-semibold mb-1.5">Tipo Turno (Seleziona Preset)</label>
-                <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-1.5">
+                <label className="block font-black text-slate-700 tracking-wide uppercase text-[10px]">Preset Orario e Turno *</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(() => {
+                    const v714 = checkPotentialShiftValidity(newStaffId, newDate, "Mattina", newStruttura, "07:00", "14:00");
+                    const v1421 = checkPotentialShiftValidity(newStaffId, newDate, "Pomeriggio", newStruttura, "14:00", "21:00");
+                    const v815 = checkPotentialShiftValidity(newStaffId, newDate, "Mattina", newStruttura, "08:00", "15:00");
+                    const v1523 = checkPotentialShiftValidity(newStaffId, newDate, "Pomeriggio", newStruttura, "15:00", "23:00");
+                    const v711 = checkPotentialShiftValidity(newStaffId, newDate, "Mattina", newStruttura, "07:00", "11:00");
+                    const vNotte = checkPotentialShiftValidity(newStaffId, newDate, "Notte", newStruttura, "21:00", "07:00");
+                    
+                    return (
+                      <>
+                        {/* 7-14 */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!v714.valid) return;
+                            setNewTipoTurno("Mattina");
+                            setNewOrarioInizio("07:00");
+                            setNewOrarioFine("14:00");
+                          }}
+                          disabled={!v714.valid}
+                          title={v714.reason}
+                          className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                            !v714.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
+                            "cursor-pointer " + (newTipoTurno === "Mattina" && newOrarioInizio === "07:00" && newOrarioFine === "14:00"
+                              ? newStruttura === "Vannucci 1"
+                                ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
+                                : newStruttura === "Vannucci 2"
+                                ? "bg-yellow-400 border-yellow-500 text-yellow-950 ring-4 ring-yellow-400/25"
+                                : "bg-emerald-600 border-emerald-700 text-white ring-4 ring-emerald-600/20"
+                              : "bg-slate-50 border-slate-200 hover:bg-slate-100")
+                          }`}
+                        >
+                          <span className="font-extrabold text-[12px]">🌅 7-14</span>
+                          <span className="text-[9px] opacity-75 font-normal">Mattina standard</span>
+                        </button>
+
+                        {/* 14-21 */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!v1421.valid) return;
+                            setNewTipoTurno("Pomeriggio");
+                            setNewOrarioInizio("14:00");
+                            setNewOrarioFine("21:00");
+                          }}
+                          disabled={!v1421.valid}
+                          title={v1421.reason}
+                          className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                            !v1421.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
+                            "cursor-pointer " + (newTipoTurno === "Pomeriggio" && newOrarioInizio === "14:00" && newOrarioFine === "21:00"
+                              ? newStruttura === "Vannucci 1"
+                                ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
+                                : newStruttura === "Vannucci 2"
+                                ? "bg-yellow-400 border-yellow-500 text-yellow-950 ring-4 ring-yellow-400/25"
+                                : "bg-emerald-600 border-emerald-700 text-white ring-4 ring-emerald-600/20"
+                              : "bg-slate-50 border-slate-200 hover:bg-slate-100")
+                          }`}
+                        >
+                          <span className="font-extrabold text-[12px]">🌆 14-21</span>
+                          <span className="text-[9px] opacity-75 font-normal">Pomeriggio standard</span>
+                        </button>
+
+                        {/* 8-15 */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!v815.valid) return;
+                            setNewTipoTurno("Mattina");
+                            setNewOrarioInizio("08:00");
+                            setNewOrarioFine("15:00");
+                          }}
+                          disabled={!v815.valid}
+                          title={v815.reason}
+                          className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                            !v815.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
+                            "cursor-pointer " + (newTipoTurno === "Mattina" && newOrarioInizio === "08:00" && newOrarioFine === "15:00"
+                              ? newStruttura === "Vannucci 1"
+                                ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
+                                : newStruttura === "Vannucci 2"
+                                ? "bg-yellow-400 border-yellow-500 text-yellow-950 ring-4 ring-yellow-400/25"
+                                : "bg-emerald-600 border-emerald-700 text-white ring-4 ring-emerald-600/20"
+                              : "bg-slate-50 border-slate-200 hover:bg-slate-100")
+                          }`}
+                        >
+                          <span className="font-extrabold text-[12px]">🌅 8-15</span>
+                          <span className="text-[9px] opacity-75 font-normal">Mattina posticipato</span>
+                        </button>
+
+                        {/* 15-23 */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!v1523.valid) return;
+                            setNewTipoTurno("Pomeriggio");
+                            setNewOrarioInizio("15:00");
+                            setNewOrarioFine("23:00");
+                          }}
+                          disabled={!v1523.valid}
+                          title={v1523.reason}
+                          className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                            !v1523.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
+                            "cursor-pointer " + (newTipoTurno === "Pomeriggio" && newOrarioInizio === "15:00" && newOrarioFine === "23:00"
+                              ? newStruttura === "Vannucci 1"
+                                ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
+                                : newStruttura === "Vannucci 2"
+                                ? "bg-yellow-400 border-yellow-500 text-yellow-950 ring-4 ring-yellow-400/25"
+                                : "bg-emerald-600 border-emerald-700 text-white ring-4 ring-emerald-600/20"
+                              : "bg-slate-50 border-slate-200 hover:bg-slate-100")
+                          }`}
+                        >
+                          <span className="font-extrabold text-[12px]">🌆 15-23</span>
+                          <span className="text-[9px] opacity-75 font-normal">Pomeriggio prolungato</span>
+                        </button>
+
+                        {/* 7-11 */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!v711.valid) return;
+                            setNewTipoTurno("Mattina");
+                            setNewOrarioInizio("07:00");
+                            setNewOrarioFine("11:00");
+                          }}
+                          disabled={!v711.valid}
+                          title={v711.reason}
+                          className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                            !v711.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
+                            "cursor-pointer " + (newTipoTurno === "Mattina" && newOrarioInizio === "07:00" && newOrarioFine === "11:00"
+                              ? newStruttura === "Vannucci 1"
+                                ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
+                                : newStruttura === "Vannucci 2"
+                                ? "bg-yellow-400 border-yellow-500 text-yellow-950 ring-4 ring-yellow-400/25"
+                                : "bg-emerald-600 border-emerald-700 text-white ring-4 ring-emerald-600/20"
+                              : "bg-slate-50 border-slate-200 hover:bg-slate-100")
+                          }`}
+                        >
+                          <span className="font-extrabold text-[12px]">🌅 7-11</span>
+                          <span className="text-[9px] opacity-75 font-normal">Mattina breve</span>
+                        </button>
+
+                        {/* Notte */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!vNotte.valid) return;
+                            setNewTipoTurno("Notte");
+                            setNewOrarioInizio("21:00");
+                            setNewOrarioFine("07:00");
+                          }}
+                          disabled={!vNotte.valid}
+                          title={vNotte.reason}
+                          className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                            !vNotte.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
+                            "cursor-pointer " + (newTipoTurno === "Notte" ? "bg-slate-900 border-slate-950 text-white ring-4 ring-slate-800/80" : "bg-slate-50 border-slate-200 hover:bg-slate-100")
+                          }`}
+                        >
+                          <span className="font-extrabold text-[12px]">🌙 Notte 21-07</span>
+                          <span className="text-[9px] opacity-75 font-normal text-slate-300">Unificato nero</span>
+                        </button>
+                      </>
+                    );
+                  })()}
+
+                  {/* Riposo */}
                   <button
                     type="button"
-                    onClick={() => handleSelectPreset("Mattina")}
-                    className={`p-2 rounded-xl border text-center font-bold transition-all ${
-                      newTipoTurno === "Mattina" ? "bg-amber-100 border-amber-400 text-amber-900 ring-2 ring-amber-400" : "bg-slate-50 border-slate-200 hover:bg-slate-100"
+                    onClick={() => {
+                      setNewTipoTurno("Riposo");
+                      setNewOrarioInizio("00:00");
+                      setNewOrarioFine("00:00");
+                    }}
+                    className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
+                      newTipoTurno === "Riposo" ? "bg-slate-200 border-slate-400 text-slate-700 ring-4 ring-slate-400/30" : "bg-slate-50 border-slate-200 hover:bg-slate-100"
                     }`}
                   >
-                    🌅 Mattina
+                    <span className="font-extrabold text-[12px]">🏖️ Riposo</span>
+                    <span className="text-[9px] opacity-75 font-normal">Giorno libero</span>
                   </button>
 
+                  {/* Ferie */}
                   <button
                     type="button"
-                    onClick={() => handleSelectPreset("Pomeriggio")}
-                    className={`p-2 rounded-xl border text-center font-bold transition-all ${
-                      newTipoTurno === "Pomeriggio" ? "bg-indigo-100 border-indigo-400 text-indigo-900 ring-2 ring-indigo-400" : "bg-slate-50 border-slate-200 hover:bg-slate-100"
+                    onClick={() => {
+                      setNewTipoTurno("Ferie");
+                      setNewOrarioInizio("00:00");
+                      setNewOrarioFine("00:00");
+                    }}
+                    className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
+                      newTipoTurno === "Ferie" ? "bg-amber-400 border-amber-500 text-amber-950 ring-4 ring-amber-500/40" : "bg-slate-50 border-slate-200 hover:bg-slate-100"
                     }`}
                   >
-                    🌆 Pomeriggio
+                    <span className="font-extrabold text-[12px]">🌴 Ferie</span>
+                    <span className="text-[9px] opacity-75 font-normal">Pianificate / Desiderate</span>
                   </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset("Notte")}
-                    className={`p-2 rounded-xl border text-center font-bold transition-all ${
-                      newTipoTurno === "Notte" ? "bg-slate-800 border-slate-900 text-purple-200 ring-2 ring-purple-500" : "bg-slate-50 border-slate-200 hover:bg-slate-100"
-                    }`}
-                  >
-                    🌙 Notte
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2 mt-2">
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset("Reperibilità")}
-                    className={`p-2 rounded-xl border text-center font-bold transition-all ${
-                      newTipoTurno === "Reperibilità" ? "bg-emerald-100 border-emerald-400 text-emerald-900 ring-2 ring-emerald-400" : "bg-slate-50 border-slate-200 hover:bg-slate-100"
-                    }`}
-                  >
-                    📞 Reperibilità
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset("Riposo")}
-                    className={`p-2 rounded-xl border text-center font-bold transition-all ${
-                      newTipoTurno === "Riposo" ? "bg-slate-200 border-slate-400 text-slate-700 ring-2 ring-slate-400" : "bg-slate-50 border-slate-200 hover:bg-slate-100"
-                    }`}
-                  >
-                    🏖️ Riposo
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset("Ferie")}
-                    className={`p-2 rounded-xl border text-center font-bold transition-all ${
-                      newTipoTurno === "Ferie" ? "bg-amber-400 border-amber-500 text-amber-950 ring-2 ring-amber-500" : "bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100"
-                    }`}
-                  >
-                    🌴 Ferie
-                  </button>
-                </div>
-              </div>
-
-              {/* Start & End Times */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold mb-1">Ora Inizio</label>
-                  <input
-                    type="text"
-                    value={newOrarioInizio}
-                    onChange={e => setNewOrarioInizio(e.target.value)}
-                    className="w-full border p-2 rounded-xl font-mono text-center"
-                    placeholder="07:00"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-semibold mb-1">Ora Fine</label>
-                  <input
-                    type="text"
-                    value={newOrarioFine}
-                    onChange={e => setNewOrarioFine(e.target.value)}
-                    className="w-full border p-2 rounded-xl font-mono text-center"
-                    placeholder="14:00"
-                  />
                 </div>
               </div>
 
               {/* Notes */}
               <div>
-                <label className="block font-semibold mb-1">Note o Mansioni Specifiche</label>
+                <label className="block font-black text-slate-700 tracking-wide uppercase text-[10px] mb-1">Note o Mansioni Specifiche:</label>
                 <input
                   type="text"
                   value={newNote}
                   onChange={e => setNewNote(e.target.value)}
-                  className="w-full border p-2 rounded-xl"
+                  className="w-full border p-2.5 rounded-xl bg-slate-50 font-medium focus:bg-white"
                   placeholder="es. Responsabile carrello medicinali / Sostituzione turno"
                 />
               </div>
@@ -2396,13 +3096,13 @@ function importaTurniResidenzaVannucci() {
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 bg-slate-100 text-slate-700 font-semibold rounded-xl"
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl cursor-pointer"
                 >
                   Annulla
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow cursor-pointer transition-colors"
                 >
                   Salva Turno in Calendario
                 </button>
@@ -2831,7 +3531,7 @@ function importaTurniResidenzaVannucci() {
                           <p className="text-slate-500 text-xs font-medium">{mem?.ruolo}</p>
                         </div>
                       </div>
-                      <span className={`px-3 py-1 rounded-xl font-black text-xs shadow-2xs ${getShiftBadgeStyle(selectedShiftForDetail.tipoTurno, selectedShiftForDetail.orarioInizio, selectedShiftForDetail.orarioFine)}`}>
+                      <span className={`px-3 py-1 rounded-xl font-black text-xs shadow-2xs ${getShiftBadgeStyle(selectedShiftForDetail.tipoTurno, selectedShiftForDetail.orarioInizio, selectedShiftForDetail.orarioFine, selectedShiftForDetail.struttura)}`}>
                         {selectedShiftForDetail.tipoTurno}
                       </span>
                     </div>
@@ -2839,8 +3539,8 @@ function importaTurniResidenzaVannucci() {
                     <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3 text-xs">
                       <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                         <span className="text-slate-500 font-semibold">Data Turno:</span>
-                        <span className="font-extrabold text-slate-900">
-                          {new Date(selectedShiftForDetail.data).toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+                        <span className="font-extrabold text-slate-900 capitalize">
+                          {formatItalianVerbalDate(selectedShiftForDetail.data)}
                         </span>
                       </div>
 
@@ -2850,6 +3550,15 @@ function importaTurniResidenzaVannucci() {
                           {selectedShiftForDetail.orarioInizio} — {selectedShiftForDetail.orarioFine}
                         </span>
                       </div>
+
+                      {selectedShiftForDetail.struttura && selectedShiftForDetail.tipoTurno !== "Notte" && selectedShiftForDetail.tipoTurno !== "Riposo" && selectedShiftForDetail.tipoTurno !== "Ferie" && (
+                        <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                          <span className="text-slate-500 font-semibold">Struttura:</span>
+                          <span className="font-extrabold text-slate-900 bg-white px-2.5 py-1 rounded-lg border border-slate-200 text-[11px] shadow-2xs">
+                            🏠 {selectedShiftForDetail.struttura}
+                          </span>
+                        </div>
+                      )}
 
                       {selectedShiftForDetail.note && (
                         <div className="pt-1">
@@ -2877,63 +3586,311 @@ function importaTurniResidenzaVannucci() {
               return (
                 <div className="space-y-4 text-xs">
                   
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+                  {/* Informazione Operatore - locked/evidenziato */}
+                  <div className="bg-indigo-600/10 border-2 border-indigo-500/30 p-4 rounded-2xl flex items-center justify-between shadow-xs">
                     <div>
-                      <p className="font-bold text-slate-900 text-sm">{mem ? `${mem.nome} ${mem.cognome}` : "Operatore"}</p>
-                      <p className="text-slate-500">{mem?.ruolo}</p>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-indigo-700 block mb-1">Collaboratore Individuato</span>
+                      <span className="text-xl font-extrabold text-indigo-950 block leading-none">
+                        {mem ? `${mem.nome} ${mem.cognome}` : "Operatore"}
+                      </span>
+                      <span className="text-xs font-semibold text-slate-500 block mt-1 uppercase tracking-wide">
+                        💼 {mem?.ruolo || "Staff"}
+                      </span>
                     </div>
-                    <span className={`px-2.5 py-1 rounded-lg font-bold ${getShiftBadgeStyle(selectedShiftForDetail.tipoTurno, selectedShiftForDetail.orarioInizio, selectedShiftForDetail.orarioFine)}`}>
-                      {selectedShiftForDetail.tipoTurno}
+                    <div className="w-12 h-12 rounded-full bg-indigo-600 text-white font-black flex items-center justify-center text-base border-2 border-white shadow-md uppercase">
+                      {mem ? `${mem.nome.charAt(0)}${mem.cognome.charAt(0)}` : "OP"}
+                    </div>
+                  </div>
+
+                  {/* Data del Turno - Grande e per esteso */}
+                  <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-2xl text-center shadow-3xs">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-amber-800 block mb-1">Data Turno</span>
+                    <span className="text-base font-extrabold text-slate-800 block capitalize">
+                      📅 {formatItalianVerbalDate(editShiftDate)}
                     </span>
                   </div>
 
                   <div className="space-y-3">
                     
-                    {/* Change Staff Member */}
-                    <div>
-                      <label className="block font-semibold mb-1">Riassegna Operatore:</label>
-                      <select
-                        value={editShiftStaffId}
-                        onChange={e => setEditShiftStaffId(e.target.value)}
-                        className="w-full border p-2 rounded-xl bg-slate-50"
-                      >
-                        {staff.map(st => (
-                          <option key={st.id} value={st.id}>{st.nome} {st.cognome} ({st.ruolo})</option>
-                        ))}
-                      </select>
+                    {/* Date picker removed as per user request to avoid accidental day changes */}
+
+                    {/* Scelta Struttura - tre pulsanti indipendenti con colori specifici */}
+                    <div className="space-y-1.5">
+                      <label className="block font-black text-slate-700 tracking-wide uppercase text-[10px]">Struttura di Assegnazione *</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {(() => {
+                          const sat1 = isStrutturaSatura("Vannucci 1", editShiftDate, selectedShiftForDetail?.id);
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => !sat1 && setEditShiftStruttura("Vannucci 1")}
+                              disabled={sat1}
+                              title={sat1 ? "Struttura satura (Mattina e Pomeriggio già assegnati)" : ""}
+                              className={`p-3 rounded-xl border font-black transition-all text-center text-xs flex flex-col items-center justify-center ${
+                                sat1 ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400 grayscale" :
+                                "cursor-pointer " + (editShiftStruttura === "Vannucci 1" || editShiftStruttura === "Struttura 1"
+                                  ? "bg-orange-500 text-white border-orange-600 ring-4 ring-orange-500/20 scale-102"
+                                  : "bg-orange-50/50 text-orange-950 border-orange-200 hover:bg-orange-100")
+                              }`}
+                            >
+                              <span className="text-[11px]">Vannucci</span>
+                              <strong className="text-base font-black leading-none">1</strong>
+                            </button>
+                          );
+                        })()}
+                        {(() => {
+                          const sat2 = isStrutturaSatura("Vannucci 2", editShiftDate, selectedShiftForDetail?.id);
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => !sat2 && setEditShiftStruttura("Vannucci 2")}
+                              disabled={sat2}
+                              title={sat2 ? "Struttura satura (Mattina e Pomeriggio già assegnati)" : ""}
+                              className={`p-3 rounded-xl border font-black transition-all text-center text-xs flex flex-col items-center justify-center ${
+                                sat2 ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400 grayscale" :
+                                "cursor-pointer " + (editShiftStruttura === "Vannucci 2" || editShiftStruttura === "Struttura 2"
+                                  ? "bg-yellow-400 text-yellow-950 border-yellow-500 ring-4 ring-yellow-400/25 scale-102"
+                                  : "bg-yellow-50/50 text-yellow-950 border-yellow-200 hover:bg-yellow-100")
+                              }`}
+                            >
+                              <span className="text-[11px]">Vannucci</span>
+                              <strong className="text-base font-black leading-none">2</strong>
+                            </button>
+                          );
+                        })()}
+                        {(() => {
+                          const sat3 = isStrutturaSatura("Vannucci 3", editShiftDate, selectedShiftForDetail?.id);
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => !sat3 && setEditShiftStruttura("Vannucci 3")}
+                              disabled={sat3}
+                              title={sat3 ? "Struttura satura (Mattina e Pomeriggio già assegnati)" : ""}
+                              className={`p-3 rounded-xl border font-black transition-all text-center text-xs flex flex-col items-center justify-center ${
+                                sat3 ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400 grayscale" :
+                                "cursor-pointer " + (editShiftStruttura === "Vannucci 3" || editShiftStruttura === "Struttura 3"
+                                  ? "bg-emerald-600 text-white border-emerald-700 ring-4 ring-emerald-600/20 scale-102"
+                                  : "bg-emerald-50/50 text-emerald-950 border-emerald-200 hover:bg-emerald-100")
+                              }`}
+                            >
+                              <span className="text-[11px]">Vannucci</span>
+                              <strong className="text-base font-black leading-none">3</strong>
+                            </button>
+                          );
+                        })()}
+                      </div>
                     </div>
 
-                    {/* Change Shift Date */}
+                    {/* Shift Presets */}
+                    <div className="space-y-1.5">
+                      <label className="block font-black text-slate-700 tracking-wide uppercase text-[10px]">Preset Orario e Turno *</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(() => {
+                          const v714 = checkPotentialShiftValidity(selectedShiftForDetail?.staffId || "", selectedShiftForDetail?.data || "", "Mattina", editShiftStruttura, "07:00", "14:00", selectedShiftForDetail?.id);
+                          const v1421 = checkPotentialShiftValidity(selectedShiftForDetail?.staffId || "", selectedShiftForDetail?.data || "", "Pomeriggio", editShiftStruttura, "14:00", "21:00", selectedShiftForDetail?.id);
+                          const v815 = checkPotentialShiftValidity(selectedShiftForDetail?.staffId || "", selectedShiftForDetail?.data || "", "Mattina", editShiftStruttura, "08:00", "15:00", selectedShiftForDetail?.id);
+                          const v1523 = checkPotentialShiftValidity(selectedShiftForDetail?.staffId || "", selectedShiftForDetail?.data || "", "Pomeriggio", editShiftStruttura, "15:00", "23:00", selectedShiftForDetail?.id);
+                          const v711 = checkPotentialShiftValidity(selectedShiftForDetail?.staffId || "", selectedShiftForDetail?.data || "", "Mattina", editShiftStruttura, "07:00", "11:00", selectedShiftForDetail?.id);
+                          const vNotte = checkPotentialShiftValidity(selectedShiftForDetail?.staffId || "", selectedShiftForDetail?.data || "", "Notte", editShiftStruttura, "21:00", "07:00", selectedShiftForDetail?.id);
+
+                          return (
+                            <>
+                              {/* 7-14 */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!v714.valid) return;
+                                  setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Mattina" } : prev);
+                                  setEditShiftInizio("07:00");
+                                  setEditShiftFine("14:00");
+                                }}
+                                disabled={!v714.valid}
+                                title={v714.reason}
+                                className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                                  !v714.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
+                                  "cursor-pointer " + (selectedShiftForDetail?.tipoTurno === "Mattina" && editShiftInizio === "07:00" && editShiftFine === "14:00"
+                                    ? (editShiftStruttura === "Vannucci 1" || editShiftStruttura === "Struttura 1")
+                                      ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
+                                      : (editShiftStruttura === "Vannucci 2" || editShiftStruttura === "Struttura 2")
+                                      ? "bg-yellow-400 border-yellow-500 text-yellow-950 ring-4 ring-yellow-400/25"
+                                      : "bg-emerald-600 border-emerald-700 text-white ring-4 ring-emerald-600/20"
+                                    : "bg-slate-50 border-slate-200 hover:bg-slate-100")
+                                }`}
+                              >
+                                <span className="font-extrabold text-[12px]">🌅 7-14</span>
+                                <span className="text-[9px] opacity-75 font-normal">Mattina standard</span>
+                              </button>
+
+                              {/* 14-21 */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!v1421.valid) return;
+                                  setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Pomeriggio" } : prev);
+                                  setEditShiftInizio("14:00");
+                                  setEditShiftFine("21:00");
+                                }}
+                                disabled={!v1421.valid}
+                                title={v1421.reason}
+                                className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                                  !v1421.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
+                                  "cursor-pointer " + (selectedShiftForDetail?.tipoTurno === "Pomeriggio" && editShiftInizio === "14:00" && editShiftFine === "21:00"
+                                    ? (editShiftStruttura === "Vannucci 1" || editShiftStruttura === "Struttura 1")
+                                      ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
+                                      : (editShiftStruttura === "Vannucci 2" || editShiftStruttura === "Struttura 2")
+                                      ? "bg-yellow-400 border-yellow-500 text-yellow-950 ring-4 ring-yellow-400/25"
+                                      : "bg-emerald-600 border-emerald-700 text-white ring-4 ring-emerald-600/20"
+                                    : "bg-slate-50 border-slate-200 hover:bg-slate-100")
+                                }`}
+                              >
+                                <span className="font-extrabold text-[12px]">🌆 14-21</span>
+                                <span className="text-[9px] opacity-75 font-normal">Pomeriggio standard</span>
+                              </button>
+
+                              {/* 8-15 */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!v815.valid) return;
+                                  setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Mattina" } : prev);
+                                  setEditShiftInizio("08:00");
+                                  setEditShiftFine("15:00");
+                                }}
+                                disabled={!v815.valid}
+                                title={v815.reason}
+                                className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                                  !v815.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
+                                  "cursor-pointer " + (selectedShiftForDetail?.tipoTurno === "Mattina" && editShiftInizio === "08:00" && editShiftFine === "15:00"
+                                    ? (editShiftStruttura === "Vannucci 1" || editShiftStruttura === "Struttura 1")
+                                      ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
+                                      : (editShiftStruttura === "Vannucci 2" || editShiftStruttura === "Struttura 2")
+                                      ? "bg-yellow-400 border-yellow-500 text-yellow-950 ring-4 ring-yellow-400/25"
+                                      : "bg-emerald-600 border-emerald-700 text-white ring-4 ring-emerald-600/20"
+                                    : "bg-slate-50 border-slate-200 hover:bg-slate-100")
+                                }`}
+                              >
+                                <span className="font-extrabold text-[12px]">🌅 8-15</span>
+                                <span className="text-[9px] opacity-75 font-normal">Mattina posticipato</span>
+                              </button>
+
+                              {/* 15-23 */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!v1523.valid) return;
+                                  setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Pomeriggio" } : prev);
+                                  setEditShiftInizio("15:00");
+                                  setEditShiftFine("23:00");
+                                }}
+                                disabled={!v1523.valid}
+                                title={v1523.reason}
+                                className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                                  !v1523.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
+                                  "cursor-pointer " + (selectedShiftForDetail?.tipoTurno === "Pomeriggio" && editShiftInizio === "15:00" && editShiftFine === "23:00"
+                                    ? (editShiftStruttura === "Vannucci 1" || editShiftStruttura === "Struttura 1")
+                                      ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
+                                      : (editShiftStruttura === "Vannucci 2" || editShiftStruttura === "Struttura 2")
+                                      ? "bg-yellow-400 border-yellow-500 text-yellow-950 ring-4 ring-yellow-400/25"
+                                      : "bg-emerald-600 border-emerald-700 text-white ring-4 ring-emerald-600/20"
+                                    : "bg-slate-50 border-slate-200 hover:bg-slate-100")
+                                }`}
+                              >
+                                <span className="font-extrabold text-[12px]">🌆 15-23</span>
+                                <span className="text-[9px] opacity-75 font-normal">Pomeriggio prolungato</span>
+                              </button>
+
+                              {/* 7-11 */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!v711.valid) return;
+                                  setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Mattina" } : prev);
+                                  setEditShiftInizio("07:00");
+                                  setEditShiftFine("11:00");
+                                }}
+                                disabled={!v711.valid}
+                                title={v711.reason}
+                                className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                                  !v711.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
+                                  "cursor-pointer " + (selectedShiftForDetail?.tipoTurno === "Mattina" && editShiftInizio === "07:00" && editShiftFine === "11:00"
+                                    ? (editShiftStruttura === "Vannucci 1" || editShiftStruttura === "Struttura 1")
+                                      ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
+                                      : (editShiftStruttura === "Vannucci 2" || editShiftStruttura === "Struttura 2")
+                                      ? "bg-yellow-400 border-yellow-500 text-yellow-950 ring-4 ring-yellow-400/25"
+                                      : "bg-emerald-600 border-emerald-700 text-white ring-4 ring-emerald-600/20"
+                                    : "bg-slate-50 border-slate-200 hover:bg-slate-100")
+                                }`}
+                              >
+                                <span className="font-extrabold text-[12px]">🌅 7-11</span>
+                                <span className="text-[9px] opacity-75 font-normal">Mattina breve</span>
+                              </button>
+
+                              {/* Notte */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!vNotte.valid) return;
+                                  setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Notte" } : prev);
+                                  setEditShiftInizio("21:00");
+                                  setEditShiftFine("07:00");
+                                }}
+                                disabled={!vNotte.valid}
+                                title={vNotte.reason}
+                                className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                                  !vNotte.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
+                                  "cursor-pointer " + (selectedShiftForDetail?.tipoTurno === "Notte" ? "bg-slate-900 border-slate-950 text-white ring-4 ring-slate-800/80" : "bg-slate-50 border-slate-200 hover:bg-slate-100")
+                                }`}
+                              >
+                                <span className="font-extrabold text-[12px]">🌙 Notte 21-07</span>
+                                <span className="text-[9px] opacity-75 font-normal text-slate-300">Unificato nero</span>
+                              </button>
+                            </>
+                          );
+                        })()}
+                        {/* Riposo */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Riposo" } : prev);
+                            setEditShiftInizio("00:00");
+                            setEditShiftFine("00:00");
+                          }}
+                          className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
+                            selectedShiftForDetail.tipoTurno === "Riposo" ? "bg-slate-200 border-slate-400 text-slate-700 ring-4 ring-slate-400/30" : "bg-slate-50 border-slate-200 hover:bg-slate-100"
+                          }`}
+                        >
+                          <span className="font-extrabold text-[12px]">🏖️ Riposo</span>
+                          <span className="text-[9px] opacity-75 font-normal">Giorno libero</span>
+                        </button>
+
+                        {/* Ferie */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Ferie" } : prev);
+                            setEditShiftInizio("00:00");
+                            setEditShiftFine("00:00");
+                          }}
+                          className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
+                            selectedShiftForDetail.tipoTurno === "Ferie" ? "bg-amber-400 border-amber-500 text-amber-950 ring-4 ring-amber-500/40" : "bg-slate-50 border-slate-200 hover:bg-slate-100"
+                          }`}
+                        >
+                          <span className="font-extrabold text-[12px]">🌴 Ferie</span>
+                          <span className="text-[9px] opacity-75 font-normal">Pianificate / Desiderate</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Edit Notes */}
                     <div>
-                      <label className="block font-semibold mb-1">Sposta in Data:</label>
+                      <label className="block font-black text-slate-700 tracking-wide uppercase text-[10px] mb-1">Note o Mansioni Specifiche:</label>
                       <input
-                        type="date"
-                        value={editShiftDate}
-                        onChange={e => setEditShiftDate(e.target.value)}
-                        className="w-full border p-2 rounded-xl bg-slate-50"
+                        type="text"
+                        value={editShiftNote}
+                        onChange={e => setEditShiftNote(e.target.value)}
+                        className="w-full border p-2.5 rounded-xl bg-slate-50 font-medium focus:bg-white"
+                        placeholder="es. Sostituzione, mansioni speciali..."
                       />
-                    </div>
-
-                    {/* Change Hours */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block font-semibold mb-1">Ora Inizio:</label>
-                        <input
-                          type="text"
-                          value={editShiftInizio}
-                          onChange={e => setEditShiftInizio(e.target.value)}
-                          className="w-full border p-2 rounded-xl font-mono text-center"
-                        />
-                      </div>
-                      <div>
-                        <label className="block font-semibold mb-1">Ora Fine:</label>
-                        <input
-                          type="text"
-                          value={editShiftFine}
-                          onChange={e => setEditShiftFine(e.target.value)}
-                          className="w-full border p-2 rounded-xl font-mono text-center"
-                        />
-                      </div>
                     </div>
 
                   </div>
@@ -2942,7 +3899,7 @@ function importaTurniResidenzaVannucci() {
                     <button
                       type="button"
                       onClick={(e) => handleDeleteSingleShift(selectedShiftForDetail.id, e)}
-                      className="px-3.5 py-2 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded-xl font-bold flex items-center gap-1.5 text-xs transition-all"
+                      className="px-3.5 py-2 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded-xl font-bold flex items-center gap-1.5 text-xs transition-all cursor-pointer"
                     >
                       <Trash2 className="w-4 h-4 text-rose-600" />
                       <span>Elimina Turno</span>
@@ -2952,7 +3909,7 @@ function importaTurniResidenzaVannucci() {
                       <button
                         type="button"
                         onClick={() => setSelectedShiftForDetail(null)}
-                        className="px-3 py-2 bg-slate-100 text-slate-700 font-semibold rounded-xl text-xs"
+                        className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs cursor-pointer"
                       >
                         Annulla
                       </button>
@@ -2960,7 +3917,7 @@ function importaTurniResidenzaVannucci() {
                       <button
                         type="button"
                         onClick={handleSaveShiftEdit}
-                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs shadow-md"
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-md cursor-pointer transition-colors"
                       >
                         Salva Modifiche
                       </button>
