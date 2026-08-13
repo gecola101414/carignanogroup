@@ -78,7 +78,7 @@ export function LoginScreen({ credentials, onLogin, onUpdatePassword }: LoginScr
           )}
 
           {!needsPasswordChange ? (
-            <form onSubmit={handleLogin} className="space-y-5">
+            <div className="space-y-5" onKeyDown={e => { if (e.key === 'Enter') handleLogin(e as any); }}>
               <div className="space-y-1.5">
                 <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                   <User className="w-4 h-4 text-slate-400" />
@@ -115,15 +115,16 @@ export function LoginScreen({ credentials, onLogin, onUpdatePassword }: LoginScr
               </div>
 
               <button
-                type="submit"
+                type="button"
+                onClick={handleLogin}
                 className="w-full py-3.5 mt-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 group"
               >
                 <span>Accedi al Sistema</span>
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </button>
-            </form>
+            </div>
           ) : (
-            <form onSubmit={handleChangePassword} className="space-y-5">
+            <div className="space-y-5" onKeyDown={e => { if (e.key === 'Enter') handleChangePassword(e as any); }}>
               <div className="mb-4 text-center">
                 <div className="inline-flex items-center justify-center w-12 h-12 bg-amber-100 text-amber-600 rounded-full mb-3">
                   <ShieldCheck className="w-6 h-6" />
@@ -162,13 +163,14 @@ export function LoginScreen({ credentials, onLogin, onUpdatePassword }: LoginScr
               </div>
 
               <button
-                type="submit"
+                type="button"
+                onClick={handleChangePassword}
                 className="w-full py-3.5 mt-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2"
               >
                 <span>Salva ed Entra</span>
                 <ArrowRight className="w-5 h-5" />
               </button>
-            </form>
+            </div>
           )}
         </div>
       </div>
