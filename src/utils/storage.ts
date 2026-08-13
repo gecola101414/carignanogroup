@@ -45,7 +45,7 @@ const STORAGE_KEYS = {
   STAFF_UPDATED_AT: "casafamiglia_staff_updated_at_v1",
   SHIFTS: "casafamiglia_shifts_v1",
   SHIFTS_UPDATED_AT: "casafamiglia_shifts_updated_at_v1",
-  CREDENTIALS: "casafamiglia_credentials_v1",
+  CREDENTIALS: "casafamiglia_credentials_v2",
   CREDENTIALS_UPDATED_AT: "casafamiglia_credentials_updated_at_v1",
   VISITS: "casafamiglia_visits_v1",
   FINANCIALS: "casafamiglia_financials_v1",
@@ -116,9 +116,9 @@ export const storage = {
     
     // Assicura che i 4 amministratori di base ci siano sempre
     const baseAdmins = [
-      { username: "BEPPE", role: "admin", passwordHash: "Beppe2024!", mustChange: true },
-      { username: "DEBORAH", role: "admin", passwordHash: "Deborah2024!", mustChange: true },
-      { username: "CLAUDIA", role: "admin", passwordHash: "Claudia2024!", mustChange: true }
+      { username: "BEPPE", role: "admin", passwordHash: "1234", mustChange: true },
+      { username: "DEBORAH", role: "admin", passwordHash: "1234", mustChange: true },
+      { username: "CLAUDIA", role: "admin", passwordHash: "1234", mustChange: true }
     ];
     
     baseAdmins.forEach(ba => {

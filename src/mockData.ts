@@ -772,9 +772,9 @@ export const INITIAL_MEAL_PLAN: DayMealPlan[] = [
 ];
 
 export const INITIAL_CREDENTIALS: any[] = [
-  { username: "BEPPE", role: "admin", passwordHash: "Beppe2024!", mustChange: true },
-  { username: "DEBORAH", role: "admin", passwordHash: "Deborah2024!", mustChange: true },
-  { username: "CLAUDIA", role: "admin", passwordHash: "Claudia2024!", mustChange: true },
+  { username: "BEPPE", role: "admin", passwordHash: "1234", mustChange: true },
+  { username: "DEBORAH", role: "admin", passwordHash: "1234", mustChange: true },
+  { username: "CLAUDIA", role: "admin", passwordHash: "1234", mustChange: true },
   ...INITIAL_STAFF.map(staff => ({
     username: staff.nome,
     role: "staff",
