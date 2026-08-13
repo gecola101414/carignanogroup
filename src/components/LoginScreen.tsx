@@ -31,7 +31,8 @@ export function LoginScreen({ credentials, onLogin, onUpdatePassword }: LoginScr
       setNeedsPasswordChange(user);
       setError("");
     } else {
-      onLogin(user);
+      // Evita crash di Chrome ritardando l'unmount
+      setTimeout(() => onLogin(user), 50);
     }
   };
 
@@ -48,7 +49,7 @@ export function LoginScreen({ credentials, onLogin, onUpdatePassword }: LoginScr
     
     if (needsPasswordChange) {
       onUpdatePassword(needsPasswordChange.username, newPassword);
-      onLogin({ ...needsPasswordChange, passwordHash: newPassword, mustChange: false });
+      setTimeout(() => onLogin({ ...needsPasswordChange, passwordHash: newPassword, mustChange: false }), 50);
     }
   };
 
@@ -85,7 +86,7 @@ export function LoginScreen({ credentials, onLogin, onUpdatePassword }: LoginScr
                 </label>
                 <select
                   value={username}
-                  onChange={e => setUsername(e.target.value)}
+                  name="username" autoComplete="username" onChange={e => setUsername(e.target.value)}
                   className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-shadow outline-none text-slate-800 font-medium"
                   required
                 >
@@ -106,7 +107,7 @@ export function LoginScreen({ credentials, onLogin, onUpdatePassword }: LoginScr
                 <input
                   type="password"
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
+                  name="password" autoComplete="current-password" onChange={e => setPassword(e.target.value)}
                   className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-shadow outline-none"
                   placeholder="••••••••"
                   required
@@ -141,7 +142,7 @@ export function LoginScreen({ credentials, onLogin, onUpdatePassword }: LoginScr
                 <input
                   type="password"
                   value={newPassword}
-                  onChange={e => setNewPassword(e.target.value)}
+                  name="newPassword" autoComplete="new-password" onChange={e => setNewPassword(e.target.value)}
                   className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-shadow outline-none"
                   placeholder="Nuova password..."
                   required
@@ -153,7 +154,7 @@ export function LoginScreen({ credentials, onLogin, onUpdatePassword }: LoginScr
                 <input
                   type="password"
                   value={confirmPassword}
-                  onChange={e => setConfirmPassword(e.target.value)}
+                  name="confirmPassword" autoComplete="new-password" onChange={e => setConfirmPassword(e.target.value)}
                   className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-shadow outline-none"
                   placeholder="Ripeti password..."
                   required
