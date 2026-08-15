@@ -772,6 +772,7 @@ export const INITIAL_MEAL_PLAN: DayMealPlan[] = [
 ];
 
 export const INITIAL_CREDENTIALS: any[] = [
+  { username: "programmatore", role: "admin", passwordHash: "1234", mustChange: true },
   { username: "BEPPE", role: "admin", passwordHash: "1234", mustChange: true },
   { username: "DEBORAH", role: "admin", passwordHash: "1234", mustChange: true },
   { username: "CLAUDIA", role: "admin", passwordHash: "1234", mustChange: true },

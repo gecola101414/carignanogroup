@@ -25,6 +25,7 @@ import {
   Layers,
   Edit3,
   Undo2,
+  Redo2,
   ArrowRightLeft,
   Settings,
   UserCheck,
@@ -141,8 +142,69 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   const [newStaffOrarioPomeriggio, setNewStaffOrarioPomeriggio] = useState<string>("14:00 - 21:00");
   const [newStaffOrarioNotte, setNewStaffOrarioNotte] = useState<string>("21:00 - 07:00");
 
-  // Undo State
+  // Undo State & Full Action History Stack (Annulla / Ripristina)
   const [lastDeletedShifts, setLastDeletedShifts] = useState<Shift[] | null>(null);
+  const [historyStack, setHistoryStack] = useState<Shift[][]>(() => [shifts]);
+  const [historyIndex, setHistoryIndex] = useState<number>(0);
+
+  const applyShiftsUpdate = (newShifts: Shift[]) => {
+    if (!onUpdateShifts) return;
+    setHistoryStack(prev => {
+      const sliced = prev.slice(0, historyIndex + 1);
+      return [...sliced, newShifts];
+    });
+    setHistoryIndex(prev => prev + 1);
+    onUpdateShifts(newShifts);
+  };
+
+  const handleUndo = () => {
+    if (historyIndex > 0) {
+      const targetIndex = historyIndex - 1;
+      setHistoryIndex(targetIndex);
+      const targetShifts = historyStack[targetIndex];
+      if (onUpdateShifts && targetShifts) {
+        onUpdateShifts(targetShifts);
+        showToast("↩️ Azione Annullata (Undo)");
+      }
+    }
+  };
+
+  const handleRedo = () => {
+    if (historyIndex < historyStack.length - 1) {
+      const targetIndex = historyIndex + 1;
+      setHistoryIndex(targetIndex);
+      const targetShifts = historyStack[targetIndex];
+      if (onUpdateShifts && targetShifts) {
+        onUpdateShifts(targetShifts);
+        showToast("↪️ Azione Ripristinata (Redo)");
+      }
+    }
+  };
+
+  // Keyboard Shortcuts (Ctrl+Z for Undo, Ctrl+Y or Ctrl+Shift+Z for Redo)
+  React.useEffect(() => {
+    if (isPublicView) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      if (activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA" || activeEl.tagName === "SELECT")) {
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+        if (e.shiftKey) {
+          e.preventDefault();
+          handleRedo();
+        } else {
+          e.preventDefault();
+          handleUndo();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [historyIndex, historyStack, isPublicView]);
 
   // Locked Days State
   const [lockedDays, setLockedDays] = useState<string[]>(() => {
@@ -387,7 +449,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
         note: vacationNotes || "Ferie desiderate"
       }));
 
-      onUpdateShifts([...existingFiltered, ...ferieShifts]);
+      applyShiftsUpdate([...existingFiltered, ...ferieShifts]);
     }
 
     setShowVacationModal(false);
@@ -426,6 +488,12 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     const day = String(d.getDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
   };
+
+  const formatDateIT = (d: Date) => {
+    return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+  };
+
+  const STRUTTURE = [{ nome: "Vannucci 1" }, { nome: "Vannucci 2" }, { nome: "Vannucci 3" }];
 
   const todayStr = formatDateYMD(new Date());
 
@@ -702,7 +770,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     if (onDeleteShift) {
       onDeleteShift(shiftId);
     } else if (onUpdateShifts) {
-      onUpdateShifts(shifts.filter(s => s.id !== shiftId));
+      applyShiftsUpdate(shifts.filter(s => s.id !== shiftId));
     }
     setSelectedShiftForDetail(null);
     showToast(`🗑️ Turno ${targetShift.tipoTurno} cancellato.`, true);
@@ -736,7 +804,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     setLastDeletedShifts(dayShifts);
 
     if (onUpdateShifts) {
-      onUpdateShifts(shifts.filter(s => s.data !== confirmDeleteDayDate));
+      applyShiftsUpdate(shifts.filter(s => s.data !== confirmDeleteDayDate));
     }
 
     const formattedDate = new Date(confirmDeleteDayDate).toLocaleDateString("it-IT", { day: "numeric", month: "long" });
@@ -750,7 +818,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     // Restore deleted shifts avoiding duplicates
     const existingIds = new Set(shifts.map(s => s.id));
     const toRestore = lastDeletedShifts.filter(s => !existingIds.has(s.id));
-    onUpdateShifts([...shifts, ...toRestore]);
+    applyShiftsUpdate([...shifts, ...toRestore]);
     setLastDeletedShifts(null);
     showToast("✅ Turni ripristinati con successo!");
   };
@@ -809,7 +877,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     // Erase existing shift on target date for this staff member before copying (SOVRASCRITTURA)
     const shiftsWithoutTargetCell = shifts.filter(s => !(s.staffId === shift.staffId && s.data === nextDateStr));
 
-    onUpdateShifts([...shiftsWithoutTargetCell, copiedShift]);
+    applyShiftsUpdate([...shiftsWithoutTargetCell, copiedShift]);
     showToast(`📋 Turno ${shift.tipoTurno} per ${staffMember ? staffMember.nome : ""} COPIATO (${times.orarioInizio}-${times.orarioFine}) [sovrascritto]!`);
   };
 
@@ -853,7 +921,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       };
     });
 
-    onUpdateShifts([...existingShiftsWithoutTarget, ...newDuplicatedShifts]);
+    applyShiftsUpdate([...existingShiftsWithoutTarget, ...newDuplicatedShifts]);
     const sourceFormatted = new Date(sourceDateYMD).toLocaleDateString("it-IT", { day: "numeric", month: "short" });
     const targetFormatted = new Date(targetDateYMD).toLocaleDateString("it-IT", { day: "numeric", month: "short" });
     showToast(`🎉 COPIATI tutti i turni del ${sourceFormatted} nel ${targetFormatted} (con orari personalizzati dell'operatore)!`);
@@ -946,22 +1014,21 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     try {
       const data = JSON.parse(rawData);
 
+      const refSundayYMD = formatDateYMD(weekDays[0]);
+
+      if (targetDateYMD === refSundayYMD) {
+        showToast("🔒 La domenica della settimana precedente (riferimento) è in sola lettura!");
+        return;
+      }
+
       if (lockedDays.includes(targetDateYMD)) {
         showToast("🔒 Impossibile rilasciare: questo giorno è bloccato!");
         return;
       }
 
-      if (data.type === "single_shift" && !dragActionMode && data.sourceDate && lockedDays.includes(data.sourceDate)) {
-        // Moving single shift out of locked day is blocked
-        showToast("🔒 Impossibile spostare un turno da un giorno bloccato!");
-        return;
-      }
-
-      if (data.type === "day" && lockedDays.includes(data.sourceDateYMD)) {
-        // Moving/Copying day out of locked day
-        showToast("🔒 Il giorno di origine è bloccato!");
-        return;
-      }
+      // Check if source day or single shift is from a locked day or reference Sunday
+      const isSourceLocked = (data.type === "single_shift" && data.sourceDate && (lockedDays.includes(data.sourceDate) || data.sourceDate === refSundayYMD)) ||
+                             (data.type === "day" && data.sourceDateYMD && (lockedDays.includes(data.sourceDateYMD) || data.sourceDateYMD === refSundayYMD));
 
       // Check if any modifier key (Shift, Ctrl, Alt, Meta, Fn, CapsLock, NumLock) was held
       const isModifierHeld = e.shiftKey || e.ctrlKey || e.altKey || e.metaKey ||
@@ -976,26 +1043,65 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
           e.getModifierState("Meta")
         ));
 
-      // Determine action: COPIA if "copy" mode is selected OR if a modifier key (Fn, Shift, Ctrl, Alt, CapsLock) is held!
-      const isCopy = dragActionMode === "copy" || isModifierHeld;
+      // Determine action: COPIA if "copy" mode selected, modifier key held, OR if source is locked/reference day
+      const isCopy = dragActionMode === "copy" || isModifierHeld || isSourceLocked;
 
       if (data.type === "single_shift") {
         const draggedShift = shifts.find(s => s.id === data.shiftId);
         if (!draggedShift) return;
 
         const finalStaffId = targetStaffId || draggedShift.staffId;
-        const targetStaffObj = staff.find(st => st.id === finalStaffId);
-        const times = getStaffHoursForShiftType(targetStaffObj, draggedShift.tipoTurno, draggedShift.orarioInizio, draggedShift.orarioFine);
+        const sourceStaffId = draggedShift.staffId;
+        const sourceDateYMD = draggedShift.data;
 
-        // ERASE EXISTING SHIFT(S) ON TARGET CELL BEFORE MOVING OR COPYING
-        const shiftsWithoutTargetCell = shifts.filter(s =>
-          !(s.staffId === finalStaffId && s.data === targetDateYMD && s.id !== draggedShift.id)
+        // Ignore drop if dragged onto exact same cell
+        if (sourceStaffId === finalStaffId && sourceDateYMD === targetDateYMD) return;
+
+        const targetStaffObj = staff.find(st => st.id === finalStaffId);
+        const sourceStaffObj = staff.find(st => st.id === sourceStaffId);
+
+        // Find existing non-Riposo or work shift on target cell (if any)
+        const existingTargetShift = shifts.find(s =>
+          s.staffId === finalStaffId && s.data === targetDateYMD && s.id !== draggedShift.id
         );
 
         if (!isCopy) {
-          // MOVE SHIFT (SPOSTA CON SOVRASCRITTURA)
-          if (onUpdateShifts) {
-            const updated = shiftsWithoutTargetCell.map(s => {
+          if (existingTargetShift) {
+            // SWAP SHIFTS BETWEEN DRAGGED CELL AND TARGET CELL (SCAMBIO TURNI)
+            const timesForDragged = getStaffHoursForShiftType(targetStaffObj, draggedShift.tipoTurno, draggedShift.orarioInizio, draggedShift.orarioFine);
+            const timesForExisting = getStaffHoursForShiftType(sourceStaffObj, existingTargetShift.tipoTurno, existingTargetShift.orarioInizio, existingTargetShift.orarioFine);
+
+            const updated = shifts.map(s => {
+              if (s.id === draggedShift.id) {
+                return {
+                  ...s,
+                  staffId: finalStaffId,
+                  data: targetDateYMD,
+                  orarioInizio: timesForDragged.orarioInizio,
+                  orarioFine: timesForDragged.orarioFine
+                };
+              }
+              if (s.id === existingTargetShift.id) {
+                return {
+                  ...s,
+                  staffId: sourceStaffId,
+                  data: sourceDateYMD,
+                  orarioInizio: timesForExisting.orarioInizio,
+                  orarioFine: timesForExisting.orarioFine
+                };
+              }
+              return s;
+            });
+
+            applyShiftsUpdate(updated);
+
+            const targetName = targetStaffObj ? targetStaffObj.nome : "Operatore";
+            const sourceName = sourceStaffObj ? sourceStaffObj.nome : "Operatore";
+            showToast(`🔄 Turni SCAMBIATI di posto tra ${sourceName} e ${targetName}!`);
+          } else {
+            // MOVE SHIFT TO EMPTY TARGET CELL
+            const times = getStaffHoursForShiftType(targetStaffObj, draggedShift.tipoTurno, draggedShift.orarioInizio, draggedShift.orarioFine);
+            const updated = shifts.map(s => {
               if (s.id === draggedShift.id) {
                 return {
                   ...s,
@@ -1007,23 +1113,27 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
               }
               return s;
             });
-            onUpdateShifts(updated);
-            showToast(`↔️ Turno ${draggedShift.tipoTurno} SPOSTATO a ${targetStaffObj ? targetStaffObj.nome : ""} (${times.orarioInizio}-${times.orarioFine}) [sovrascritto]!`);
+
+            applyShiftsUpdate(updated);
+            showToast(`↔️ Turno ${draggedShift.tipoTurno} SPOSTATO a ${targetStaffObj ? targetStaffObj.nome : ""} (${times.orarioInizio}-${times.orarioFine})!`);
           }
         } else {
-          // COPY SHIFT (COPIA / DUPLICA CON SOVRASCRITTURA)
-          if (onUpdateShifts) {
-            const newCopyShift: Shift = {
-              ...draggedShift,
-              id: `shift-copy-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-              staffId: finalStaffId,
-              data: targetDateYMD,
-              orarioInizio: times.orarioInizio,
-              orarioFine: times.orarioFine
-            };
-            onUpdateShifts([...shiftsWithoutTargetCell, newCopyShift]);
-            showToast(`📋 Turno ${draggedShift.tipoTurno} COPIATO a ${targetStaffObj ? targetStaffObj.nome : ""} (${times.orarioInizio}-${times.orarioFine}) [sovrascritto]!`);
-          }
+          // DUPLICATE / COPY SHIFT TO TARGET CELL
+          const times = getStaffHoursForShiftType(targetStaffObj, draggedShift.tipoTurno, draggedShift.orarioInizio, draggedShift.orarioFine);
+          const shiftsWithoutTargetCell = shifts.filter(s =>
+            !(s.staffId === finalStaffId && s.data === targetDateYMD && s.id !== draggedShift.id)
+          );
+          const newCopyShift: Shift = {
+            ...draggedShift,
+            id: `shift-copy-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            staffId: finalStaffId,
+            data: targetDateYMD,
+            orarioInizio: times.orarioInizio,
+            orarioFine: times.orarioFine
+          };
+
+          applyShiftsUpdate([...shiftsWithoutTargetCell, newCopyShift]);
+          showToast(`📋 Turno ${draggedShift.tipoTurno} COPIATO a ${targetStaffObj ? targetStaffObj.nome : ""} (${times.orarioInizio}-${times.orarioFine})!`);
         }
       } else if (data.type === "day") {
         // ENTIRE DAY DRAG (MOVE OR COPY)
@@ -1036,50 +1146,48 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
           return;
         }
 
-        if (onUpdateShifts) {
-          // IMPORTANT: Erase old/existing shifts on target date before adding moved or copied shifts
-          const shiftsWithoutTarget = shifts.filter(s => s.data !== targetDateYMD);
+        const shiftsWithoutTarget = shifts.filter(s => s.data !== targetDateYMD);
 
-          if (!isCopy) {
-            // MOVE ALL SHIFTS FROM SOURCE DATE TO TARGET DATE (SPOSTA INTERO GIORNO)
-            const updated = shiftsWithoutTarget.map(s => {
-              if (s.data === sourceDateYMD) {
-                const staffMember = staff.find(st => st.id === s.staffId);
-                const times = getStaffHoursForShiftType(staffMember, s.tipoTurno, s.orarioInizio, s.orarioFine);
-                return {
-                  ...s,
-                  data: targetDateYMD,
-                  orarioInizio: times.orarioInizio,
-                  orarioFine: times.orarioFine
-                };
-              }
-              return s;
-            });
-            onUpdateShifts(updated);
-
-            const sourceFormatted = new Date(sourceDateYMD).toLocaleDateString("it-IT", { day: "numeric", month: "short" });
-            const targetFormatted = new Date(targetDateYMD).toLocaleDateString("it-IT", { day: "numeric", month: "short" });
-            showToast(`↔️ SPOSTATI i turni del ${sourceFormatted} sovrascrivendo i vecchi del ${targetFormatted}!`);
-          } else {
-            // DUPLICATE/COPY ALL SHIFTS TO TARGET DATE (COPIA INTERO GIORNO CON SOVRASCRITTURA)
-            const newDuplicatedShifts: Shift[] = dayShifts.map((s, idx) => {
+        if (!isCopy) {
+          // MOVE ALL SHIFTS FROM SOURCE DATE TO TARGET DATE
+          const updated = shiftsWithoutTarget.map(s => {
+            if (s.data === sourceDateYMD) {
               const staffMember = staff.find(st => st.id === s.staffId);
               const times = getStaffHoursForShiftType(staffMember, s.tipoTurno, s.orarioInizio, s.orarioFine);
               return {
                 ...s,
-                id: `shift-day-copy-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 5)}`,
                 data: targetDateYMD,
                 orarioInizio: times.orarioInizio,
                 orarioFine: times.orarioFine
               };
-            });
+            }
+            return s;
+          });
 
-            onUpdateShifts([...shiftsWithoutTarget, ...newDuplicatedShifts]);
+          applyShiftsUpdate(updated);
 
-            const sourceFormatted = new Date(sourceDateYMD).toLocaleDateString("it-IT", { day: "numeric", month: "short" });
-            const targetFormatted = new Date(targetDateYMD).toLocaleDateString("it-IT", { day: "numeric", month: "short" });
-            showToast(`🎉 COPIATI i turni del ${sourceFormatted} nel ${targetFormatted} (con orari personalizzati degli operatori)!`);
-          }
+          const sourceFormatted = new Date(sourceDateYMD).toLocaleDateString("it-IT", { day: "numeric", month: "short" });
+          const targetFormatted = new Date(targetDateYMD).toLocaleDateString("it-IT", { day: "numeric", month: "short" });
+          showToast(`↔️ SPOSTATI i turni del ${sourceFormatted} nel ${targetFormatted}!`);
+        } else {
+          // DUPLICATE/COPY ALL SHIFTS TO TARGET DATE
+          const newDuplicatedShifts: Shift[] = dayShifts.map((s, idx) => {
+            const staffMember = staff.find(st => st.id === s.staffId);
+            const times = getStaffHoursForShiftType(staffMember, s.tipoTurno, s.orarioInizio, s.orarioFine);
+            return {
+              ...s,
+              id: `shift-day-copy-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 5)}`,
+              data: targetDateYMD,
+              orarioInizio: times.orarioInizio,
+              orarioFine: times.orarioFine
+            };
+          });
+
+          applyShiftsUpdate([...shiftsWithoutTarget, ...newDuplicatedShifts]);
+
+          const sourceFormatted = new Date(sourceDateYMD).toLocaleDateString("it-IT", { day: "numeric", month: "short" });
+          const targetFormatted = new Date(targetDateYMD).toLocaleDateString("it-IT", { day: "numeric", month: "short" });
+          showToast(`🎉 COPIATI i turni del ${sourceFormatted} nel ${targetFormatted}!`);
         }
       }
     } catch (err) {
@@ -1100,6 +1208,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       if (s.id === selectedShiftForDetail.id) {
         return {
           ...s,
+          id: s.id.startsWith("auto-") ? `shift-edited-${Date.now()}-${Math.random().toString(36).substr(2, 4)}` : s.id,
           staffId: editShiftStaffId || s.staffId,
           data: editShiftDate || s.data,
           orarioInizio: editShiftInizio || s.orarioInizio,
@@ -1111,7 +1220,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       return s;
     });
 
-    onUpdateShifts(updatedShifts);
+    applyShiftsUpdate(updatedShifts);
     setSelectedShiftForDetail(null);
     setEditShiftNote("");
     showToast("✅ Turno aggiornato con successo!");
@@ -1212,55 +1321,269 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     showToast(`🗑️ Operatore ${memberToDelete.nome} ${memberToDelete.cognome} rimosso dall'organico.`);
   };
 
-  // Auto-generate Week Rotation Schedule
-  const handleGenerateStandardWeek = () => {
+  // Helper to validate shift candidate for automatic generation (prevents 11-hour rest violations and double bookings)
+  const checkCandidateShiftValidityForAuto = (
+    staffId: string,
+    dateStr: string,
+    tipoTurno: string,
+    struttura: string,
+    inizio: string,
+    fine: string,
+    currentShiftsList: Shift[]
+  ): boolean => {
+    if (tipoTurno === "Riposo" || tipoTurno === "Ferie") return true;
+
+    // 1. Check if staff already has a work shift on this date
+    const hasWorkShiftThisDay = currentShiftsList.some(
+      s => s.staffId === staffId && s.data === dateStr && s.tipoTurno !== "Riposo"
+    );
+    if (hasWorkShiftThisDay) return false;
+
+    // 2. Check duplicate structure & tipoTurno on this date
+    const sameStructureShift = currentShiftsList.some(
+      s => s.data === dateStr && s.struttura === struttura && s.tipoTurno === tipoTurno && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie"
+    );
+    if (sameStructureShift) return false;
+
+    // 3. Check 11-hour rule with PREVIOUS day's shifts
+    const targetDateObj = new Date(dateStr);
+    targetDateObj.setDate(targetDateObj.getDate() - 1);
+    const prevDateStr = formatDateYMD(targetDateObj);
+
+    const prevShifts = currentShiftsList.filter(
+      s => s.staffId === staffId && s.data === prevDateStr && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie"
+    );
+
+    let lastEndTimeMin = 0;
+    prevShifts.forEach(s => {
+      const endParts = s.orarioFine.split(":");
+      if (endParts.length === 2) {
+        let mins = parseInt(endParts[0], 10) * 60 + parseInt(endParts[1], 10);
+        if (s.tipoTurno === "Notte" || (parseInt(s.orarioFine.split(":")[0], 10) < parseInt(s.orarioInizio.split(":")[0], 10))) {
+          mins += 24 * 60;
+        }
+        if (mins > lastEndTimeMin) lastEndTimeMin = mins;
+      }
+    });
+
+    const startParts = inizio.split(":");
+    if (startParts.length === 2) {
+      const startMin = parseInt(startParts[0], 10) * 60 + parseInt(startParts[1], 10);
+      const nextStartAbsoluteMin = startMin + 24 * 60;
+
+      if (lastEndTimeMin > 0 && (nextStartAbsoluteMin - lastEndTimeMin) < 11 * 60) {
+        return false;
+      }
+    }
+
+    // 4. Check 11-hour rule with NEXT day's existing (manual/locked) shifts
+    const nextDateObj = new Date(dateStr);
+    nextDateObj.setDate(nextDateObj.getDate() + 1);
+    const nextDateStr = formatDateYMD(nextDateObj);
+
+    const nextShifts = currentShiftsList.filter(
+      s => s.staffId === staffId && s.data === nextDateStr && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie"
+    );
+
+    const endParts = fine.split(":");
+    if (endParts.length === 2) {
+      let myEndMin = parseInt(endParts[0], 10) * 60 + parseInt(endParts[1], 10);
+      if (tipoTurno === "Notte" || (parseInt(fine.split(":")[0], 10) < parseInt(inizio.split(":")[0], 10))) {
+        myEndMin += 24 * 60;
+      }
+
+      let earliestNextStartMin = 48 * 60;
+      nextShifts.forEach(s => {
+        const nStartParts = s.orarioInizio.split(":");
+        if (nStartParts.length === 2) {
+          let mins = parseInt(nStartParts[0], 10) * 60 + parseInt(nStartParts[1], 10) + 24 * 60;
+          if (mins < earliestNextStartMin) earliestNextStartMin = mins;
+        }
+      });
+
+      if (earliestNextStartMin < 48 * 60 && (earliestNextStartMin - myEndMin) < 11 * 60) {
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  // Auto-generate Week Rotation Schedule for all structures
+  const handleGenerateAutomaticShifts = () => {
     if (!onUpdateShifts) return;
-    if (!confirm("Vuoi caricare automaticamente la rotazione turni standard (Mattina/Pomeriggio/Notte/Riposo) per tutti gli operatori per questa settimana?")) return;
 
-    const newGeneratedShifts: Shift[] = [...shifts];
-    const shiftTypes: ("Mattina" | "Pomeriggio" | "Notte" | "Riposo")[] = ["Mattina", "Pomeriggio", "Notte", "Riposo"];
+    const targetDays = weekDays.slice(1); // Lun-Dom di questa settimana (esclusa domenica di riferimento)
+    const activeStaff = staff.filter(m => m.attivo !== false);
 
-    weekDays.forEach((day, dayIndex) => {
-      const dateStr = formatDateYMD(day);
-      staff.forEach((member, staffIndex) => {
-        const exists = newGeneratedShifts.some(s => s.staffId === member.id && s.data === dateStr);
-        if (!exists) {
-          const shiftType = shiftTypes[(staffIndex + dayIndex) % 4];
-          
-          // Use member custom default hours if available
-          let start = "07:00", end = "14:00";
-          if (shiftType === "Mattina") {
-            if (member.orarioMattina) {
-              const p = member.orarioMattina.split("-");
-              start = p[0]?.trim() || "07:00"; end = p[1]?.trim() || "14:00";
-            }
-          } else if (shiftType === "Pomeriggio") {
-            if (member.orarioPomeriggio) {
-              const p = member.orarioPomeriggio.split("-");
-              start = p[0]?.trim() || "14:00"; end = p[1]?.trim() || "21:00";
-            } else { start = "14:00"; end = "21:00"; }
-          } else if (shiftType === "Notte") {
-            if (member.orarioNotte) {
-              const p = member.orarioNotte.split("-");
-              start = p[0]?.trim() || "21:00"; end = p[1]?.trim() || "07:00";
-            } else { start = "21:00"; end = "07:00"; }
-          } else if (shiftType === "Riposo") { start = "00:00"; end = "00:00"; }
+    if (activeStaff.length === 0) {
+      showToast("⚠️ Nessun operatore attivo in organico.");
+      return;
+    }
 
-          newGeneratedShifts.push({
-            id: `gen-${Date.now()}-${member.id}-${dayIndex}`,
-            staffId: member.id,
-            data: dateStr,
-            tipoTurno: shiftType,
+    // Keep ALL non-automatic shifts (manual work shifts, manual Riposo, Ferie, Notte, locked days, Sunday reference).
+    // Only strip previous auto-generated placeholder shifts (`auto-`) on unlocked target days so they can be regenerated cleanly.
+    let updatedShifts = shifts.filter(s => {
+      const isTarget = targetDays.some(d => formatDateYMD(d) === s.data);
+      if (!isTarget) return true; // Preserve non-target days & Sunday reference
+      if (lockedDays.includes(s.data)) return true; // Preserve locked days
+      // Preserve all manual/non-auto shifts (e.g. shift-..., shift-ferie-...)
+      return !s.id.startsWith("auto-");
+    });
+
+    // Required structure slots per day
+    const structureSlots: { struttura: string; tipoTurno: "Mattina" | "Pomeriggio"; defaultStart: string; defaultEnd: string }[] = [
+      { struttura: "Vannucci 1", tipoTurno: "Mattina", defaultStart: "07:00", defaultEnd: "14:00" },
+      { struttura: "Vannucci 2", tipoTurno: "Mattina", defaultStart: "08:00", defaultEnd: "15:00" },
+      { struttura: "Vannucci 3", tipoTurno: "Mattina", defaultStart: "08:00", defaultEnd: "15:00" },
+      { struttura: "Vannucci 1", tipoTurno: "Pomeriggio", defaultStart: "14:00", defaultEnd: "21:00" },
+      { struttura: "Vannucci 2", tipoTurno: "Pomeriggio", defaultStart: "15:00", defaultEnd: "22:00" },
+      { struttura: "Vannucci 3", tipoTurno: "Pomeriggio", defaultStart: "15:00", defaultEnd: "22:00" },
+    ];
+
+    // Track total assigned work shifts per member across the week to balance workload
+    const shiftCountMap: Record<string, number> = {};
+    activeStaff.forEach(m => {
+      const count = updatedShifts.filter(s =>
+        s.staffId === m.id &&
+        targetDays.some(d => formatDateYMD(d) === s.data) &&
+        s.tipoTurno !== "Riposo" &&
+        s.tipoTurno !== "Ferie"
+      ).length;
+      shiftCountMap[m.id] = count;
+    });
+
+    let rotationIndex = 0;
+
+    targetDays.forEach((day, dayIndex) => {
+      const dateYMD = formatDateYMD(day);
+
+      // Skip locked days (preserved as-is)
+      if (lockedDays.includes(dateYMD)) return;
+
+      const assignedInDay = new Set<string>();
+
+      // Mark staff who ALREADY have a shift (Work, Ferie, Notte, or manual Riposo) on this day as assigned
+      updatedShifts.forEach(s => {
+        if (s.data === dateYMD) {
+          assignedInDay.add(s.staffId);
+        }
+      });
+
+      structureSlots.forEach((slot, slotIndex) => {
+        // Check if this structure slot (struttura + tipoTurno) is ALREADY satisfied by an existing shift on dateYMD
+        const isSlotAlreadyCovered = updatedShifts.some(s =>
+          s.data === dateYMD &&
+          s.struttura === slot.struttura &&
+          s.tipoTurno === slot.tipoTurno
+        );
+
+        if (isSlotAlreadyCovered) {
+          // Slot is already satisfied by a manual or existing shift!
+          return;
+        }
+
+        // Find valid candidate staff members who pass all rest rules and are not assigned yet today
+        const candidates = activeStaff.filter(m => {
+          if (assignedInDay.has(m.id)) return false;
+
+          let start = slot.defaultStart;
+          let end = slot.defaultEnd;
+
+          if (slot.tipoTurno === "Mattina" && m.orarioMattina) {
+            const parts = m.orarioMattina.split("-");
+            if (parts.length === 2) { start = parts[0].trim(); end = parts[1].trim(); }
+          } else if (slot.tipoTurno === "Pomeriggio" && m.orarioPomeriggio) {
+            const parts = m.orarioPomeriggio.split("-");
+            if (parts.length === 2) { start = parts[0].trim(); end = parts[1].trim(); }
+          }
+
+          return checkCandidateShiftValidityForAuto(m.id, dateYMD, slot.tipoTurno, slot.struttura, start, end, updatedShifts);
+        });
+
+        // Sort candidates:
+        // 1. Staff with fewer assigned work shifts this week first (workload balance)
+        // 2. Tie-break using rotation offset
+        candidates.sort((a, b) => {
+          const countA = shiftCountMap[a.id] || 0;
+          const countB = shiftCountMap[b.id] || 0;
+          if (countA !== countB) return countA - countB;
+          const idxA = (activeStaff.indexOf(a) + rotationIndex) % activeStaff.length;
+          const idxB = (activeStaff.indexOf(b) + rotationIndex) % activeStaff.length;
+          return idxA - idxB;
+        });
+
+        let chosenMember = candidates[0];
+
+        // SFORZO SUPPLEMENTARE (EXTRA EFFORT FALLBACK FOR HEAVY CONSECUTIVE CONSTRAINTS):
+        // If no candidate passed strict rest checks (due to tight multi-day manual constraints),
+        // pick from active staff members not assigned yet today and not on Ferie/manual Riposo.
+        if (!chosenMember) {
+          const fallbackCandidates = activeStaff.filter(m => {
+            if (assignedInDay.has(m.id)) return false;
+            const onFerieOrRiposo = updatedShifts.some(s =>
+              s.staffId === m.id && s.data === dateYMD && (s.tipoTurno === "Ferie" || s.tipoTurno === "Riposo")
+            );
+            return !onFerieOrRiposo;
+          });
+
+          fallbackCandidates.sort((a, b) => {
+            const countA = shiftCountMap[a.id] || 0;
+            const countB = shiftCountMap[b.id] || 0;
+            return countA - countB;
+          });
+
+          chosenMember = fallbackCandidates[0];
+        }
+
+        if (chosenMember) {
+          assignedInDay.add(chosenMember.id);
+          shiftCountMap[chosenMember.id] = (shiftCountMap[chosenMember.id] || 0) + 1;
+
+          let start = slot.defaultStart;
+          let end = slot.defaultEnd;
+
+          if (slot.tipoTurno === "Mattina" && chosenMember.orarioMattina) {
+            const parts = chosenMember.orarioMattina.split("-");
+            if (parts.length === 2) { start = parts[0].trim(); end = parts[1].trim(); }
+          } else if (slot.tipoTurno === "Pomeriggio" && chosenMember.orarioPomeriggio) {
+            const parts = chosenMember.orarioPomeriggio.split("-");
+            if (parts.length === 2) { start = parts[0].trim(); end = parts[1].trim(); }
+          }
+
+          updatedShifts.push({
+            id: `auto-${Date.now()}-${dayIndex}-${slotIndex}-${Math.random().toString(36).substr(2, 4)}`,
+            staffId: chosenMember.id,
+            data: dateYMD,
+            tipoTurno: slot.tipoTurno,
             orarioInizio: start,
             orarioFine: end,
+            struttura: slot.struttura,
             note: "Programmazione automatica"
           });
         }
       });
+
+      // Staff members not assigned a work shift today receive "Riposo"
+      activeStaff.forEach(m => {
+        if (!assignedInDay.has(m.id)) {
+          updatedShifts.push({
+            id: `auto-rip-${Date.now()}-${dayIndex}-${m.id}-${Math.random().toString(36).substr(2, 4)}`,
+            staffId: m.id,
+            data: dateYMD,
+            tipoTurno: "Riposo",
+            orarioInizio: "00:00",
+            orarioFine: "00:00",
+            note: "Riposo programmatico"
+          });
+        }
+      });
+
+      rotationIndex = (rotationIndex + 1) % activeStaff.length;
     });
 
-    onUpdateShifts(newGeneratedShifts);
-    showToast("Programmazione settimanale generata con orari memorizzati!");
+    applyShiftsUpdate(updatedShifts);
+    showToast("✨ Turni generati senza errori! Rispettato il riposo di 11 ore tra i turni.");
   };
 
   const checkPotentialShiftValidity = (
@@ -1484,6 +1807,252 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   };
 
   // PRINT / EXPORT PDF
+  const printViaHiddenIframe = (contentHtml: string) => {
+    const existingIframe = document.getElementById("shift-print-iframe");
+    if (existingIframe) {
+      existingIframe.remove();
+    }
+
+    const iframe = document.createElement("iframe");
+    iframe.id = "shift-print-iframe";
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow?.document;
+    if (!doc) return;
+
+    doc.open();
+    doc.write(contentHtml);
+    doc.close();
+
+    setTimeout(() => {
+      try {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+      } catch (e) {
+        console.error("Print error:", e);
+      }
+    }, 300);
+  };
+
+  const handleExportPDF = () => {
+    setShowExportModal(false);
+    const activeStaff = staff.filter(m => m.attivo !== false);
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Tabellone Turni - Casa Famiglia Anzio</title>
+        <style>
+          @page { size: landscape; margin: 8mm; }
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; font-size: 11px; color: #0f172a; margin: 0; padding: 10px; background: #ffffff; }
+          .header { text-align: center; margin-bottom: 15px; border-bottom: 2px solid #3b82f6; padding-bottom: 8px; }
+          .header h1 { margin: 0; font-size: 18px; color: #1e293b; font-weight: 800; text-transform: uppercase; }
+          .header p { margin: 4px 0 0 0; color: #475569; font-size: 11px; font-weight: 600; }
+          table { width: 100%; border-collapse: collapse; margin-top: 5px; table-layout: fixed; }
+          th, td { border: 1px solid #cbd5e1; padding: 5px; text-align: left; vertical-align: top; word-wrap: break-word; }
+          th { background-color: #f1f5f9; font-weight: 700; color: #334155; }
+          .day-header { text-align: center; font-size: 10px; }
+          .day-name { font-size: 11px; text-transform: uppercase; color: #2563eb; font-weight: bold; }
+          .day-date { font-size: 9px; color: #64748b; }
+          .struct-header { background-color: #eff6ff; font-weight: bold; color: #1e40af; text-align: center; font-size: 12px; padding: 6px; }
+          .shift-box { background: #f8fafc; border-left: 3px solid #2563eb; padding: 3px 4px; margin-bottom: 3px; border-radius: 2px; }
+          .shift-title { font-weight: bold; font-size: 10px; color: #1e40af; }
+          .shift-time { font-size: 8.5px; color: #64748b; }
+          .shift-staff { font-size: 9.5px; margin-top: 1px; font-weight: 600; color: #0f172a; }
+          .badge-riposo { background: #f1f5f9; border-left-color: #94a3b8; color: #64748b; font-style: italic; }
+          .badge-ferie { background: #fef3c7; border-left-color: #d97706; color: #92400e; }
+          .footer { margin-top: 15px; text-align: right; font-size: 9px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 4px; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>Casa Famiglia Anzio - Tabellone Turni</h1>
+          <p>Settimana dal ${formatDateIT(weekDays[0])} al ${formatDateIT(weekDays[6])}</p>
+        </div>
+
+        ${viewMode === 'struttura' ? `
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 12%;">Struttura</th>
+                ${weekDays.map(d => `
+                  <th class="day-header">
+                    <div class="day-name">${d.toLocaleDateString('it-IT', { weekday: 'short' })}</div>
+                    <div class="day-date">${d.getDate()}/${d.getMonth()+1}</div>
+                  </th>
+                `).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${STRUTTURE.map(struct => `
+                <tr>
+                  <td class="struct-header" style="vertical-align: middle;">${struct.nome}</td>
+                  ${weekDays.map(d => {
+                    const dateStr = formatDateYMD(d);
+                    const dayShifts = shifts.filter(s => s.data === dateStr && s.struttura === struct.nome);
+                    return `
+                      <td>
+                        ${dayShifts.length === 0 ? '<div style="color:#cbd5e1; text-align:center; font-style:italic;">-</div>' : dayShifts.map(s => {
+                          const staffM = staff.find(m => m.id === s.staffId);
+                          return `
+                            <div class="shift-box">
+                              <div class="shift-title">${s.tipoTurno} <span class="shift-time">(${s.orarioInizio}-${s.orarioFine})</span></div>
+                              <div class="shift-staff">${staffM ? staffM.nome : 'Non assegnato'}</div>
+                            </div>
+                          `;
+                        }).join('')}
+                      </td>
+                    `;
+                  }).join('')}
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        ` : `
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 14%;">Operatore</th>
+                ${weekDays.map(d => `
+                  <th class="day-header">
+                    <div class="day-name">${d.toLocaleDateString('it-IT', { weekday: 'short' })}</div>
+                    <div class="day-date">${d.getDate()}/${d.getMonth()+1}</div>
+                  </th>
+                `).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${activeStaff.map(member => `
+                <tr>
+                  <td style="font-weight: bold; vertical-align: middle; background-color: #f8fafc;">${member.nome}</td>
+                  ${weekDays.map(d => {
+                    const dateStr = formatDateYMD(d);
+                    const memberShifts = shifts.filter(s => s.staffId === member.id && s.data === dateStr);
+                    if (memberShifts.length === 0) {
+                      return `<td><div class="shift-box badge-riposo">Riposo</div></td>`;
+                    }
+                    return `
+                      <td>
+                        ${memberShifts.map(s => `
+                          <div class="shift-box ${s.tipoTurno === 'Ferie' ? 'badge-ferie' : ''}">
+                            <div class="shift-title">${s.tipoTurno}</div>
+                            <div class="shift-staff">${s.struttura}</div>
+                            <div class="shift-time">${s.orarioInizio}-${s.orarioFine}</div>
+                          </div>
+                        `).join('')}
+                      </td>
+                    `;
+                  }).join('')}
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `}
+
+        <div class="footer">
+          Stampato il ${new Date().toLocaleDateString('it-IT')} alle ${new Date().toLocaleTimeString('it-IT')} - Casa Famiglia Anzio
+        </div>
+      </body>
+      </html>
+    `;
+
+    printViaHiddenIframe(html);
+  };
+
+  const handleExportWeeklyPDF = () => {
+    handleExportPDF();
+  };
+
+  const handleExportMonthlyPDF = () => {
+    const activeStaff = staff.filter(m => m.attivo !== false);
+    const monthDaysCount = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
+    const daysArray = Array.from({ length: monthDaysCount }, (_, i) => new Date(currentDate.getFullYear(), currentDate.getMonth(), i + 1));
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Riepilogo Mensile Turni - Casa Famiglia Anzio</title>
+        <style>
+          @page { size: landscape; margin: 6mm; }
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; font-size: 10px; color: #0f172a; margin: 0; padding: 10px; background: #ffffff; }
+          .header { text-align: center; margin-bottom: 12px; border-bottom: 2px solid #3b82f6; padding-bottom: 6px; }
+          .header h1 { margin: 0; font-size: 16px; color: #1e293b; font-weight: 800; text-transform: uppercase; }
+          .header p { margin: 3px 0 0 0; color: #475569; font-size: 11px; font-weight: 600; }
+          table { width: 100%; border-collapse: collapse; margin-top: 5px; table-layout: fixed; }
+          th, td { border: 1px solid #cbd5e1; padding: 3px; text-align: center; vertical-align: top; font-size: 8.5px; word-wrap: break-word; }
+          th { background-color: #f1f5f9; font-weight: 700; color: #334155; }
+          .staff-col { text-align: left; font-weight: bold; background-color: #f8fafc; font-size: 9.5px; width: 110px; }
+          .shift-tag { font-size: 8px; font-weight: bold; padding: 1px; margin-bottom: 1px; border-radius: 2px; }
+          .tag-m { background: #dbeafe; color: #1e40af; }
+          .tag-p { background: #e0e7ff; color: #3730a3; }
+          .tag-n { background: #f1f5f9; color: #334155; }
+          .tag-r { color: #94a3b8; font-style: italic; }
+          .footer { margin-top: 10px; text-align: right; font-size: 8px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 3px; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>Casa Famiglia Anzio - Riepilogo Mensile Turni</h1>
+          <p>Mese di ${getFullMonthName(currentDate).toUpperCase()} ${currentDate.getFullYear()}</p>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th class="staff-col">Operatore</th>
+              ${daysArray.map(d => `
+                <th>
+                  <div>${d.toLocaleDateString('it-IT', { weekday: 'narrow' })}</div>
+                  <div style="font-size: 8px; color: #64748b;">${d.getDate()}</div>
+                </th>
+              `).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${activeStaff.map(member => `
+              <tr>
+                <td class="staff-col">${member.nome}</td>
+                ${daysArray.map(d => {
+                  const dateStr = formatDateYMD(d);
+                  const memberShifts = shifts.filter(s => s.staffId === member.id && s.data === dateStr);
+                  if (memberShifts.length === 0) {
+                    return `<td class="tag-r">R</td>`;
+                  }
+                  return `
+                    <td>
+                      ${memberShifts.map(s => `
+                        <div class="shift-tag ${s.tipoTurno.startsWith('M') ? 'tag-m' : s.tipoTurno.startsWith('P') ? 'tag-p' : 'tag-n'}">
+                          ${s.tipoTurno.charAt(0)}
+                        </div>
+                      `).join('')}
+                    </td>
+                  `;
+                }).join('')}
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+
+        <div class="footer">
+          Stampato il ${new Date().toLocaleDateString('it-IT')} alle ${new Date().toLocaleTimeString('it-IT')} - Casa Famiglia Anzio
+        </div>
+      </body>
+      </html>
+    `;
+
+    printViaHiddenIframe(html);
+  };
+
   const handlePrintPDF = () => {
     window.print();
   };
@@ -1616,6 +2185,36 @@ function importaTurniResidenzaVannucci() {
 
         <div className="flex flex-wrap items-center gap-2">
           
+          {/* UNDO / REDO ACTION BUTTONS (ROTONDE A SINISTRA E DESTRA) */}
+          {!isPublicView && (
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200" title="Annulla / Ripristina modifiche">
+              <button
+                onClick={handleUndo}
+                disabled={historyIndex <= 0}
+                className={`p-2 rounded-lg transition-all flex items-center justify-center ${
+                  historyIndex > 0
+                    ? "bg-white text-indigo-700 shadow-sm hover:bg-indigo-50 cursor-pointer"
+                    : "text-slate-300 cursor-not-allowed opacity-50"
+                }`}
+                title="Annulla ultima azione (Ctrl+Z)"
+              >
+                <Undo2 className="w-4 h-4 stroke-[2.5px]" />
+              </button>
+              <button
+                onClick={handleRedo}
+                disabled={historyIndex >= historyStack.length - 1}
+                className={`p-2 rounded-lg transition-all flex items-center justify-center ${
+                  historyIndex < historyStack.length - 1
+                    ? "bg-white text-indigo-700 shadow-sm hover:bg-indigo-50 cursor-pointer"
+                    : "text-slate-300 cursor-not-allowed opacity-50"
+                }`}
+                title="Ripristina azione annullata (Ctrl+Y / Ctrl+Shift+Z)"
+              >
+                <Redo2 className="w-4 h-4 stroke-[2.5px]" />
+              </button>
+            </div>
+          )}
+
           {/* DRAG ACTION MODE TOGGLE (SPOSTA vs DUPLICA) - ADMIN ONLY */}
           {!isPublicView && (
             <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
@@ -1671,12 +2270,12 @@ function importaTurniResidenzaVannucci() {
 
           {!isPublicView && onUpdateShifts && (
             <button
-              onClick={handleGenerateStandardWeek}
-              className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
-              title="Carica automaticamente i turni di rotazione per la settimana corrente"
+              onClick={handleGenerateAutomaticShifts}
+              className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
+              title="Genera automaticamente i turni per tutte le strutture (Struttura 1 dalle 07:00, Struttura 2 e 3 dalle 08:00)"
             >
-              <Sparkles className="w-4 h-4 text-indigo-600" />
-              <span>Auto-Compila</span>
+              <Sparkles className="w-4 h-4 fill-slate-950" />
+              <span>⚡ Genera Turni Automatici</span>
             </button>
           )}
 
@@ -1885,7 +2484,51 @@ function importaTurniResidenzaVannucci() {
                 <span className="text-[10px] sm:text-xs font-semibold bg-indigo-800 px-3 py-1.5 rounded-lg border border-indigo-700 whitespace-nowrap">
                   Settimana dal {weekDays[1].getDate()} {getFullMonthName(weekDays[1])} al {weekDays[7].getDate()} {getFullMonthName(weekDays[7])} {weekDays[7].getFullYear()}
                 </span>
-                
+                {!isPublicView && (
+                  <div className="flex items-center gap-1 bg-indigo-950 p-1 rounded-lg border border-indigo-700">
+                    <button
+                      onClick={handleUndo}
+                      disabled={historyIndex <= 0}
+                      className={`p-1.5 rounded transition-all flex items-center justify-center ${
+                        historyIndex > 0
+                          ? "bg-indigo-800 text-white hover:bg-indigo-700 cursor-pointer"
+                          : "text-indigo-400 opacity-40 cursor-not-allowed"
+                      }`}
+                      title="Annulla ultima azione (Ctrl+Z)"
+                    >
+                      <Undo2 className="w-3.5 h-3.5 stroke-[2.5px]" />
+                    </button>
+                    <button
+                      onClick={handleRedo}
+                      disabled={historyIndex >= historyStack.length - 1}
+                      className={`p-1.5 rounded transition-all flex items-center justify-center ${
+                        historyIndex < historyStack.length - 1
+                          ? "bg-indigo-800 text-white hover:bg-indigo-700 cursor-pointer"
+                          : "text-indigo-400 opacity-40 cursor-not-allowed"
+                      }`}
+                      title="Ripristina azione annullata (Ctrl+Y / Ctrl+Shift+Z)"
+                    >
+                      <Redo2 className="w-3.5 h-3.5 stroke-[2.5px]" />
+                    </button>
+                  </div>
+                )}
+                {!isPublicView && onUpdateShifts && (
+                  <button
+                    onClick={handleGenerateAutomaticShifts}
+                    className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-lg text-[11px] sm:text-xs transition-all cursor-pointer shadow flex items-center gap-1.5"
+                    title="Genera automaticamente i turni per le 3 strutture"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 fill-slate-950" />
+                    <span>⚡ Genera Turni</span>
+                  </button>
+                )}
+                <button
+                  onClick={handleExportWeeklyPDF}
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer shadow flex items-center gap-1.5"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Esporta in PDF</span>
+                </button>
                 <button
                   onClick={() => setIsFullScreen(false)}
                   className="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer shadow flex items-center gap-1.5"
@@ -1940,7 +2583,7 @@ function importaTurniResidenzaVannucci() {
 
           {/* TABLE CONTAINER - EXPANDED WIDTH TO ENSURE ALL 7 DAYS FIT PERFECTLY WITHOUT CLIPPING */}
           <div className="overflow-auto max-h-[calc(100vh-250px)] w-full">
-            <table className="w-full text-left border-collapse min-w-[1150px] sm:min-w-[1300px]">
+            <table id="weekly-schedule-table" className="w-full text-left border-collapse min-w-[1150px] sm:min-w-[1300px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-xs font-extrabold text-slate-700">
                   <th className="p-4 w-48 min-w-[190px] border-r border-slate-200 sticky top-0 left-0 z-40 bg-slate-100 shadow-xs">
@@ -1960,19 +2603,19 @@ function importaTurniResidenzaVannucci() {
                     return (
                       <th
                         key={idx}
-                        draggable={!isPublicView && !isEffectivelyLocked}
+                        draggable={!isPublicView}
                         onDragStart={(e) => {
-                          if (!isPublicView && !isReferenceDay) handleDragStartDay(e, dateYMD);
+                          if (!isPublicView) handleDragStartDay(e, dateYMD);
                         }}
                         onDragOver={(e) => {
-                          if (!isPublicView && !isReferenceDay) {
+                          if (!isPublicView) {
                             e.preventDefault();
                             setDragOverTargetDate(dateYMD);
                           }
                         }}
                         onDragLeave={() => setDragOverTargetDate(null)}
                         onDrop={(e) => {
-                          if (!isPublicView && !isReferenceDay) handleDropOnCell(e, "", dateYMD);
+                          if (!isPublicView) handleDropOnCell(e, "", dateYMD);
                         }}
                         onMouseDown={(e) => {
                           if (!isPublicView && !isReferenceDay) handleMouseDownDay(dateYMD, e);
@@ -1983,7 +2626,7 @@ function importaTurniResidenzaVannucci() {
                         }}
                         onTouchEnd={handleMouseUpDay}
                         className={`p-3 text-center transition-all select-none relative group min-w-[135px] sm:min-w-[155px] sticky top-0 z-30 ${
-                          isPublicView || isReferenceDay ? "" : "cursor-grab active:cursor-grabbing"
+                          isPublicView ? "" : "cursor-grab active:cursor-grabbing"
                         } ${
                           isDayComplete(dateYMD) && !isReferenceDay
                             ? "border-x-2 border-t-2 border-emerald-500 shadow-xs"
@@ -2155,11 +2798,11 @@ function importaTurniResidenzaVannucci() {
                             handleOpenAddModal(member.id, dateYMD);
                           }}
                           onDragOver={(e) => {
-                            if (!isPublicView && !isEffectivelyLocked) handleDragOverCell(e, cellKey);
+                            if (!isPublicView) handleDragOverCell(e, cellKey);
                           }}
                           onDragLeave={handleDragLeaveCell}
                           onDrop={(e) => {
-                            if (!isPublicView && !isReferenceDay) handleDropOnCell(e, member.id, dateYMD);
+                            if (!isPublicView) handleDropOnCell(e, member.id, dateYMD);
                           }}
                           className={`p-2 transition-all relative group/cell h-24 align-top ${
                             isPublicView || isReferenceDay ? "" : "cursor-pointer"
@@ -2186,9 +2829,9 @@ function importaTurniResidenzaVannucci() {
                                 return (
                                 <div
                                   key={s.id}
-                                  draggable={!isPublicView && s.tipoTurno !== "Ferie" && !isEffectivelyLocked}
+                                  draggable={!isPublicView && s.tipoTurno !== "Ferie"}
                                   onDragStart={(e) => {
-                                    if (!isPublicView && s.tipoTurno !== "Ferie" && !isReferenceDay) handleDragStartSingleShift(e, s);
+                                    if (!isPublicView && s.tipoTurno !== "Ferie") handleDragStartSingleShift(e, s);
                                   }}
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -2205,9 +2848,14 @@ function importaTurniResidenzaVannucci() {
                                 >
                                   {/* Shift Header & Trash Hover Button */}
                                   <div className="flex items-center justify-between gap-1">
-                                    <div className="flex items-center gap-1">
+                                    <div className="flex items-center gap-1 flex-wrap">
                                       {!isPublicView && !isEffectivelyLocked && <GripVertical className={`w-3 h-3 ${isInvalid ? 'text-red-500' : 'text-slate-400 group-hover/shift:text-indigo-600'} transition-colors`} />}
                                       <span>{s.tipoTurno}</span>
+                                      {!s.id.startsWith("auto-") && !isReferenceDay && s.tipoTurno !== "Ferie" && !lockedDays.includes(dateYMD) && (
+                                        <span className="text-[8px] font-black text-amber-800 bg-amber-100/90 border border-amber-300/80 px-1 py-0.2 rounded-xs flex items-center gap-0.5 shrink-0" title="Vincolo Manuale Fisso: Non verrà mai sovrascritto dalla generazione automatica">
+                                          📌 Fisso
+                                        </span>
+                                      )}
                                     </div>
 
                                     <div className="flex items-center gap-1.5">
@@ -2336,7 +2984,13 @@ function importaTurniResidenzaVannucci() {
                 <span className="text-[10px] sm:text-xs font-semibold bg-indigo-800 px-3 py-1.5 rounded-lg border border-indigo-700 whitespace-nowrap">
                   Mese di {getFullMonthName(currentDate).toUpperCase()} {currentDate.getFullYear()}
                 </span>
-                
+                <button
+                  onClick={handleExportMonthlyPDF}
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer shadow flex items-center gap-1.5"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Esporta in PDF</span>
+                </button>
                 <button
                   onClick={() => setIsFullScreen(false)}
                   className="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer shadow flex items-center gap-1.5"
@@ -2391,7 +3045,7 @@ function importaTurniResidenzaVannucci() {
 
           {/* TABLE CONTAINER - FITS ALL 31 DAYS IN 100% WIDTH */}
           <div className="overflow-auto max-h-[calc(100vh-250px)] w-full">
-            <table className="w-full table-fixed text-left border-collapse">
+            <table id="monthly-schedule-table" className="w-full table-fixed text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-xs font-extrabold text-slate-700">
                   <th className="p-2 w-28 sm:w-32 sticky top-0 left-0 z-40 bg-slate-100 border-r border-slate-200 shadow-2xs">

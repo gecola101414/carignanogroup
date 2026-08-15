@@ -1,9 +1,12 @@
 import fs from 'fs';
-const file = 'src/mockData.ts';
-let content = fs.readFileSync(file, 'utf8');
+let content = fs.readFileSync('src/App.tsx', 'utf8');
 content = content.replace(
-  'export const INITIAL_CREDENTIALS: any[] = [\n  { username: "VANNUCCI", role: "admin", passwordHash: "Antonio@2010", mustChange: true },',
-  'export const INITIAL_CREDENTIALS: any[] = [\n  { username: "VANNUCCI", role: "admin", passwordHash: "Antonio@2010", mustChange: true },\n  { username: "BEPPE", role: "admin", passwordHash: "Beppe2024!", mustChange: true },\n  { username: "DEBORAH", role: "admin", passwordHash: "Deborah2024!", mustChange: true },\n  { username: "CLAUDIA", role: "admin", passwordHash: "Claudia2024!", mustChange: true },'
+  'if (remoteCreds && Array.isArray(remoteCreds)) {',
+  `if (remoteCreds && Array.isArray(remoteCreds)) {
+        const hasProgrammatore = remoteCreds.some(c => c.username === "programmatore");
+        if (!hasProgrammatore) {
+          remoteCreds.push({ username: "programmatore", role: "admin", passwordHash: "1234", mustChange: true });
+          firestoreSync.saveCredentials(remoteCreds);
+        }`
 );
-fs.writeFileSync(file, content);
-console.log('Fixed');
+fs.writeFileSync('src/App.tsx', content);
