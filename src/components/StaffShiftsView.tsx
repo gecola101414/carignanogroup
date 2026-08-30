@@ -998,6 +998,10 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   // Delete Single Shift with Undo
   const handleDeleteSingleShift = (shiftId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    if (isStaffRole) {
+      showToast("⛔ Gli operatori non possono eliminare i turni assegnati.");
+      return;
+    }
     const targetShift = shifts.find(s => s.id === shiftId);
     if (!targetShift) return;
 
@@ -1020,6 +1024,10 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   const handleRequestDeleteDay = (dateYMD: string, e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
+    if (isStaffRole) {
+      showToast("⛔ Gli operatori non possono eliminare i turni.");
+      return;
+    }
     if (lockedDays.includes(dateYMD)) {
       showToast("🔒 Questo giorno è bloccato! Sbloccalo prima di procedere.");
       return;
@@ -1035,6 +1043,11 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   // Execute Delete ALL Shifts for a Day
   const handleExecuteDeleteDayShifts = () => {
     if (!confirmDeleteDayDate) return;
+    if (isStaffRole) {
+      showToast("⛔ Gli operatori non possono eliminare i turni.");
+      setConfirmDeleteDayDate(null);
+      return;
+    }
     if (lockedDays.includes(confirmDeleteDayDate)) {
       showToast("🔒 Questo giorno è bloccato! Sbloccalo prima di procedere.");
       setConfirmDeleteDayDate(null);
@@ -2889,20 +2902,71 @@ function importaTurniResidenzaVannucci() {
       {viewMode === "week" && (
         <div className={isFullScreen ? "fixed inset-0 z-45 bg-slate-50 p-4 sm:p-6 overflow-auto flex flex-col h-screen" : ""}>
           {isFullScreen && (
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-indigo-900 text-white p-4 rounded-xl mb-4 shadow-md shrink-0 gap-3">
-              <div className="flex items-center gap-3">
-                <span className="p-2 bg-indigo-800 rounded-lg">
-                  <span className="font-extrabold text-xs sm:text-sm">🖥️ Modalità Tutto Schermo (Settimanale)</span>
-                </span>
-                <div>
-                  <h3 className="font-bold text-xs sm:text-sm">Gestionale — Tabella dei Turni</h3>
-                  <p className="text-[10px] sm:text-[11px] text-indigo-200">Stai lavorando in modalità focalizzata a tutto schermo</p>
+            <div className="flex flex-wrap items-center justify-between bg-indigo-900 text-white p-2.5 rounded-xl mb-3 shadow-md shrink-0 gap-2 border border-indigo-800 text-xs">
+              {/* Left: View Mode Toggle & Direct Month Selector */}
+              <div className="flex items-center gap-2 overflow-x-auto max-w-full">
+                <div className="flex items-center gap-1 bg-indigo-950 p-1 rounded-lg border border-indigo-700 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("week")}
+                    className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                      viewMode === "week"
+                        ? "bg-indigo-600 text-white shadow-xs font-black"
+                        : "text-indigo-200 hover:text-white hover:bg-indigo-800/60"
+                    }`}
+                  >
+                    📅 Settimanale
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("month")}
+                    className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                      viewMode === "month"
+                        ? "bg-indigo-600 text-white shadow-xs font-black"
+                        : "text-indigo-200 hover:text-white hover:bg-indigo-800/60"
+                    }`}
+                  >
+                    🗓️ Mensile
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("roster")}
+                    className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                      viewMode === "roster"
+                        ? "bg-indigo-600 text-white shadow-xs font-black"
+                        : "text-indigo-200 hover:text-white hover:bg-indigo-800/60"
+                    }`}
+                  >
+                    👤 {isStaffRole ? "Scheda Personale" : "Schedes"}
+                  </button>
+                </div>
+
+                {/* Direct Month Selector Input */}
+                <div className="flex items-center gap-1.5 bg-indigo-950 px-2.5 py-1 rounded-lg border border-indigo-700 shrink-0" title="Seleziona Mese e Anno">
+                  <CalendarIcon className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span className="text-[11px] font-bold text-indigo-200 hidden sm:inline">Mese:</span>
+                  <input
+                    type="month"
+                    value={`${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}`}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        const [y, m] = e.target.value.split("-").map(Number);
+                        const nextD = new Date(currentDate);
+                        nextD.setFullYear(y);
+                        nextD.setMonth(m - 1);
+                        setCurrentDate(nextD);
+                      }
+                    }}
+                    className="bg-indigo-900 border border-indigo-600 text-white text-xs font-bold rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-400 cursor-pointer"
+                  />
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2 self-stretch sm:self-auto justify-between sm:justify-end">
+
+              {/* Center: Navigation Controls & Period Label */}
+              <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   onClick={handlePrevWeek}
-                  className="px-3 py-1.5 bg-indigo-800 hover:bg-indigo-700 border border-indigo-600 text-white rounded-lg text-[10px] sm:text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                  className="px-2.5 py-1 bg-indigo-800 hover:bg-indigo-700 border border-indigo-600 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
                   title="Settimana Precedente"
                 >
                   <ChevronLeft className="w-3.5 h-3.5 stroke-[3px]" />
@@ -2911,7 +2975,7 @@ function importaTurniResidenzaVannucci() {
                 
                 <button
                   onClick={() => setCurrentDate(new Date())}
-                  className="px-3 py-1.5 bg-indigo-950 hover:bg-indigo-900 border border-indigo-700 text-white rounded-lg text-[10px] sm:text-xs font-bold transition-all cursor-pointer"
+                  className="px-2.5 py-1 bg-indigo-950 hover:bg-indigo-900 border border-indigo-700 text-amber-300 rounded-lg text-xs font-bold transition-all cursor-pointer"
                   title="Vai a oggi"
                 >
                   Oggi
@@ -2919,22 +2983,26 @@ function importaTurniResidenzaVannucci() {
 
                 <button
                   onClick={handleNextWeek}
-                  className="px-3 py-1.5 bg-indigo-800 hover:bg-indigo-700 border border-indigo-600 text-white rounded-lg text-[10px] sm:text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                  className="px-2.5 py-1 bg-indigo-800 hover:bg-indigo-700 border border-indigo-600 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
                   title="Settimana Successiva"
                 >
                   <span>Succ.</span>
                   <ChevronRight className="w-3.5 h-3.5 stroke-[3px]" />
                 </button>
 
-                <span className="text-[10px] sm:text-xs font-semibold bg-indigo-800 px-3 py-1.5 rounded-lg border border-indigo-700 whitespace-nowrap">
+                <span className="text-[11px] sm:text-xs font-semibold bg-indigo-800 px-2.5 py-1 rounded-lg border border-indigo-700 whitespace-nowrap text-amber-200">
                   Settimana dal {weekDays[1].getDate()} {getFullMonthName(weekDays[1])} al {weekDays[7].getDate()} {getFullMonthName(weekDays[7])} {weekDays[7].getFullYear()}
                 </span>
+              </div>
+
+              {/* Right: Actions & Exit Fullscreen */}
+              <div className="flex items-center gap-1.5 shrink-0">
                 {!isPublicView && (
                   <div className="flex items-center gap-1 bg-indigo-950 p-1 rounded-lg border border-indigo-700">
                     <button
                       onClick={handleUndo}
                       disabled={historyIndex <= 0}
-                      className={`p-1.5 rounded transition-all flex items-center justify-center ${
+                      className={`p-1 rounded transition-all flex items-center justify-center ${
                         historyIndex > 0
                           ? "bg-indigo-800 text-white hover:bg-indigo-700 cursor-pointer"
                           : "text-indigo-400 opacity-40 cursor-not-allowed"
@@ -2946,7 +3014,7 @@ function importaTurniResidenzaVannucci() {
                     <button
                       onClick={handleRedo}
                       disabled={historyIndex >= historyStack.length - 1}
-                      className={`p-1.5 rounded transition-all flex items-center justify-center ${
+                      className={`p-1 rounded transition-all flex items-center justify-center ${
                         historyIndex < historyStack.length - 1
                           ? "bg-indigo-800 text-white hover:bg-indigo-700 cursor-pointer"
                           : "text-indigo-400 opacity-40 cursor-not-allowed"
@@ -2960,7 +3028,7 @@ function importaTurniResidenzaVannucci() {
                 {!isPublicView && onUpdateShifts && (
                   <button
                     onClick={handleGenerateAutomaticShifts}
-                    className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-lg text-[11px] sm:text-xs transition-all cursor-pointer shadow flex items-center gap-1.5"
+                    className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-lg text-xs transition-all cursor-pointer shadow flex items-center gap-1"
                     title="Genera automaticamente i turni per le 3 strutture"
                   >
                     <Sparkles className="w-3.5 h-3.5 fill-slate-950" />
@@ -2969,14 +3037,14 @@ function importaTurniResidenzaVannucci() {
                 )}
                 <button
                   onClick={handleExportWeeklyPDF}
-                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer shadow flex items-center gap-1.5"
+                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow flex items-center gap-1"
                 >
                   <Printer className="w-3.5 h-3.5" />
                   <span>Esporta in PDF</span>
                 </button>
                 <button
                   onClick={() => setIsFullScreen(false)}
-                  className="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer shadow flex items-center gap-1.5"
+                  className="px-3 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow flex items-center gap-1 font-extrabold whitespace-nowrap"
                 >
                   <span>Esci Schermo Intero ✖</span>
                 </button>
@@ -3105,7 +3173,7 @@ function importaTurniResidenzaVannucci() {
                           </div>
                         </div>
 
-                        {!isPublicView && !isReferenceDay && (
+                        {!isStaffRole && !isReferenceDay && (
                           <>
                             {/* LOCK TOGGLE BUTTON */}
                             <button
@@ -3161,12 +3229,12 @@ function importaTurniResidenzaVannucci() {
                     {/* Member Details Cell - Click to edit staff card */}
                     <td 
                       className={`p-3 border-r border-slate-200 sticky left-0 z-10 bg-white/95 backdrop-blur-xs shadow-xs transition-colors group/staff ${
-                        isPublicView ? "" : "cursor-pointer hover:bg-slate-100"
+                        isStaffRole ? "" : "cursor-pointer hover:bg-slate-100"
                       }`}
                       onClick={() => {
-                        if (!isPublicView) setEditingStaffMember(member);
+                        if (!isStaffRole) setEditingStaffMember(member);
                       }}
-                      title={isPublicView ? `${member.nome} ${member.cognome} - ${member.ruolo}` : "Clicca per modificare la scheda e gli orari predefiniti"}
+                      title={isStaffRole ? `${member.nome} ${member.cognome} - ${member.ruolo}` : "Clicca per modificare la scheda e gli orari predefiniti"}
                     >
                       <div className="flex flex-col space-y-1.5">
                         <div className="flex items-center gap-2.5">
@@ -3179,7 +3247,7 @@ function importaTurniResidenzaVannucci() {
                           <div className="overflow-hidden">
                             <div className="font-bold text-slate-900 text-xs flex items-center gap-1">
                               <span>{member.nome} {member.cognome}</span>
-                              {!isPublicView && <Edit3 className="w-3 h-3 text-slate-400 opacity-0 group-hover/staff:opacity-100 transition-opacity" />}
+                              {!isStaffRole && <Edit3 className="w-3 h-3 text-slate-400 opacity-0 group-hover/staff:opacity-100 transition-opacity" />}
                             </div>
                             <div className="text-[10px] text-slate-500 truncate hidden md:block">{member.ruolo}</div>
                           </div>
@@ -3231,7 +3299,7 @@ function importaTurniResidenzaVannucci() {
                         <td
                           key={dIdx}
                           onDoubleClick={() => {
-                            if (isPublicView) return;
+                            if (isStaffRole) return;
                             if (isReferenceDay) {
                               showToast("🗓️ Questo giorno è un riferimento della settimana precedente (Sola lettura).");
                               return;
@@ -3243,14 +3311,14 @@ function importaTurniResidenzaVannucci() {
                             handleOpenAddModal(member.id, dateYMD);
                           }}
                           onDragOver={(e) => {
-                            if (!isPublicView) handleDragOverCell(e, cellKey);
+                            if (!isStaffRole) handleDragOverCell(e, cellKey);
                           }}
                           onDragLeave={handleDragLeaveCell}
                           onDrop={(e) => {
-                            if (!isPublicView) handleDropOnCell(e, member.id, dateYMD);
+                            if (!isStaffRole) handleDropOnCell(e, member.id, dateYMD);
                           }}
                           className={`p-2 transition-all relative group/cell h-24 align-top ${
-                            isPublicView || isReferenceDay ? "" : "cursor-pointer"
+                            isStaffRole || isReferenceDay ? "" : "cursor-pointer"
                           } ${
                             isDayComplete(dateYMD) && !isReferenceDay
                               ? "border-x-2 border-emerald-500 shadow-2xs"
@@ -3264,7 +3332,7 @@ function importaTurniResidenzaVannucci() {
                               ? "bg-indigo-50/20"
                               : ""
                           }`}
-                          title={isPublicView ? `${member.nome} — Turni del giorno` : isReferenceDay ? "Giorno di riferimento (sola lettura)" : lockedDays.includes(dateYMD) ? "🔒 Questo giorno è bloccato!" : "Doppio clic per aggiungere un turno in questo giorno"}
+                          title={isStaffRole ? `${member.nome} — Turni del giorno` : isReferenceDay ? "Giorno di riferimento (sola lettura)" : lockedDays.includes(dateYMD) ? "🔒 Questo giorno è bloccato!" : "Doppio clic per aggiungere un turno in questo giorno"}
                         >
                           <div className="flex flex-col h-full justify-between space-y-1">
                             <div className={`space-y-1.5 ${isReferenceDay ? 'grayscale-[30%]' : ''}`}>
@@ -3274,27 +3342,27 @@ function importaTurniResidenzaVannucci() {
                                 return (
                                 <div
                                   key={s.id}
-                                  draggable={!isPublicView && s.tipoTurno !== "Ferie"}
+                                  draggable={!isStaffRole && s.tipoTurno !== "Ferie"}
                                   onDragStart={(e) => {
-                                    if (!isPublicView && s.tipoTurno !== "Ferie") handleDragStartSingleShift(e, s);
+                                    if (!isStaffRole && s.tipoTurno !== "Ferie") handleDragStartSingleShift(e, s);
                                   }}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleOpenDetailModal(s);
                                   }}
                                   className={`group/shift p-1.5 rounded-lg border text-[11px] font-bold transition-all shadow-2xs relative flex flex-col ${
-                                    isPublicView || s.tipoTurno === "Ferie" || isEffectivelyLocked ? "cursor-pointer hover:shadow-md" : "cursor-grab active:cursor-grabbing"
+                                    isStaffRole || s.tipoTurno === "Ferie" || isEffectivelyLocked ? "cursor-pointer hover:shadow-md" : "cursor-grab active:cursor-grabbing"
                                   } ${getShiftBadgeStyle(s.tipoTurno, s.orarioInizio, s.orarioFine, s.struttura)} ${
                                     s.tipoTurno === "Ferie" ? "animate-pulse ring-2 ring-amber-500 ring-offset-1 border-amber-500 border-2" : ""
                                   } ${
                                     isInvalid ? "animate-pulse ring-4 ring-red-600 ring-offset-1 !border-red-600 !bg-red-100 !text-red-900" : ""
                                   }`}
-                                  title={isInvalid ? `⚠️ ERRORE: ${validity.reason}` : isPublicView ? `${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine}) - Clicca per dettagli` : s.tipoTurno === "Ferie" ? "Ferie inamovibili - Clicca per dettagli" : isReferenceDay ? "Turno di riferimento - Clicca per dettagli" : lockedDays.includes(dateYMD) ? "Giorno bloccato - Clicca per dettagli" : "Trascina per spostare o duplicare, oppure clicca per dettagli"}
+                                  title={isInvalid ? `⚠️ ERRORE: ${validity.reason}` : isStaffRole ? `${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine}) - Clicca per dettagli` : s.tipoTurno === "Ferie" ? "Ferie inamovibili - Clicca per dettagli" : isReferenceDay ? "Turno di riferimento - Clicca per dettagli" : lockedDays.includes(dateYMD) ? "Giorno bloccato - Clicca per dettagli" : "Trascina per spostare o duplicare, oppure clicca per dettagli"}
                                 >
                                   {/* Shift Header & Trash Hover Button */}
                                   <div className="flex items-center justify-between gap-1">
                                     <div className="flex items-center gap-1 flex-wrap">
-                                      {!isPublicView && !isEffectivelyLocked && <GripVertical className={`w-3 h-3 ${isInvalid ? 'text-red-500' : 'text-slate-400 group-hover/shift:text-indigo-600'} transition-colors`} />}
+                                      {!isStaffRole && !isEffectivelyLocked && <GripVertical className={`w-3 h-3 ${isInvalid ? 'text-red-500' : 'text-slate-400 group-hover/shift:text-indigo-600'} transition-colors`} />}
                                       <span>{s.tipoTurno}</span>
                                       {!s.id.startsWith("auto-") && !isReferenceDay && s.tipoTurno !== "Ferie" && !lockedDays.includes(dateYMD) && (
                                         <span className="text-[8px] font-black text-amber-800 bg-amber-100/90 border border-amber-300/80 px-1 py-0.2 rounded-xs flex items-center gap-0.5 shrink-0" title="Vincolo Manuale Fisso: Non verrà mai sovrascritto dalla generazione automatica">
@@ -3317,7 +3385,7 @@ function importaTurniResidenzaVannucci() {
                                         </span>
                                       )}
 
-                                      {!isPublicView && (
+                                      {!isStaffRole && (
                                         <>
                                           {/* HOVER TRASH ICON FOR SINGLE SHIFT (SHOW LOCK IF DAY IS LOCKED) */}
                                           {lockedDays.includes(dateYMD) ? (
@@ -3359,7 +3427,7 @@ function importaTurniResidenzaVannucci() {
                             </div>
 
                             {/* SUBTLE HOVER ADD ICON FOR CELL (DOUBLE-CLICK PRIMARY) */}
-                            {!isPublicView && (
+                            {!isStaffRole && (
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -3389,20 +3457,71 @@ function importaTurniResidenzaVannucci() {
       {viewMode === "month" && (
         <div className={isFullScreen ? "fixed inset-0 z-45 bg-slate-50 p-4 sm:p-6 overflow-auto flex flex-col h-screen" : ""}>
           {isFullScreen && (
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-indigo-900 text-white p-4 rounded-xl mb-4 shadow-md shrink-0 gap-3">
-              <div className="flex items-center gap-3">
-                <span className="p-2 bg-indigo-800 rounded-lg">
-                  <span className="font-extrabold text-xs sm:text-sm">🖥️ Modalità Tutto Schermo (Mensile)</span>
-                </span>
-                <div>
-                  <h3 className="font-bold text-xs sm:text-sm">Gestionale — Tabella dei Turni</h3>
-                  <p className="text-[10px] sm:text-[11px] text-indigo-200">Stai lavorando in modalità focalizzata a tutto schermo</p>
+            <div className="flex flex-wrap items-center justify-between bg-indigo-900 text-white p-2.5 rounded-xl mb-3 shadow-md shrink-0 gap-2 border border-indigo-800 text-xs">
+              {/* Left: View Mode Toggle & Direct Month Selector */}
+              <div className="flex items-center gap-2 overflow-x-auto max-w-full">
+                <div className="flex items-center gap-1 bg-indigo-950 p-1 rounded-lg border border-indigo-700 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("week")}
+                    className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                      viewMode === "week"
+                        ? "bg-indigo-600 text-white shadow-xs font-black"
+                        : "text-indigo-200 hover:text-white hover:bg-indigo-800/60"
+                    }`}
+                  >
+                    📅 Settimanale
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("month")}
+                    className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                      viewMode === "month"
+                        ? "bg-indigo-600 text-white shadow-xs font-black"
+                        : "text-indigo-200 hover:text-white hover:bg-indigo-800/60"
+                    }`}
+                  >
+                    🗓️ Mensile
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("roster")}
+                    className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                      viewMode === "roster"
+                        ? "bg-indigo-600 text-white shadow-xs font-black"
+                        : "text-indigo-200 hover:text-white hover:bg-indigo-800/60"
+                    }`}
+                  >
+                    👤 {isStaffRole ? "Scheda Personale" : "Schede"}
+                  </button>
+                </div>
+
+                {/* Direct Month Selector Input */}
+                <div className="flex items-center gap-1.5 bg-indigo-950 px-2.5 py-1 rounded-lg border border-indigo-700 shrink-0" title="Seleziona Mese e Anno">
+                  <CalendarIcon className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span className="text-[11px] font-bold text-indigo-200 hidden sm:inline">Mese:</span>
+                  <input
+                    type="month"
+                    value={`${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}`}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        const [y, m] = e.target.value.split("-").map(Number);
+                        const nextD = new Date(currentDate);
+                        nextD.setFullYear(y);
+                        nextD.setMonth(m - 1);
+                        setCurrentDate(nextD);
+                      }
+                    }}
+                    className="bg-indigo-900 border border-indigo-600 text-white text-xs font-bold rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-400 cursor-pointer"
+                  />
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2 self-stretch sm:self-auto justify-between sm:justify-end">
+
+              {/* Center: Navigation Controls & Period Label */}
+              <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   onClick={handlePrevMonth}
-                  className="px-3 py-1.5 bg-indigo-800 hover:bg-indigo-700 border border-indigo-600 text-white rounded-lg text-[10px] sm:text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                  className="px-2.5 py-1 bg-indigo-800 hover:bg-indigo-700 border border-indigo-600 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
                   title="Mese Precedente"
                 >
                   <ChevronLeft className="w-3.5 h-3.5 stroke-[3px]" />
@@ -3411,7 +3530,7 @@ function importaTurniResidenzaVannucci() {
                 
                 <button
                   onClick={() => setCurrentDate(new Date())}
-                  className="px-3 py-1.5 bg-indigo-950 hover:bg-indigo-900 border border-indigo-700 text-white rounded-lg text-[10px] sm:text-xs font-bold transition-all cursor-pointer"
+                  className="px-2.5 py-1 bg-indigo-950 hover:bg-indigo-900 border border-indigo-700 text-amber-300 rounded-lg text-xs font-bold transition-all cursor-pointer"
                   title="Vai a oggi"
                 >
                   Oggi
@@ -3419,26 +3538,30 @@ function importaTurniResidenzaVannucci() {
 
                 <button
                   onClick={handleNextMonth}
-                  className="px-3 py-1.5 bg-indigo-800 hover:bg-indigo-700 border border-indigo-600 text-white rounded-lg text-[10px] sm:text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                  className="px-2.5 py-1 bg-indigo-800 hover:bg-indigo-700 border border-indigo-600 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
                   title="Mese Successivo"
                 >
                   <span>Succ.</span>
                   <ChevronRight className="w-3.5 h-3.5 stroke-[3px]" />
                 </button>
 
-                <span className="text-[10px] sm:text-xs font-semibold bg-indigo-800 px-3 py-1.5 rounded-lg border border-indigo-700 whitespace-nowrap">
+                <span className="text-[11px] sm:text-xs font-semibold bg-indigo-800 px-2.5 py-1 rounded-lg border border-indigo-700 whitespace-nowrap text-amber-200">
                   Mese di {getFullMonthName(currentDate).toUpperCase()} {currentDate.getFullYear()}
                 </span>
+              </div>
+
+              {/* Right: Actions & Exit Fullscreen */}
+              <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   onClick={handleExportMonthlyPDF}
-                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer shadow flex items-center gap-1.5"
+                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow flex items-center gap-1"
                 >
                   <Printer className="w-3.5 h-3.5" />
                   <span>Esporta in PDF</span>
                 </button>
                 <button
                   onClick={() => setIsFullScreen(false)}
-                  className="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer shadow flex items-center gap-1.5"
+                  className="px-3 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow flex items-center gap-1 font-extrabold whitespace-nowrap"
                 >
                   <span>Esci Schermo Intero ✖</span>
                 </button>
@@ -3738,7 +3861,112 @@ function importaTurniResidenzaVannucci() {
 
       {/* ROSTER / OPERATOR CARDS VIEW */}
       {viewMode === "roster" && (
-        <div className="space-y-5">
+        <div className={isFullScreen ? "fixed inset-0 z-45 bg-slate-50 p-4 sm:p-6 overflow-auto flex flex-col h-screen space-y-4" : "space-y-5"}>
+          {isFullScreen && (
+            <div className="flex flex-wrap items-center justify-between bg-indigo-900 text-white p-2.5 rounded-xl mb-3 shadow-md shrink-0 gap-2 border border-indigo-800 text-xs">
+              {/* Left: View Mode Toggle & Direct Month Selector */}
+              <div className="flex items-center gap-2 overflow-x-auto max-w-full">
+                <div className="flex items-center gap-1 bg-indigo-950 p-1 rounded-lg border border-indigo-700 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("week")}
+                    className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                      viewMode === "week"
+                        ? "bg-indigo-600 text-white shadow-xs font-black"
+                        : "text-indigo-200 hover:text-white hover:bg-indigo-800/60"
+                    }`}
+                  >
+                    📅 Settimanale
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("month")}
+                    className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                      viewMode === "month"
+                        ? "bg-indigo-600 text-white shadow-xs font-black"
+                        : "text-indigo-200 hover:text-white hover:bg-indigo-800/60"
+                    }`}
+                  >
+                    🗓️ Mensile
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("roster")}
+                    className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                      viewMode === "roster"
+                        ? "bg-indigo-600 text-white shadow-xs font-black"
+                        : "text-indigo-200 hover:text-white hover:bg-indigo-800/60"
+                    }`}
+                  >
+                    👤 {isStaffRole ? "Scheda Personale" : "Schede"}
+                  </button>
+                </div>
+
+                {/* Direct Month Selector Input */}
+                <div className="flex items-center gap-1.5 bg-indigo-950 px-2.5 py-1 rounded-lg border border-indigo-700 shrink-0" title="Seleziona Mese e Anno">
+                  <CalendarIcon className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span className="text-[11px] font-bold text-indigo-200 hidden sm:inline">Mese:</span>
+                  <input
+                    type="month"
+                    value={`${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}`}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        const [y, m] = e.target.value.split("-").map(Number);
+                        const nextD = new Date(currentDate);
+                        nextD.setFullYear(y);
+                        nextD.setMonth(m - 1);
+                        setCurrentDate(nextD);
+                      }
+                    }}
+                    className="bg-indigo-900 border border-indigo-600 text-white text-xs font-bold rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-400 cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              {/* Center: Navigation Controls & Period Label */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  onClick={handlePrevMonth}
+                  className="px-2.5 py-1 bg-indigo-800 hover:bg-indigo-700 border border-indigo-600 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                  title="Mese Precedente"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5 stroke-[3px]" />
+                  <span>Prec.</span>
+                </button>
+                
+                <button
+                  onClick={() => setCurrentDate(new Date())}
+                  className="px-2.5 py-1 bg-indigo-950 hover:bg-indigo-900 border border-indigo-700 text-amber-300 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                  title="Vai a oggi"
+                >
+                  Oggi
+                </button>
+
+                <button
+                  onClick={handleNextMonth}
+                  className="px-2.5 py-1 bg-indigo-800 hover:bg-indigo-700 border border-indigo-600 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                  title="Mese Successivo"
+                >
+                  <span>Succ.</span>
+                  <ChevronRight className="w-3.5 h-3.5 stroke-[3px]" />
+                </button>
+
+                <span className="text-[11px] sm:text-xs font-semibold bg-indigo-800 px-2.5 py-1 rounded-lg border border-indigo-700 whitespace-nowrap text-amber-200">
+                  Mese di {getFullMonthName(currentDate).toUpperCase()} {currentDate.getFullYear()}
+                </span>
+              </div>
+
+              {/* Right: Actions & Exit Fullscreen */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  onClick={() => setIsFullScreen(false)}
+                  className="px-3 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow flex items-center gap-1 font-extrabold whitespace-nowrap"
+                >
+                  <span>Esci Schermo Intero ✖</span>
+                </button>
+              </div>
+            </div>
+          )}
           {!isPublicView && (
             <div className="bg-gradient-to-r from-indigo-900 via-slate-900 to-indigo-950 text-white p-4 sm:p-5 rounded-2xl border border-indigo-800 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="space-y-1">
@@ -3853,10 +4081,12 @@ function importaTurniResidenzaVannucci() {
                           <span>{s.tipoTurno} • {formatItalianDateString(s.data)} {s.struttura ? `(${s.struttura})` : ""}</span>
                           <div className="text-[10px] font-mono opacity-80">{s.orarioInizio} - {s.orarioFine}</div>
                         </div>
-                        <Trash2
-                          className="w-4 h-4 text-rose-500 hover:text-rose-700 transition-colors"
-                          onClick={(e) => handleDeleteSingleShift(s.id, e)}
-                        />
+                        {!isStaffRole && (
+                          <Trash2
+                            className="w-4 h-4 text-rose-500 hover:text-rose-700 transition-colors cursor-pointer"
+                            onClick={(e) => handleDeleteSingleShift(s.id, e)}
+                          />
+                        )}
                       </div>
                     ))
                   )}
@@ -4645,7 +4875,7 @@ function importaTurniResidenzaVannucci() {
             <div className="flex items-center justify-between border-b pb-3">
               <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
                 <CalendarIcon className="w-5 h-5 text-indigo-600" />
-                <span>{isPublicView ? "Scheda Dettaglio Turno" : "Gestione & Modifica Turno"}</span>
+                <span>{isStaffRole ? "Scheda Dettaglio Turno" : "Gestione & Modifica Turno"}</span>
               </h3>
               <button onClick={() => setSelectedShiftForDetail(null)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-5 h-5" />
@@ -4655,7 +4885,7 @@ function importaTurniResidenzaVannucci() {
             {(() => {
               const mem = staff.find(s => s.id === selectedShiftForDetail.staffId);
               
-              if (isPublicView) {
+              if (isStaffRole) {
                 return (
                   <div className="space-y-4 text-xs">
                     <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between">
