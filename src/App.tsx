@@ -19,8 +19,8 @@ import {
   ChatWhatsAppMessage
 } from "./types";
 
-import { Navbar } from "./components/Navbar";
-import { NavigationTabs, TabType } from "./components/NavigationTabs";
+import { Sidebar } from "./components/Sidebar";
+import { TabType } from "./components/NavigationTabs";
 import { DashboardView } from "./components/DashboardView";
 import { ResidentsView } from "./components/ResidentsView";
 import { MedicationCartView } from "./components/MedicationCartView";
@@ -500,205 +500,192 @@ export default function App() {
 
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-800 font-sans flex flex-col antialiased selection:bg-emerald-500 selection:text-white">
+    <div className="flex flex-col lg:flex-row min-h-screen bg-slate-100 text-slate-800 font-sans antialiased selection:bg-emerald-500 selection:text-white">
       
-      {/* Top Header Navbar */}
-      <Navbar
-        residents={residents}
-        onSelectResident={handleSelectResident}
-        onOpenNewResidentModal={() => {
-          setActiveTab("residents");
-          setSelectedResident(null);
-        }}
-        onOpenMedCart={() => setActiveTab("medications")}
-        onOpenVitalModal={() => setShowQuickVitalModal(true)}
-        onOpenLogModal={() => setActiveTab("logs")}
-        onResetData={() => {
-          if (confirm("Sei sicuro di voler ripristinare i dati di esempio iniziali per RESIDENZA VANNUCCI?")) {
-            storage.resetToDefaults();
-          }
-        }}
-        activeOperator={activeOperator}
-        onChangeOperator={() => {}}
-        userRole={currentUser.role}
-      />
-
-      {/* Main Tab Navigation */}
-      <NavigationTabs
+      {/* Left Column Sidebar */}
+      <Sidebar
         userRole={currentUser.role}
         activeTab={activeTab}
         onTabChange={(tab) => {
           setActiveTab(tab);
-          if (tab !== "residents") {
-            // Keep selected resident state or clear if needed
-          }
         }}
         pendingMedsCount={pendingMedsCount}
         unreadLogsCount={unreadLogsCount}
         unpaidFeesCount={unpaidFeesCount}
         unreadBachecaCount={bacheca.filter(b => !b.visti.includes(currentUser ? (currentUser.role === 'admin' ? `Admin ${currentUser.username}` : currentUser.username) : "")).length}
-      />
-
-      {/* Main Container View Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-        {activeTab === "dashboard" && (
-          <DashboardView
-            residents={residents}
-            rooms={rooms}
-            therapies={therapies}
-            vitals={vitals}
-            logs={logs}
-            visits={visits}
-            meals={meals}
-            onNavigateTab={setActiveTab}
-            onSelectResident={handleSelectResident}
-            onOpenMedCart={() => setActiveTab("medications")}
-            onOpenVitalModal={() => setShowQuickVitalModal(true)}
-            onOpenLogModal={() => setActiveTab("logs")}
-            onOpenNewResidentModal={() => {
-              setActiveTab("residents");
-              setSelectedResident(null);
-            }}
-          />
-        )}
-
-        {activeTab === "residents" && (
-          <ResidentsView
-            residents={residents}
-            rooms={rooms}
-            therapies={therapies}
-            vitals={vitals}
-            logs={logs}
-            pais={pais}
-            selectedResident={selectedResident}
-            onSelectResident={setSelectedResident}
-            onAddResident={handleAddResident}
-            onUpdateResident={handleUpdateResident}
-            onAddTherapy={handleAddTherapy}
-            onAddVital={handleAddVital}
-            onAddLog={handleAddLog}
-            onSavePai={handleSavePai}
-            activeOperator={activeOperator}
-          />
-        )}
-
-        {activeTab === "medications" && (
-          <MedicationCartView
-            residents={residents}
-            therapies={therapies}
-            onUpdateTherapy={handleUpdateTherapy}
-            activeOperator={activeOperator}
-          />
-        )}
-
-        {activeTab === "rooms" && (
-          <RoomsView
-            rooms={rooms}
-            residents={residents}
-            onUpdateRooms={setRooms}
-            onSelectResident={handleSelectResident}
-          />
-        )}
-
-        {activeTab === "logs" && (
-          <DailyLogsView
-            logs={logs}
-            residents={residents}
-            onAddLog={handleAddLog}
-            onUpdateLog={handleUpdateLog}
-            activeOperator={activeOperator}
-            currentUser={currentUser}
-            staff={staff}
-            shifts={shifts}
-            bacheca={bacheca}
-            onAddBacheca={(n) => handleUpdateBacheca(prev => [n, ...prev])}
-            onUpdateBacheca={(n) => handleUpdateBacheca(prev => prev.map(item => item.id === n.id ? n : item))}
-          />
-        )}
-
-        {activeTab === "shifts" && (
-          <StaffShiftsView
-            staff={staff}
-            shifts={shifts}
-            onAddShift={(newShift) => handleUpdateShifts(prev => [newShift, ...prev])}
-            onDeleteShift={(shiftId) => handleUpdateShifts(prev => prev.filter(s => s.id !== shiftId))}
-            onUpdateShifts={(updatedShifts) => handleUpdateShifts(updatedShifts)}
-            onUpdateStaff={(updatedStaff) => handleUpdateStaff(updatedStaff)}
-            onRefreshShifts={syncWithServer}
-            isPublicView={currentUser.role === 'staff'}
-            currentUser={currentUser}
-          />
-        )}
-
-        {activeTab === "bacheca" && (
-          <BachecaView
-            bacheca={bacheca}
-            currentUser={currentUser}
-            onAddBacheca={(n) => handleUpdateBacheca(prev => [n, ...prev])}
-            onUpdateBacheca={(n) => handleUpdateBacheca(prev => prev.map(item => item.id === n.id ? n : item))}
-          />
-        )}
-
-        {activeTab === "chat" && (
-          <ChatWhatsAppView
-            chatMessages={chatMessages}
-            currentUser={currentUser}
-            activeOperator={activeOperator}
-            onSendMessage={(msg) => handleUpdateChat(prev => [...prev, msg])}
-            staff={staff}
-          />
-        )}
-
-        {activeTab === "visits" && (
-          <VisitsView
-            visits={visits}
-            residents={residents}
-            onAddVisit={(newVisit) => setVisits(prev => [newVisit, ...prev])}
-          />
-        )}
-
-        {activeTab === "financials" && (
-          <FinancialsView
-            financials={financials}
-            residents={residents}
-            onUpdateFinancials={handleUpdateFinancials}
-          />
-        )}
-
-        {activeTab === "ai" && (
-          <PaiAssistantView
-            residents={residents}
-            therapies={therapies}
-            vitals={vitals}
-            logs={logs}
-            pais={pais}
-            onSavePai={handleSavePai}
-            activeOperator={activeOperator}
-          />
-        )}
-      </main>
-
-      {/* Global Quick Modals */}
-      <QuickVitalModal
-        isOpen={showQuickVitalModal}
-        onClose={() => setShowQuickVitalModal(false)}
-        residents={residents}
-        onAddVital={handleAddVital}
         activeOperator={activeOperator}
+        onResetData={() => {
+          if (confirm("Sei sicuro di voler ripristinare i dati di esempio iniziali per RESIDENZA VANNUCCI?")) {
+            storage.resetToDefaults();
+          }
+        }}
+        onLogout={() => {
+          sessionStorage.removeItem("current_user");
+          window.location.reload();
+        }}
       />
 
-      {/* Footer */}
-      <footer className="bg-slate-900 text-slate-400 text-xs py-6 border-t border-slate-800 mt-auto">
-        <div className="max-w-7xl mx-auto px-4 text-center space-y-1">
-          <p className="font-semibold text-slate-300">
-            GESTIONALE — Casa Famiglia & Residenza Assistita per Anziani
-          </p>
-          <p className="text-slate-500">
-            @2026 AETERNA - GIMONDO DOMENICO
-          </p>
-        </div>
-      </footer>
+      {/* Main Container View Area (Maximized height for Calendar & Views) */}
+      <div className="flex-1 min-w-0 min-h-screen flex flex-col">
+        <main className="flex-1 w-full max-w-[1650px] mx-auto p-3 sm:p-5 lg:p-6">
+          {activeTab === "dashboard" && (
+            <DashboardView
+              residents={residents}
+              rooms={rooms}
+              therapies={therapies}
+              vitals={vitals}
+              logs={logs}
+              visits={visits}
+              meals={meals}
+              onNavigateTab={setActiveTab}
+              onSelectResident={handleSelectResident}
+              onOpenMedCart={() => setActiveTab("medications")}
+              onOpenVitalModal={() => setShowQuickVitalModal(true)}
+              onOpenLogModal={() => setActiveTab("logs")}
+              onOpenNewResidentModal={() => {
+                setActiveTab("residents");
+                setSelectedResident(null);
+              }}
+            />
+          )}
 
+          {activeTab === "residents" && (
+            <ResidentsView
+              residents={residents}
+              rooms={rooms}
+              therapies={therapies}
+              vitals={vitals}
+              logs={logs}
+              pais={pais}
+              selectedResident={selectedResident}
+              onSelectResident={setSelectedResident}
+              onAddResident={handleAddResident}
+              onUpdateResident={handleUpdateResident}
+              onAddTherapy={handleAddTherapy}
+              onAddVital={handleAddVital}
+              onAddLog={handleAddLog}
+              onSavePai={handleSavePai}
+              activeOperator={activeOperator}
+            />
+          )}
+
+          {activeTab === "medications" && (
+            <MedicationCartView
+              residents={residents}
+              therapies={therapies}
+              onUpdateTherapy={handleUpdateTherapy}
+              activeOperator={activeOperator}
+            />
+          )}
+
+          {activeTab === "rooms" && (
+            <RoomsView
+              rooms={rooms}
+              residents={residents}
+              onUpdateRooms={setRooms}
+              onSelectResident={handleSelectResident}
+            />
+          )}
+
+          {activeTab === "logs" && (
+            <DailyLogsView
+              logs={logs}
+              residents={residents}
+              onAddLog={handleAddLog}
+              onUpdateLog={handleUpdateLog}
+              activeOperator={activeOperator}
+              currentUser={currentUser}
+              staff={staff}
+              shifts={shifts}
+              bacheca={bacheca}
+              onAddBacheca={(n) => handleUpdateBacheca(prev => [n, ...prev])}
+              onUpdateBacheca={(n) => handleUpdateBacheca(prev => prev.map(item => item.id === n.id ? n : item))}
+            />
+          )}
+
+          {activeTab === "shifts" && (
+            <StaffShiftsView
+              staff={staff}
+              shifts={shifts}
+              onAddShift={(newShift) => handleUpdateShifts(prev => [newShift, ...prev])}
+              onDeleteShift={(shiftId) => handleUpdateShifts(prev => prev.filter(s => s.id !== shiftId))}
+              onUpdateShifts={(updatedShifts) => handleUpdateShifts(updatedShifts)}
+              onUpdateStaff={(updatedStaff) => handleUpdateStaff(updatedStaff)}
+              onRefreshShifts={syncWithServer}
+              isPublicView={currentUser.role === 'staff'}
+              currentUser={currentUser}
+            />
+          )}
+
+          {activeTab === "bacheca" && (
+            <BachecaView
+              bacheca={bacheca}
+              currentUser={currentUser}
+              onAddBacheca={(n) => handleUpdateBacheca(prev => [n, ...prev])}
+              onUpdateBacheca={(n) => handleUpdateBacheca(prev => prev.map(item => item.id === n.id ? n : item))}
+            />
+          )}
+
+          {activeTab === "chat" && (
+            <ChatWhatsAppView
+              chatMessages={chatMessages}
+              currentUser={currentUser}
+              activeOperator={activeOperator}
+              onSendMessage={(msg) => handleUpdateChat(prev => [...prev, msg])}
+              staff={staff}
+            />
+          )}
+
+          {activeTab === "visits" && (
+            <VisitsView
+              visits={visits}
+              residents={residents}
+              onAddVisit={(newVisit) => setVisits(prev => [newVisit, ...prev])}
+            />
+          )}
+
+          {activeTab === "financials" && (
+            <FinancialsView
+              financials={financials}
+              residents={residents}
+              onUpdateFinancials={handleUpdateFinancials}
+            />
+          )}
+
+          {activeTab === "ai" && (
+            <PaiAssistantView
+              residents={residents}
+              therapies={therapies}
+              vitals={vitals}
+              logs={logs}
+              pais={pais}
+              onSavePai={handleSavePai}
+              activeOperator={activeOperator}
+            />
+          )}
+        </main>
+
+        {/* Global Quick Modals */}
+        <QuickVitalModal
+          isOpen={showQuickVitalModal}
+          onClose={() => setShowQuickVitalModal(false)}
+          residents={residents}
+          onAddVital={handleAddVital}
+          activeOperator={activeOperator}
+        />
+
+        {/* Footer */}
+        <footer className="bg-slate-900 text-slate-400 text-xs py-4 border-t border-slate-800 mt-auto">
+          <div className="max-w-7xl mx-auto px-4 text-center space-y-0.5">
+            <p className="font-semibold text-slate-300">
+              GESTIONALE — Casa Famiglia & Residenza Assistita per Anziani
+            </p>
+            <p className="text-slate-500 text-[11px]">
+              @2026 AETERNA - GIMONDO DOMENICO
+            </p>
+          </div>
+        </footer>
+      </div>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { 
   CalendarDays, 
   Users, 
@@ -16,7 +16,9 @@ import {
   Sun, 
   Moon, 
   Sunset, 
+  Calendar,
   Calendar as CalendarIcon,
+  Building2,
   HelpCircle,
   Copy,
   CopyCheck,
@@ -41,7 +43,9 @@ import {
   Palmtree,
   Lock,
   Unlock,
-  AlertTriangle
+  AlertTriangle,
+  PanelLeft,
+  PanelLeftClose
 } from "lucide-react";
 import { StaffMember, Shift, UserCredential } from "../types";
 import { firestoreSync } from "../lib/firebase";
@@ -111,6 +115,23 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [viewMode, setViewMode] = useState<"week" | "month" | "roster">("week");
   const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
+  const [turniSidebarCollapsed, setTurniSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("turni_sidebar_collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleTurniSidebar = () => {
+    setTurniSidebarCollapsed(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem("turni_sidebar_collapsed", String(next));
+      } catch {}
+      return next;
+    });
+  };
   const [selectedMobileDate, setSelectedMobileDate] = useState<string>(() => {
     const d = new Date();
     const year = d.getFullYear();
@@ -525,7 +546,24 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     setCurrentDate(new Date());
   };
 
-  // Helper for Monthly Staff Matrix
+  // Global Keyboard Shortcuts (Escape to close any open modal)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowAddModal(false);
+        setShowAddStaffModal(false);
+        setEditingStaffMember(null);
+        setShowExportModal(false);
+        setSelectedShiftForDetail(null);
+        setShowVacationModal(false);
+        setConfirmDeleteStaff(null);
+        setConfirmDeleteDayDate(null);
+        setShowHelpGuide(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
   const currentYear = currentDate.getFullYear();
   const currentMonth = currentDate.getMonth();
   const daysInMonthCount = new Date(currentYear, currentMonth + 1, 0).getDate();
@@ -578,7 +616,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   };
 
   // Turno Preset Selection (Adopts custom hours from staff member card if available)
-  const handleSelectPreset = (tipo: "Mattina" | "Pomeriggio" | "Notte" | "Reperibilità" | "Riposo" | "Ferie", customStaffId?: string) => {
+  const handleSelectPreset = (tipo: "Mattina" | "Pomeriggio" | "Notte" | "Turno 07:11" | "Personalizzato" | "Reperibilità" | "Riposo" | "Ferie", customStaffId?: string) => {
     setNewTipoTurno(tipo);
     const selectedStaff = staff.find(s => s.id === (customStaffId || newStaffId));
 
@@ -609,6 +647,12 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
         setNewOrarioInizio("21:00");
         setNewOrarioFine("07:00");
       }
+    } else if (tipo === "Turno 07:11") {
+      setNewOrarioInizio("07:00");
+      setNewOrarioFine("11:00");
+    } else if (tipo === "Personalizzato") {
+      setNewOrarioInizio("09:00");
+      setNewOrarioFine("13:00");
     } else if (tipo === "Reperibilità") {
       setNewOrarioInizio("00:00");
       setNewOrarioFine("23:59");
@@ -1333,11 +1377,27 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   ): boolean => {
     if (tipoTurno === "Riposo" || tipoTurno === "Ferie") return true;
 
-    // 1. Check if staff already has a work shift on this date
-    const hasWorkShiftThisDay = currentShiftsList.some(
-      s => s.staffId === staffId && s.data === dateStr && s.tipoTurno !== "Riposo"
+    // 1. Check if staff already has an OVERLAPPING work shift on this date
+    const timeToMin = (tStr: string) => {
+      if (!tStr) return 0;
+      const [h, m] = tStr.split(":").map(Number);
+      return (h || 0) * 60 + (m || 0);
+    };
+
+    const isOverlap = (s1: string, e1: string, s2: string, e2: string) => {
+      let start1 = timeToMin(s1);
+      let end1 = timeToMin(e1);
+      let start2 = timeToMin(s2);
+      let end2 = timeToMin(e2);
+      if (end1 <= start1) end1 = 1440;
+      if (end2 <= start2) end2 = 1440;
+      return Math.max(start1, start2) < Math.min(end1, end2);
+    };
+
+    const hasOverlappingShiftThisDay = currentShiftsList.some(
+      s => s.staffId === staffId && s.data === dateStr && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie" && isOverlap(inizio, fine, s.orarioInizio, s.orarioFine)
     );
-    if (hasWorkShiftThisDay) return false;
+    if (hasOverlappingShiftThisDay) return false;
 
     // 2. Check duplicate structure & tipoTurno on this date
     const sameStructureShift = currentShiftsList.some(
@@ -1639,9 +1699,9 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       return { valid: false, reason: "Non rispetta le 11 ore di riposo dal turno precedente" };
     }
     
-    // 3. Check 11-hour rule with SAME day's shifts
+    // 3. Check rule with SAME day's shifts (allow non-overlapping split shifts on same day)
     const sameDayShifts = shifts.filter(s => s.staffId === staffId && s.data === dateStr && s.id !== shiftIdToIgnore && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie");
-    let sameDayViolation = false;
+    let sameDayOverlap = false;
     sameDayShifts.forEach(s => {
       const sStartParts = s.orarioInizio.split(":");
       const sStartMin = parseInt(sStartParts[0], 10) * 60 + parseInt(sStartParts[1], 10);
@@ -1661,17 +1721,14 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
           newEndMin += 24 * 60;
       }
       
-      if (newEndMin <= sStartMin) {
-          if ((sStartMin - newEndMin) < 11 * 60) sameDayViolation = true;
-      } else if (sEndMin <= newStartMin) {
-          if ((newStartMin - sEndMin) < 11 * 60) sameDayViolation = true;
-      } else {
-          sameDayViolation = true;
+      // Check interval overlap
+      if (Math.max(newStartMin, sStartMin) < Math.min(newEndMin, sEndMin)) {
+        sameDayOverlap = true;
       }
     });
 
-    if (sameDayViolation) {
-      return { valid: false, reason: "Non rispetta le 11 ore di riposo tra turni nello stesso giorno" };
+    if (sameDayOverlap) {
+      return { valid: false, reason: "Orari sovrapposti con un altro turno nello stesso giorno" };
     }
 
     // 4. Check 11-hour rule with NEXT day's shifts
@@ -2169,8 +2226,161 @@ function importaTurniResidenzaVannucci() {
         </div>
       )}
 
-      {/* Header Banner */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* SIDEBAR + MAIN CONTENT LAYOUT CONTAINER */}
+      <div className="flex flex-col lg:flex-row gap-6 w-full items-start">
+        
+        {/* Toggle Button when Turni Sidebar is Collapsed */}
+        {turniSidebarCollapsed && (
+          <button
+            type="button"
+            onClick={toggleTurniSidebar}
+            title="Mostra Menu Turni & Opzioni"
+            className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-900 hover:bg-slate-800 text-indigo-200 font-bold text-xs rounded-2xl border border-slate-700 shadow-xl cursor-pointer transition-all shrink-0"
+          >
+            <PanelLeft className="w-4 h-4 text-emerald-400" />
+            <span>Menu Turni</span>
+          </button>
+        )}
+
+        {/* LEFT SIDEBAR MENU */}
+        {!turniSidebarCollapsed && (
+          <aside className="w-full lg:w-64 bg-slate-900 text-white flex-shrink-0 flex flex-col rounded-3xl border border-slate-800 shadow-xl z-30 p-4 space-y-4 lg:sticky lg:top-4 transition-all">
+            {/* Brand Logo & Title */}
+            <div className="pb-3 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/30 shrink-0">
+                  <Building2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h1 className="font-black text-white text-sm tracking-tight leading-tight">Casa Famiglia</h1>
+                  <p className="text-[10px] text-indigo-400 font-semibold">Anzio • Turni H24</p>
+                </div>
+              </div>
+
+              {/* Collapse Button */}
+              <button
+                type="button"
+                onClick={toggleTurniSidebar}
+                title="Nascondi Menu Turni"
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl border border-slate-800 hover:border-slate-700 transition-all cursor-pointer"
+              >
+                <PanelLeftClose className="w-4 h-4 text-indigo-300" />
+              </button>
+            </div>
+
+          {/* Navigation Menu */}
+          <div className="space-y-1">
+            <div className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 px-3 py-1">
+              Menu Principale
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setViewMode("week")}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl font-bold text-xs transition-all text-left cursor-pointer ${
+                viewMode === "week"
+                  ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 font-black"
+                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
+              }`}
+            >
+              <CalendarDays className="w-4 h-4 text-indigo-300 shrink-0" />
+              <span>Tabellone Settimanale</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setViewMode("month")}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl font-bold text-xs transition-all text-left cursor-pointer ${
+                viewMode === "month"
+                  ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 font-black"
+                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
+              }`}
+            >
+              <Calendar className="w-4 h-4 text-indigo-300 shrink-0" />
+              <span>Riepilogo Mensile</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setViewMode("roster")}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl font-bold text-xs transition-all text-left cursor-pointer ${
+                viewMode === "roster"
+                  ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 font-black"
+                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
+              }`}
+            >
+              <Users className="w-4 h-4 text-indigo-300 shrink-0" />
+              <div className="flex-1 flex items-center justify-between">
+                <span>Gestione Operatori</span>
+                <span className="bg-slate-800 text-slate-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                  {staff.filter(m => m.attivo !== false).length}
+                </span>
+              </div>
+            </button>
+          </div>
+
+          {/* Quick Action Buttons */}
+          {!isPublicView && (
+            <div className="pt-2 border-t border-slate-800 space-y-1">
+              <div className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 px-3 py-1">
+                Azioni Rapide
+              </div>
+
+              <div className="space-y-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => handleOpenAddModal()}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl bg-indigo-500/20 border border-indigo-500/30 text-indigo-200 hover:bg-indigo-500/30 hover:text-white font-bold text-xs transition-all cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                  <span>+ Nuovo Turno</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleGenerateAutomaticShifts}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl bg-amber-500/20 border border-amber-500/30 text-amber-200 hover:bg-amber-500/30 hover:text-white font-bold text-xs transition-all cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>⚡ Genera Auto</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowAddStaffModal(true)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-200 hover:bg-emerald-500/30 hover:text-white font-bold text-xs transition-all cursor-pointer"
+                >
+                  <UserPlus className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>+ Operatore</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowExportModal(true)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white font-bold text-xs transition-all cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span>Stampa / Esporta</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Sidebar Footer */}
+          <div className="pt-2 border-t border-slate-800 text-[10px] text-slate-400 flex items-center justify-between">
+            <span className="font-semibold">Casa Famiglia Anzio</span>
+            <span className="flex items-center gap-1 text-emerald-400 font-bold">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              Live
+            </span>
+          </div>
+        </aside>
+        )}
+
+        {/* RIGHT MAIN CONTENT AREA */}
+        <div className="flex-1 min-w-0 w-full space-y-6">
+          {/* Header Banner */}
+          <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-extrabold text-slate-900 flex items-center gap-2">
             <CalendarDays className="w-6 h-6 text-indigo-600" />
@@ -3422,6 +3632,8 @@ function importaTurniResidenzaVannucci() {
           </div>
         </div>
       )}
+        </div>
+      </div>
 
       {/* MODAL: ADD SHIFT */}
       {showAddModal && (
@@ -3700,6 +3912,20 @@ function importaTurniResidenzaVannucci() {
                     );
                   })()}
 
+                  {/* Personalizzato / Free Time */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewTipoTurno("Personalizzato");
+                    }}
+                    className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
+                      newTipoTurno === "Personalizzato" ? "bg-indigo-600 border-indigo-700 text-white ring-4 ring-indigo-600/30" : "bg-slate-50 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    <span className="font-extrabold text-[12px]">⏱️ Personalizzato</span>
+                    <span className="text-[9px] opacity-75 font-normal">Orario libero</span>
+                  </button>
+
                   {/* Riposo */}
                   <button
                     type="button"
@@ -3731,6 +3957,31 @@ function importaTurniResidenzaVannucci() {
                     <span className="font-extrabold text-[12px]">🌴 Ferie</span>
                     <span className="text-[9px] opacity-75 font-normal">Pianificate / Desiderate</span>
                   </button>
+                </div>
+
+                {/* Custom Time Picker */}
+                <div className="bg-indigo-50/70 p-3 rounded-xl border border-indigo-100 mt-2 space-y-2">
+                  <span className="text-[10px] font-black uppercase text-indigo-900 block">Modifica / Personalizza Orario Effettivo</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Inizio (HH:MM)</label>
+                      <input
+                        type="time"
+                        value={newOrarioInizio}
+                        onChange={(e) => setNewOrarioInizio(e.target.value)}
+                        className="w-full border border-indigo-200 p-2 rounded-xl text-xs font-mono font-bold bg-white text-slate-900 focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Fine (HH:MM)</label>
+                      <input
+                        type="time"
+                        value={newOrarioFine}
+                        onChange={(e) => setNewOrarioFine(e.target.value)}
+                        className="w-full border border-indigo-200 p-2 rounded-xl text-xs font-mono font-bold bg-white text-slate-900 focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -4501,6 +4752,20 @@ function importaTurniResidenzaVannucci() {
                             </>
                           );
                         })()}
+                        {/* Personalizzato */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Personalizzato" } : prev);
+                          }}
+                          className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
+                            selectedShiftForDetail.tipoTurno === "Personalizzato" ? "bg-indigo-600 border-indigo-700 text-white ring-4 ring-indigo-600/30" : "bg-slate-50 border-slate-200 hover:bg-slate-100"
+                          }`}
+                        >
+                          <span className="font-extrabold text-[12px]">⏱️ Personalizzato</span>
+                          <span className="text-[9px] opacity-75 font-normal">Orario libero</span>
+                        </button>
+
                         {/* Riposo */}
                         <button
                           type="button"
@@ -4532,6 +4797,31 @@ function importaTurniResidenzaVannucci() {
                           <span className="font-extrabold text-[12px]">🌴 Ferie</span>
                           <span className="text-[9px] opacity-75 font-normal">Pianificate / Desiderate</span>
                         </button>
+                      </div>
+
+                      {/* Custom Time Input in Detail Edit */}
+                      <div className="bg-indigo-50/70 p-3 rounded-xl border border-indigo-100 mt-2 space-y-2">
+                        <span className="text-[10px] font-black uppercase text-indigo-900 block">Modifica Orari Effettivi</span>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-600 mb-1">Inizio (HH:MM)</label>
+                            <input
+                              type="time"
+                              value={editShiftInizio}
+                              onChange={(e) => setEditShiftInizio(e.target.value)}
+                              className="w-full border border-indigo-200 p-2 rounded-xl text-xs font-mono font-bold bg-white text-slate-900 focus:ring-2 focus:ring-indigo-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-600 mb-1">Fine (HH:MM)</label>
+                            <input
+                              type="time"
+                              value={editShiftFine}
+                              onChange={(e) => setEditShiftFine(e.target.value)}
+                              className="w-full border border-indigo-200 p-2 rounded-xl text-xs font-mono font-bold bg-white text-slate-900 focus:ring-2 focus:ring-indigo-500"
+                            />
+                          </div>
+                        </div>
                       </div>
                     </div>
 
