@@ -43,6 +43,7 @@ import {
   Palmtree,
   Lock,
   Unlock,
+  Save,
   AlertTriangle,
   PanelLeft,
   PanelLeftClose
@@ -85,6 +86,82 @@ export const formatItalianVerbalDate = (dateStr: string): string => {
   const date = new Date(dateStr.includes("T") ? dateStr : `${dateStr}T12:00:00`);
   return `${getFullWeekdayName(date)}, ${date.getDate()} ${getFullMonthName(date)} ${date.getFullYear()}`;
 };
+
+export interface CustomShiftPreset {
+  id: string;
+  label: string;
+  tipoTurno: string;
+  orarioInizio: string;
+  orarioFine: string;
+  subtitle?: string;
+  isDefault?: boolean;
+}
+
+export const INITIAL_SHIFT_PRESETS: CustomShiftPreset[] = [
+  {
+    id: "preset-cucina-1030-1500",
+    label: "🍳 Cucina 10:30 - 15:00",
+    tipoTurno: "Cucina",
+    orarioInizio: "10:30",
+    orarioFine: "15:00",
+    subtitle: "Turno Cucina & Mensa",
+    isDefault: true
+  },
+  {
+    id: "preset-7-14",
+    label: "🌅 7-14",
+    tipoTurno: "Mattina",
+    orarioInizio: "07:00",
+    orarioFine: "14:00",
+    subtitle: "Mattina standard",
+    isDefault: true
+  },
+  {
+    id: "preset-14-21",
+    label: "🌆 14-21",
+    tipoTurno: "Pomeriggio",
+    orarioInizio: "14:00",
+    orarioFine: "21:00",
+    subtitle: "Pomeriggio standard",
+    isDefault: true
+  },
+  {
+    id: "preset-8-15",
+    label: "🌅 8-15",
+    tipoTurno: "Mattina",
+    orarioInizio: "08:00",
+    orarioFine: "15:00",
+    subtitle: "Mattina posticipato",
+    isDefault: true
+  },
+  {
+    id: "preset-15-23",
+    label: "🌆 15-23",
+    tipoTurno: "Pomeriggio",
+    orarioInizio: "15:00",
+    orarioFine: "23:00",
+    subtitle: "Pomeriggio prolungato",
+    isDefault: true
+  },
+  {
+    id: "preset-7-11",
+    label: "🌅 7-11",
+    tipoTurno: "Mattina",
+    orarioInizio: "07:00",
+    orarioFine: "11:00",
+    subtitle: "Mattina breve",
+    isDefault: true
+  },
+  {
+    id: "preset-notte-21-07",
+    label: "🌙 Notte 21-07",
+    tipoTurno: "Notte",
+    orarioInizio: "21:00",
+    orarioFine: "07:00",
+    subtitle: "Unificato nero",
+    isDefault: true
+  }
+];
 
 interface StaffShiftsViewProps {
   staff: StaffMember[];
@@ -141,6 +218,54 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   });
   const [dragActionMode, setDragActionMode] = useState<"move" | "copy">("move");
   const [showHelpGuide, setShowHelpGuide] = useState<boolean>(false);
+
+  // Match current user with staff member list if role is staff or in public mode
+  const loggedInStaffMember = React.useMemo(() => {
+    if (!currentUser) return null;
+    const uName = currentUser.username.trim().toLowerCase();
+    return staff.find(s => 
+      s.id.toLowerCase() === uName ||
+      s.nome.toLowerCase() === uName ||
+      s.cognome.toLowerCase() === uName ||
+      `${s.nome} ${s.cognome}`.toLowerCase() === uName ||
+      uName.includes(s.nome.toLowerCase()) ||
+      s.nome.toLowerCase().includes(uName)
+    ) || null;
+  }, [staff, currentUser]);
+
+  const isStaffRole = currentUser?.role === "staff" || isPublicView;
+
+  const [selectedStaffFilterId, setSelectedStaffFilterId] = useState<string>(() => {
+    if (isStaffRole && loggedInStaffMember) {
+      return loggedInStaffMember.id;
+    }
+    return "ALL";
+  });
+
+  // Keep selectedStaffFilterId in sync when loggedInStaffMember resolves
+  React.useEffect(() => {
+    if (isStaffRole && loggedInStaffMember) {
+      setSelectedStaffFilterId(loggedInStaffMember.id);
+    }
+  }, [isStaffRole, loggedInStaffMember]);
+
+  // Compute displayedStaff (strictly filtered to personal staff member when staff role or filter active)
+  const displayedStaff = React.useMemo(() => {
+    if (isStaffRole) {
+      if (loggedInStaffMember) {
+        return staff.filter(s => s.id === loggedInStaffMember.id);
+      }
+      if (selectedStaffFilterId !== "ALL") {
+        return staff.filter(s => s.id === selectedStaffFilterId);
+      }
+      return staff.length > 0 ? [staff[0]] : staff;
+    }
+    // Admin role
+    if (selectedStaffFilterId === "ALL") {
+      return staff;
+    }
+    return staff.filter(s => s.id === selectedStaffFilterId);
+  }, [staff, isStaffRole, loggedInStaffMember, selectedStaffFilterId]);
 
   // Modal States
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
@@ -391,11 +516,82 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   // New Shift Form State
   const [newStaffId, setNewStaffId] = useState<string>(staff[0]?.id || "");
   const [newDate, setNewDate] = useState<string>(new Date().toISOString().split("T")[0]);
-  const [newTipoTurno, setNewTipoTurno] = useState<"Mattina" | "Pomeriggio" | "Notte" | "Reperibilità" | "Riposo" | "Ferie">("Mattina");
+  const [newTipoTurno, setNewTipoTurno] = useState<string>("Mattina");
   const [newOrarioInizio, setNewOrarioInizio] = useState<string>("07:00");
   const [newOrarioFine, setNewOrarioFine] = useState<string>("14:00");
   const [newNote, setNewNote] = useState<string>("");
   const [newStruttura, setNewStruttura] = useState<string>("Vannucci 1");
+
+  // Custom Shift Presets State & Storage Management
+  const [savedPresets, setSavedPresets] = useState<CustomShiftPreset[]>(() => {
+    try {
+      const saved = localStorage.getItem("casafamiglia_saved_shift_presets");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return INITIAL_SHIFT_PRESETS;
+  });
+
+  const [showAddPresetForm, setShowAddPresetForm] = useState<boolean>(false);
+  const [customPresetName, setCustomPresetName] = useState<string>("");
+  const [customPresetInizio, setCustomPresetInizio] = useState<string>("10:30");
+  const [customPresetFine, setCustomPresetFine] = useState<string>("15:00");
+  const [customPresetTipo, setCustomPresetTipo] = useState<string>("Cucina");
+
+  const savePresetsToStorage = (presets: CustomShiftPreset[]) => {
+    setSavedPresets(presets);
+    try {
+      localStorage.setItem("casafamiglia_saved_shift_presets", JSON.stringify(presets));
+    } catch (e) {
+      console.error("Error saving shift presets", e);
+    }
+  };
+
+  const handleAddNewPreset = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const rawLabel = customPresetName.trim() || `${customPresetTipo} ${customPresetInizio}-${customPresetFine}`;
+    const icon = customPresetTipo === "Cucina" ? "🍳" : customPresetTipo === "Notte" ? "🌙" : customPresetTipo === "Pomeriggio" ? "🌆" : customPresetTipo === "Mattina" ? "🌅" : "⏱️";
+    const label = rawLabel.includes("🍳") || rawLabel.includes("🌅") || rawLabel.includes("🌆") || rawLabel.includes("🌙") || rawLabel.includes("⏱️")
+      ? rawLabel
+      : `${icon} ${rawLabel}`;
+
+    const newPreset: CustomShiftPreset = {
+      id: `preset-custom-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      label,
+      tipoTurno: customPresetTipo || "Personalizzato",
+      orarioInizio: customPresetInizio || "09:00",
+      orarioFine: customPresetFine || "17:00",
+      subtitle: `Preset ${customPresetTipo} (${customPresetInizio} - ${customPresetFine})`,
+      isDefault: false
+    };
+
+    const nextPresets = [...savedPresets, newPreset];
+    savePresetsToStorage(nextPresets);
+    setNewTipoTurno(newPreset.tipoTurno);
+    setNewOrarioInizio(newPreset.orarioInizio);
+    setNewOrarioFine(newPreset.orarioFine);
+    setCustomPresetName("");
+    setShowAddPresetForm(false);
+    showToast(`💾 Nuovo orario "${label}" salvato e memorizzato nei preset!`);
+  };
+
+  const handleRemovePreset = (presetId: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    const targetPreset = savedPresets.find(p => p.id === presetId);
+    const nextPresets = savedPresets.filter(p => p.id !== presetId);
+    savePresetsToStorage(nextPresets);
+    showToast(`🗑️ Preset orario "${targetPreset?.label || 'Selezionato'}" rimosso!`);
+  };
+
+  const handleResetDefaultPresets = () => {
+    savePresetsToStorage(INITIAL_SHIFT_PRESETS);
+    showToast("🔄 Preset orari ripristinati a quelli di default!");
+  };
 
   // Vacation / Ferie Form State
   const [showVacationModal, setShowVacationModal] = useState<boolean>(false);
@@ -1778,6 +1974,11 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       return "bg-slate-900 text-slate-100 border-slate-950 hover:bg-slate-950 font-black shadow-xs ring-1 ring-slate-800/80";
     }
 
+    // 1.5 TURNO DI CUCINA: Ambra/Giallo Caldo distintivo
+    if (tipo === "Cucina") {
+      return "bg-amber-50 text-amber-950 border-amber-300 hover:bg-amber-100 font-extrabold shadow-2xs ring-1 ring-amber-400/50";
+    }
+
     // 2. FERIE: Sempre Ambra/Giallo
     if (tipo === "Ferie") {
       return "bg-amber-400 text-amber-950 border-amber-500 hover:bg-amber-300 font-black shadow-xs ring-2 ring-amber-500/50";
@@ -1899,7 +2100,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
 
   const handleExportPDF = () => {
     setShowExportModal(false);
-    const activeStaff = staff.filter(m => m.attivo !== false);
+    const activeStaff = displayedStaff.filter(m => m.attivo !== false);
 
     const html = `
       <!DOCTYPE html>
@@ -2029,7 +2230,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   };
 
   const handleExportMonthlyPDF = () => {
-    const activeStaff = staff.filter(m => m.attivo !== false);
+    const activeStaff = displayedStaff.filter(m => m.attivo !== false);
     const monthDaysCount = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
     const daysArray = Array.from({ length: monthDaysCount }, (_, i) => new Date(currentDate.getFullYear(), currentDate.getMonth(), i + 1));
 
@@ -2194,17 +2395,20 @@ function importaTurniResidenzaVannucci() {
         </div>
       )}
       
-      {/* PUBLIC READ ONLY NOTICE BANNER */}
-      {isPublicView && (
-        <div className="bg-indigo-950 text-white p-4 rounded-2xl border border-indigo-800 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs animate-in fade-in duration-300">
+      {/* PUBLIC READ ONLY / PERSONAL STAFF VIEW NOTICE BANNER */}
+      {isStaffRole && (
+        <div className="bg-gradient-to-r from-indigo-950 via-slate-900 to-indigo-950 text-white p-4 rounded-2xl border border-indigo-800 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs animate-in fade-in duration-300">
           <div className="flex items-center gap-3 font-bold">
-            <span className="px-2.5 py-1 bg-indigo-500/30 border border-indigo-400 text-indigo-200 rounded-lg text-[10px] font-mono tracking-wider uppercase shrink-0">
-              SOLA LETTURA
+            <span className="px-2.5 py-1 bg-emerald-500/30 border border-emerald-400 text-emerald-200 rounded-lg text-[10px] font-mono tracking-wider uppercase shrink-0">
+              🔒 VISTA RISERVATA
             </span>
             <div className="flex flex-col gap-0.5">
               <span className="text-indigo-100 flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
-                🔒 <strong>Vista Dipendenti in Tempo Reale:</strong> I turni si aggiornano automaticamente appena il direttore li modifica.
+                <strong>Vista Personale Riservata {loggedInStaffMember ? `(${loggedInStaffMember.nome} ${loggedInStaffMember.cognome})` : currentUser?.username ? `(${currentUser.username})` : ""}:</strong> Stai visualizzando esclusivamente i tuoi turni, le tue ferie e i tuoi riposi settimanali.
+              </span>
+              <span className="text-[11px] text-indigo-300 font-normal">
+                I turni e i dati degli altri operatori sono protetti e non sono visibili a garanzia della tua privacy.
               </span>
             </div>
           </div>
@@ -2218,7 +2422,7 @@ function importaTurniResidenzaVannucci() {
               }
             }}
             className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer shrink-0"
-            title="Ricarica i turni dal server"
+            title="Ricarica i tuoi turni dal server"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             <span>Aggiorna ora</span>
@@ -2607,8 +2811,39 @@ function importaTurniResidenzaVannucci() {
           </span>
         </div>
 
-        {/* View Switcher & Full Screen Controls */}
+        {/* View Switcher, Operator Filter & Full Screen Controls */}
         <div className="flex flex-wrap items-center gap-2">
+          
+          {/* OPERATOR FILTER / PRIVACY INDICATOR */}
+          {!isStaffRole ? (
+            <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
+              <span className="text-[11px] font-extrabold text-slate-600 flex items-center gap-1 pl-1">
+                <Users className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Operatore:</span>
+              </span>
+              <select
+                value={selectedStaffFilterId}
+                onChange={(e) => setSelectedStaffFilterId(e.target.value)}
+                className="bg-white text-slate-900 border border-slate-300 font-bold rounded-lg px-2.5 py-1 text-xs focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-2xs"
+              >
+                <option value="ALL">👥 Tutti gli Operatori ({staff.length})</option>
+                {staff.map(s => (
+                  <option key={s.id} value={s.id}>
+                    👤 {s.nome} {s.cognome} ({s.ruolo})
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 bg-indigo-50 px-3 py-1.5 rounded-xl border border-indigo-200 text-xs font-bold text-indigo-900 shadow-2xs">
+              <UserCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>Vista Personale: <strong>{loggedInStaffMember ? `${loggedInStaffMember.nome} ${loggedInStaffMember.cognome}` : (currentUser?.username || "Dipendente")}</strong></span>
+              <span className="text-[10px] bg-indigo-200/80 text-indigo-900 px-2 py-0.5 rounded-md font-extrabold uppercase tracking-wide">
+                Solo i tuoi turni
+              </span>
+            </div>
+          )}
+
           <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold overflow-x-auto max-w-full">
             <button
               onClick={() => setViewMode("week")}
@@ -2632,7 +2867,7 @@ function importaTurniResidenzaVannucci() {
                 viewMode === "roster" ? "bg-white text-indigo-700 shadow font-extrabold" : "text-slate-600 hover:text-slate-900"
               }`}
             >
-              Schede Operatori ({staff.length})
+              {isStaffRole ? "Scheda Personale" : `Schede Operatori (${displayedStaff.length})`}
             </button>
           </div>
 
@@ -2920,7 +3155,7 @@ function importaTurniResidenzaVannucci() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 text-xs">
-                {staff.map(member => (
+                {displayedStaff.map(member => (
                   <tr key={member.id} className="hover:bg-slate-50/60 transition-colors">
                     
                     {/* Member Details Cell - Click to edit staff card */}
@@ -3354,7 +3589,7 @@ function importaTurniResidenzaVannucci() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 text-xs">
-                {staff.map(member => (
+                {displayedStaff.map(member => (
                   <tr key={member.id} className="hover:bg-slate-50/60 transition-colors">
                     
                     {/* Member Details Sticky Cell */}
@@ -3527,7 +3762,7 @@ function importaTurniResidenzaVannucci() {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {staff.map(member => {
+            {displayedStaff.map(member => {
               const memberShifts = shifts.filter(s => s.staffId === member.id);
 
               return (
@@ -3746,185 +3981,169 @@ function importaTurniResidenzaVannucci() {
               </div>
 
               {/* Shift Presets */}
-              <div className="space-y-1.5">
-                <label className="block font-black text-slate-700 tracking-wide uppercase text-[10px]">Preset Orario e Turno *</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {(() => {
-                    const v714 = checkPotentialShiftValidity(newStaffId, newDate, "Mattina", newStruttura, "07:00", "14:00");
-                    const v1421 = checkPotentialShiftValidity(newStaffId, newDate, "Pomeriggio", newStruttura, "14:00", "21:00");
-                    const v815 = checkPotentialShiftValidity(newStaffId, newDate, "Mattina", newStruttura, "08:00", "15:00");
-                    const v1523 = checkPotentialShiftValidity(newStaffId, newDate, "Pomeriggio", newStruttura, "15:00", "23:00");
-                    const v711 = checkPotentialShiftValidity(newStaffId, newDate, "Mattina", newStruttura, "07:00", "11:00");
-                    const vNotte = checkPotentialShiftValidity(newStaffId, newDate, "Notte", newStruttura, "21:00", "07:00");
-                    
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block font-black text-slate-700 tracking-wide uppercase text-[10px]">
+                    Preset Orari & Turni ({savedPresets.length}) *
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCustomPresetInizio(newOrarioInizio);
+                        setCustomPresetFine(newOrarioFine);
+                        setCustomPresetTipo(newTipoTurno === "Riposo" || newTipoTurno === "Ferie" ? "Cucina" : newTipoTurno);
+                        setShowAddPresetForm(!showAddPresetForm);
+                      }}
+                      className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 hover:underline cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>{showAddPresetForm ? "Chiudi Form" : "Nuovo Preset"}</span>
+                    </button>
+                    {savedPresets.length !== INITIAL_SHIFT_PRESETS.length && (
+                      <button
+                        type="button"
+                        onClick={handleResetDefaultPresets}
+                        className="text-[10px] font-medium text-slate-400 hover:text-slate-600 underline"
+                        title="Ripristina preset di default"
+                      >
+                        Ripristina
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Inline form to create and save a new preset */}
+                {showAddPresetForm && (
+                  <div className="bg-indigo-500/10 border border-indigo-500/30 p-3 rounded-xl space-y-2 text-xs animate-in fade-in duration-150">
+                    <div className="flex items-center justify-between">
+                      <span className="font-extrabold text-indigo-950 text-[11px] flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>Memorizza Nuovo Preset Orario</span>
+                      </span>
+                      <button type="button" onClick={() => setShowAddPresetForm(false)} className="text-slate-400 hover:text-slate-600">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block font-bold text-slate-700 text-[9px] mb-0.5">Nome / Etichetta</label>
+                        <input
+                          type="text"
+                          placeholder="es. Cucina, Post-pranzo"
+                          value={customPresetName}
+                          onChange={(e) => setCustomPresetName(e.target.value)}
+                          className="w-full border p-1.5 rounded-lg bg-white font-semibold text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-bold text-slate-700 text-[9px] mb-0.5">Tipo Turno</label>
+                        <select
+                          value={customPresetTipo}
+                          onChange={(e) => setCustomPresetTipo(e.target.value)}
+                          className="w-full border p-1.5 rounded-lg bg-white font-semibold text-xs"
+                        >
+                          <option value="Cucina">🍳 Cucina</option>
+                          <option value="Mattina">🌅 Mattina</option>
+                          <option value="Pomeriggio">🌆 Pomeriggio</option>
+                          <option value="Notte">🌙 Notte</option>
+                          <option value="Reperibilità">📞 Reperibilità</option>
+                          <option value="Personalizzato">⏱️ Personalizzato</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block font-bold text-slate-700 text-[9px] mb-0.5">Ora Inizio</label>
+                        <input
+                          type="time"
+                          value={customPresetInizio}
+                          onChange={(e) => setCustomPresetInizio(e.target.value)}
+                          className="w-full border p-1.5 rounded-lg bg-white font-mono text-xs font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-bold text-slate-700 text-[9px] mb-0.5">Ora Fine</label>
+                        <input
+                          type="time"
+                          value={customPresetFine}
+                          onChange={(e) => setCustomPresetFine(e.target.value)}
+                          className="w-full border p-1.5 rounded-lg bg-white font-mono text-xs font-bold"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleAddNewPreset}
+                      className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-lg text-xs shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>Memorizza Preset Orario</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Preset Buttons Grid */}
+                <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
+                  {savedPresets.map((preset) => {
+                    const isSelected = newTipoTurno === preset.tipoTurno && newOrarioInizio === preset.orarioInizio && newOrarioFine === preset.orarioFine;
+                    const validity = checkPotentialShiftValidity(newStaffId, newDate, preset.tipoTurno, newStruttura, preset.orarioInizio, preset.orarioFine);
+
                     return (
-                      <>
-                        {/* 7-14 */}
+                      <div key={preset.id} className="relative group/preset">
                         <button
                           type="button"
                           onClick={() => {
-                            if (!v714.valid) return;
-                            setNewTipoTurno("Mattina");
-                            setNewOrarioInizio("07:00");
-                            setNewOrarioFine("14:00");
+                            if (!validity.valid) return;
+                            setNewTipoTurno(preset.tipoTurno);
+                            setNewOrarioInizio(preset.orarioInizio);
+                            setNewOrarioFine(preset.orarioFine);
+                            if (preset.tipoTurno === "Cucina" && !newNote) {
+                              setNewNote("Servizio Cucina e Mensa");
+                            }
                           }}
-                          disabled={!v714.valid}
-                          title={v714.reason}
-                          className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
-                            !v714.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
-                            "cursor-pointer " + (newTipoTurno === "Mattina" && newOrarioInizio === "07:00" && newOrarioFine === "14:00"
-                              ? newStruttura === "Vannucci 1"
+                          disabled={!validity.valid}
+                          title={validity.reason || `${preset.label} (${preset.orarioInizio} - ${preset.orarioFine})`}
+                          className={`w-full p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center relative ${
+                            !validity.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
+                            "cursor-pointer " + (isSelected
+                              ? preset.tipoTurno === "Cucina"
+                                ? "bg-amber-500 border-amber-600 text-slate-950 ring-4 ring-amber-500/30"
+                                : preset.tipoTurno === "Notte"
+                                ? "bg-slate-900 border-slate-950 text-white ring-4 ring-slate-800/80"
+                                : newStruttura === "Vannucci 1"
                                 ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
                                 : newStruttura === "Vannucci 2"
                                 ? "bg-yellow-400 border-yellow-500 text-yellow-950 ring-4 ring-yellow-400/25"
                                 : "bg-emerald-600 border-emerald-700 text-white ring-4 ring-emerald-600/20"
+                              : preset.tipoTurno === "Cucina"
+                              ? "bg-amber-50/80 border-amber-300 hover:bg-amber-100 text-amber-950"
+                              : preset.tipoTurno === "Notte"
+                              ? "bg-slate-900 border-slate-950 text-slate-100 hover:bg-slate-950"
                               : "bg-slate-50 border-slate-200 hover:bg-slate-100")
                           }`}
                         >
-                          <span className="font-extrabold text-[12px]">🌅 7-14</span>
-                          <span className="text-[9px] opacity-75 font-normal">Mattina standard</span>
+                          <span className="font-extrabold text-[12px] truncate pr-5">{preset.label}</span>
+                          <span className="text-[9px] opacity-75 font-normal truncate">
+                            {preset.subtitle || `${preset.orarioInizio} - ${preset.orarioFine}`}
+                          </span>
                         </button>
 
-                        {/* 14-21 */}
+                        {/* Trash Button to Remove Any Preset */}
                         <button
                           type="button"
-                          onClick={() => {
-                            if (!v1421.valid) return;
-                            setNewTipoTurno("Pomeriggio");
-                            setNewOrarioInizio("14:00");
-                            setNewOrarioFine("21:00");
-                          }}
-                          disabled={!v1421.valid}
-                          title={v1421.reason}
-                          className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
-                            !v1421.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
-                            "cursor-pointer " + (newTipoTurno === "Pomeriggio" && newOrarioInizio === "14:00" && newOrarioFine === "21:00"
-                              ? newStruttura === "Vannucci 1"
-                                ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
-                                : newStruttura === "Vannucci 2"
-                                ? "bg-yellow-400 border-yellow-500 text-yellow-950 ring-4 ring-yellow-400/25"
-                                : "bg-emerald-600 border-emerald-700 text-white ring-4 ring-emerald-600/20"
-                              : "bg-slate-50 border-slate-200 hover:bg-slate-100")
-                          }`}
+                          onClick={(e) => handleRemovePreset(preset.id, e)}
+                          className="absolute top-1.5 right-1.5 p-1 rounded-md opacity-60 hover:opacity-100 hover:bg-rose-600 hover:text-white text-rose-500 bg-white/80 shadow-3xs transition-all cursor-pointer z-10"
+                          title="Rimuovi questo preset orario"
                         >
-                          <span className="font-extrabold text-[12px]">🌆 14-21</span>
-                          <span className="text-[9px] opacity-75 font-normal">Pomeriggio standard</span>
+                          <Trash2 className="w-3 h-3" />
                         </button>
-
-                        {/* 8-15 */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!v815.valid) return;
-                            setNewTipoTurno("Mattina");
-                            setNewOrarioInizio("08:00");
-                            setNewOrarioFine("15:00");
-                          }}
-                          disabled={!v815.valid}
-                          title={v815.reason}
-                          className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
-                            !v815.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
-                            "cursor-pointer " + (newTipoTurno === "Mattina" && newOrarioInizio === "08:00" && newOrarioFine === "15:00"
-                              ? newStruttura === "Vannucci 1"
-                                ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
-                                : newStruttura === "Vannucci 2"
-                                ? "bg-yellow-400 border-yellow-500 text-yellow-950 ring-4 ring-yellow-400/25"
-                                : "bg-emerald-600 border-emerald-700 text-white ring-4 ring-emerald-600/20"
-                              : "bg-slate-50 border-slate-200 hover:bg-slate-100")
-                          }`}
-                        >
-                          <span className="font-extrabold text-[12px]">🌅 8-15</span>
-                          <span className="text-[9px] opacity-75 font-normal">Mattina posticipato</span>
-                        </button>
-
-                        {/* 15-23 */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!v1523.valid) return;
-                            setNewTipoTurno("Pomeriggio");
-                            setNewOrarioInizio("15:00");
-                            setNewOrarioFine("23:00");
-                          }}
-                          disabled={!v1523.valid}
-                          title={v1523.reason}
-                          className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
-                            !v1523.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
-                            "cursor-pointer " + (newTipoTurno === "Pomeriggio" && newOrarioInizio === "15:00" && newOrarioFine === "23:00"
-                              ? newStruttura === "Vannucci 1"
-                                ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
-                                : newStruttura === "Vannucci 2"
-                                ? "bg-yellow-400 border-yellow-500 text-yellow-950 ring-4 ring-yellow-400/25"
-                                : "bg-emerald-600 border-emerald-700 text-white ring-4 ring-emerald-600/20"
-                              : "bg-slate-50 border-slate-200 hover:bg-slate-100")
-                          }`}
-                        >
-                          <span className="font-extrabold text-[12px]">🌆 15-23</span>
-                          <span className="text-[9px] opacity-75 font-normal">Pomeriggio prolungato</span>
-                        </button>
-
-                        {/* 7-11 */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!v711.valid) return;
-                            setNewTipoTurno("Mattina");
-                            setNewOrarioInizio("07:00");
-                            setNewOrarioFine("11:00");
-                          }}
-                          disabled={!v711.valid}
-                          title={v711.reason}
-                          className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
-                            !v711.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
-                            "cursor-pointer " + (newTipoTurno === "Mattina" && newOrarioInizio === "07:00" && newOrarioFine === "11:00"
-                              ? newStruttura === "Vannucci 1"
-                                ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
-                                : newStruttura === "Vannucci 2"
-                                ? "bg-yellow-400 border-yellow-500 text-yellow-950 ring-4 ring-yellow-400/25"
-                                : "bg-emerald-600 border-emerald-700 text-white ring-4 ring-emerald-600/20"
-                              : "bg-slate-50 border-slate-200 hover:bg-slate-100")
-                          }`}
-                        >
-                          <span className="font-extrabold text-[12px]">🌅 7-11</span>
-                          <span className="text-[9px] opacity-75 font-normal">Mattina breve</span>
-                        </button>
-
-                        {/* Notte */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!vNotte.valid) return;
-                            setNewTipoTurno("Notte");
-                            setNewOrarioInizio("21:00");
-                            setNewOrarioFine("07:00");
-                          }}
-                          disabled={!vNotte.valid}
-                          title={vNotte.reason}
-                          className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
-                            !vNotte.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
-                            "cursor-pointer " + (newTipoTurno === "Notte" ? "bg-slate-900 border-slate-950 text-white ring-4 ring-slate-800/80" : "bg-slate-50 border-slate-200 hover:bg-slate-100")
-                          }`}
-                        >
-                          <span className="font-extrabold text-[12px]">🌙 Notte 21-07</span>
-                          <span className="text-[9px] opacity-75 font-normal text-slate-300">Unificato nero</span>
-                        </button>
-                      </>
+                      </div>
                     );
-                  })()}
-
-                  {/* Personalizzato / Free Time */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setNewTipoTurno("Personalizzato");
-                    }}
-                    className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
-                      newTipoTurno === "Personalizzato" ? "bg-indigo-600 border-indigo-700 text-white ring-4 ring-indigo-600/30" : "bg-slate-50 border-slate-200 hover:bg-slate-100"
-                    }`}
-                  >
-                    <span className="font-extrabold text-[12px]">⏱️ Personalizzato</span>
-                    <span className="text-[9px] opacity-75 font-normal">Orario libero</span>
-                  </button>
+                  })}
 
                   {/* Riposo */}
                   <button
@@ -3934,7 +4153,7 @@ function importaTurniResidenzaVannucci() {
                       setNewOrarioInizio("00:00");
                       setNewOrarioFine("00:00");
                     }}
-                    className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
+                    className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
                       newTipoTurno === "Riposo" ? "bg-slate-200 border-slate-400 text-slate-700 ring-4 ring-slate-400/30" : "bg-slate-50 border-slate-200 hover:bg-slate-100"
                     }`}
                   >
@@ -3950,7 +4169,7 @@ function importaTurniResidenzaVannucci() {
                       setNewOrarioInizio("00:00");
                       setNewOrarioFine("00:00");
                     }}
-                    className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
+                    className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
                       newTipoTurno === "Ferie" ? "bg-amber-400 border-amber-500 text-amber-950 ring-4 ring-amber-500/40" : "bg-slate-50 border-slate-200 hover:bg-slate-100"
                     }`}
                   >
@@ -3959,9 +4178,25 @@ function importaTurniResidenzaVannucci() {
                   </button>
                 </div>
 
-                {/* Custom Time Picker */}
+                {/* Custom Time Picker & Quick Save */}
                 <div className="bg-indigo-50/70 p-3 rounded-xl border border-indigo-100 mt-2 space-y-2">
-                  <span className="text-[10px] font-black uppercase text-indigo-900 block">Modifica / Personalizza Orario Effettivo</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase text-indigo-900 block">Modifica / Personalizza Orario Effettivo</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCustomPresetInizio(newOrarioInizio);
+                        setCustomPresetFine(newOrarioFine);
+                        setCustomPresetTipo(newTipoTurno === "Riposo" || newTipoTurno === "Ferie" ? "Cucina" : newTipoTurno);
+                        handleAddNewPreset();
+                      }}
+                      className="text-[10px] font-extrabold text-indigo-700 hover:text-indigo-900 bg-indigo-100 hover:bg-indigo-200 px-2 py-0.5 rounded-md flex items-center gap-1 cursor-pointer transition-colors"
+                      title="Salva l'orario inserito nei tuoi preset memorizzati"
+                    >
+                      <Save className="w-3 h-3 text-indigo-600" />
+                      <span>Memorizza come Preset</span>
+                    </button>
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-[10px] font-bold text-slate-600 mb-1">Inizio (HH:MM)</label>

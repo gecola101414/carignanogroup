@@ -150,7 +150,7 @@ export interface Shift {
   data: string; // YYYY-MM-DD
   orarioInizio: string; // "07:00"
   orarioFine: string; // "14:00"
-  tipoTurno: "Mattina" | "Pomeriggio" | "Notte" | "Reperibilità" | "Riposo" | "Ferie";
+  tipoTurno: "Mattina" | "Pomeriggio" | "Notte" | "Reperibilità" | "Riposo" | "Ferie" | "Cucina" | "Personalizzato" | string;
   note?: string;
   struttura?: string; // "Struttura 1", "Struttura 2", "Struttura 3"
 }
