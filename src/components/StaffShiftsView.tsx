@@ -301,6 +301,22 @@ export const INITIAL_SHIFT_PRESETS: CustomShiftPreset[] = [
     isDefault: true
   },
   
+  {
+    id: "preset-cucina-10-14",
+    label: "🍲 10:00-14:00 (Cucina)",
+    tipoTurno: "Cucina",
+    orarioInizio: "10:00",
+    orarioFine: "14:00",
+    isDefault: true
+  },
+  {
+    id: "preset-cucina-17-20",
+    label: "🍲 17:00-20:00 (Cucina)",
+    tipoTurno: "Cucina",
+    orarioInizio: "17:00",
+    orarioFine: "20:00",
+    isDefault: true
+  },
   // VANNUCCI 4
   {
     id: "preset-v4-8-15",
@@ -659,22 +675,39 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     });
   };
 
-  // Helper to check if a day is complete: Mattina + Pomeriggio for each structure (1, 2, 3) + at least 1 Notte
-  const isDayComplete = (dateStr: string): boolean => {
+  // Helper to check if a day is complete: Mattina + Pomeriggio for each structure + at least 1 Notte
+  const getMissingShiftsForDay = (dateStr: string): string[] => {
     const dayShifts = shifts.filter(s => s.data === dateStr);
-    
+    const missing: string[] = [];
+
     const hasMattina1 = dayShifts.some(s => s.tipoTurno === "Mattina" && (s.struttura === "Vannucci 1" || s.struttura === "Struttura 1"));
     const hasPomeriggio1 = dayShifts.some(s => s.tipoTurno === "Pomeriggio" && (s.struttura === "Vannucci 1" || s.struttura === "Struttura 1"));
+    const hasNotte1 = dayShifts.some(s => s.tipoTurno === "Notte");
     
+    if (!hasMattina1) missing.push("Vannucci 1: Mattina");
+    if (!hasPomeriggio1) missing.push("Vannucci 1: Pomeriggio");
+    if (!hasNotte1) missing.push("Vannucci 1: Notte");
+
     const hasMattina2 = dayShifts.some(s => s.tipoTurno === "Mattina" && (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2"));
     const hasPomeriggio2 = dayShifts.some(s => s.tipoTurno === "Pomeriggio" && (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2"));
     
+    if (!hasMattina2) missing.push("Vannucci 2: Mattina");
+    if (!hasPomeriggio2) missing.push("Vannucci 2: Pomeriggio");
+
     const hasMattina3 = dayShifts.some(s => s.tipoTurno === "Mattina" && (s.struttura === "Vannucci 4" || s.struttura === "Struttura 4"));
     const hasPomeriggio3 = dayShifts.some(s => s.tipoTurno === "Pomeriggio" && (s.struttura === "Vannucci 4" || s.struttura === "Struttura 4"));
     
-    const hasNotte = dayShifts.some(s => s.tipoTurno === "Notte");
-    
-    return hasMattina1 && hasPomeriggio1 && hasMattina2 && hasPomeriggio2 && hasMattina3 && hasPomeriggio3 && hasNotte;
+    if (!hasMattina3) missing.push("Vannucci 4: Mattina");
+    if (!hasPomeriggio3) missing.push("Vannucci 4: Pomeriggio");
+
+    const hasCucina = dayShifts.some(s => s.tipoTurno === "Cucina");
+    if (!hasCucina) missing.push("Cucina (Generale)");
+
+    return missing;
+  };
+
+  const isDayComplete = (dateStr: string): boolean => {
+    return getMissingShiftsForDay(dateStr).length === 0;
   };
 
   // Drag & Drop State
@@ -3836,7 +3869,7 @@ function importaTurniResidenzaVannucci() {
                             ? "bg-amber-50/80 text-amber-950"
                             : "bg-slate-50 hover:bg-slate-100/80"
                         }`}
-                        title={`Giorno ${day.getDate()} ${getFullMonthName(day)} (${dayShiftsCount} turni). Trascina per spostare o duplicare l'intero giorno.`}
+                        title={`Giorno ${day.getDate()} ${getFullMonthName(day)} (${dayShiftsCount} turni).\n\n${isDayComplete(dateYMD) ? "✅ Giornata completa" : "❌ Mancanti:\n- " + getMissingShiftsForDay(dateYMD).join("\n- ")}\n\nTrascina per spostare o duplicare l'intero giorno.`}
                       >
                         {/* Long Press Visual Indicator */}
                         {isHolding && (
@@ -4536,8 +4569,8 @@ function importaTurniResidenzaVannucci() {
                 <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
                   {savedPresets
                     .filter((preset) => {
-                      if (!preset.struttura) {
-                        return newStruttura.includes("1");
+                      if (!preset.struttura || preset.tipoTurno === "Cucina" || preset.tipoTurno === "Notte") {
+                        return true;
                       }
                       const currentS = newStruttura.toLowerCase();
                       const presetS = preset.struttura.toLowerCase();
@@ -4606,6 +4639,69 @@ function importaTurniResidenzaVannucci() {
                       </div>
                     );
                   })}
+
+                  {/* Turno Notturno Generale */}
+                  <button
+                    type="button"
+                    onDoubleClick={() => {
+                      setNewNote("Turno di Notte");
+                      handleFastSubmit({ tipoTurno: "Notte", orarioInizio: "23:00", orarioFine: "07:00" });
+                    }}
+                    onClick={() => {
+                      setNewTipoTurno("Notte");
+                      setNewOrarioInizio("23:00");
+                      setNewOrarioFine("07:00");
+                      if (!newNote) setNewNote("Turno di Notte");
+                    }}
+                    className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
+                      newTipoTurno === "Notte" && newOrarioInizio === "23:00" && newOrarioFine === "07:00" ? "bg-slate-900 border-slate-950 text-white ring-4 ring-slate-800/80" : "bg-slate-800 border-slate-900 hover:bg-slate-900 text-slate-100"
+                    }`}
+                  >
+                    <span className="font-extrabold text-[12px]">🌙 Notte</span>
+                    <span className="text-[9px] opacity-75 font-normal">23:00 - 07:00</span>
+                  </button>
+
+                  {/* Servizi Comuni: Cucina */}
+                  <button
+                    type="button"
+                    onDoubleClick={() => {
+                      setNewNote("Servizio Cucina e Mensa");
+                      handleFastSubmit({ tipoTurno: "Cucina", orarioInizio: "10:30", orarioFine: "15:00" });
+                    }}
+                    onClick={() => {
+                      setNewTipoTurno("Cucina");
+                      setNewOrarioInizio("10:30");
+                      setNewOrarioFine("15:00");
+                      if (!newNote) setNewNote("Servizio Cucina e Mensa");
+                    }}
+                    className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
+                      newTipoTurno === "Cucina" && newOrarioInizio === "10:30" && newOrarioFine === "15:00" ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30" : "bg-sky-50/80 border-sky-200 hover:bg-sky-100 text-sky-900"
+                    }`}
+                  >
+                    <span className="font-extrabold text-[12px]">🍲 Cucina</span>
+                    <span className="text-[9px] opacity-75 font-normal">10:30 - 15:00</span>
+                  </button>
+
+                  {/* Servizi Comuni: Pulizie */}
+                  <button
+                    type="button"
+                    onDoubleClick={() => {
+                      setNewNote("Pulizie");
+                      handleFastSubmit({ tipoTurno: "Mattina", orarioInizio: "07:00", orarioFine: "11:00" });
+                    }}
+                    onClick={() => {
+                      setNewTipoTurno("Mattina");
+                      setNewOrarioInizio("07:00");
+                      setNewOrarioFine("11:00");
+                      if (!newNote) setNewNote("Pulizie");
+                    }}
+                    className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
+                      newTipoTurno === "Mattina" && newOrarioInizio === "07:00" && newOrarioFine === "11:00" ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/30" : "bg-orange-50/80 border-orange-200 hover:bg-orange-100 text-orange-900"
+                    }`}
+                  >
+                    <span className="font-extrabold text-[12px]">🧹 Pulizie</span>
+                    <span className="text-[9px] opacity-75 font-normal">07:00 - 11:00</span>
+                  </button>
 
                   {/* Riposo */}
                   <button
@@ -5324,8 +5420,8 @@ function importaTurniResidenzaVannucci() {
                         <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
                           {savedPresets
                             .filter((preset) => {
-                              if (!preset.struttura) {
-                                return editShiftStruttura.includes("1");
+                              if (!preset.struttura || preset.tipoTurno === "Cucina" || preset.tipoTurno === "Notte") {
+                                return true;
                               }
                               const currentS = editShiftStruttura.toLowerCase();
                               const presetS = preset.struttura.toLowerCase();
@@ -5380,6 +5476,57 @@ function importaTurniResidenzaVannucci() {
                               </div>
                             );
                           })}
+
+                          {/* Turno Notturno Generale */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Notte" } : prev);
+                              setEditShiftInizio("23:00");
+                              setEditShiftFine("07:00");
+                              if (!editShiftNote) setEditShiftNote("Turno di Notte");
+                            }}
+                            className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
+                              selectedShiftForDetail?.tipoTurno === "Notte" && editShiftInizio === "23:00" && editShiftFine === "07:00" ? "bg-slate-900 border-slate-950 text-white ring-4 ring-slate-800/80" : "bg-slate-800 border-slate-900 hover:bg-slate-900 text-slate-100"
+                            }`}
+                          >
+                            <span className="font-extrabold text-[12px]">🌙 Notte</span>
+                            <span className="text-[9px] opacity-75 font-normal">23:00 - 07:00</span>
+                          </button>
+
+                          {/* Servizi Comuni: Cucina */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Cucina" } : prev);
+                              setEditShiftInizio("10:30");
+                              setEditShiftFine("15:00");
+                              if (!editShiftNote) setEditShiftNote("Servizio Cucina e Mensa");
+                            }}
+                            className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
+                              selectedShiftForDetail?.tipoTurno === "Cucina" && editShiftInizio === "10:30" && editShiftFine === "15:00" ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30" : "bg-sky-50/80 border-sky-200 hover:bg-sky-100 text-sky-900"
+                            }`}
+                          >
+                            <span className="font-extrabold text-[12px]">🍲 Cucina</span>
+                            <span className="text-[9px] opacity-75 font-normal">10:30 - 15:00</span>
+                          </button>
+
+                          {/* Servizi Comuni: Pulizie */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Mattina" } : prev);
+                              setEditShiftInizio("07:00");
+                              setEditShiftFine("11:00");
+                              if (!editShiftNote) setEditShiftNote("Pulizie");
+                            }}
+                            className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
+                              selectedShiftForDetail?.tipoTurno === "Mattina" && editShiftInizio === "07:00" && editShiftFine === "11:00" ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/30" : "bg-orange-50/80 border-orange-200 hover:bg-orange-100 text-orange-900"
+                            }`}
+                          >
+                            <span className="font-extrabold text-[12px]">🧹 Pulizie</span>
+                            <span className="text-[9px] opacity-75 font-normal">07:00 - 11:00</span>
+                          </button>
 
                           {/* Riposo */}
                           <button
