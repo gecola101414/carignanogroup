@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { storage, apiSync } from "./utils/storage";
 import { firestoreSync, testConnection } from "./lib/firebase";
 import { 
@@ -66,6 +66,20 @@ export default function App() {
 
   const [bacheca, setBacheca] = useState<BachecaNotice[]>(() => storage.getBacheca());
   const [chatMessages, setChatMessages] = useState<ChatWhatsAppMessage[]>(() => storage.getChat());
+
+  const [presenceRecord, setPresenceRecord] = useState<Record<string, string>>({});
+  const [currentTime, setCurrentTime] = useState(Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setCurrentTime(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  const onlineUsers = useMemo(() => {
+    return Object.entries(presenceRecord)
+      .filter(([_, time]) => (currentTime - new Date(time as string).getTime()) < 120000)
+      .map(([user]) => user);
+  }, [presenceRecord, currentTime]);
 
   useEffect(() => {
     if (currentUser?.role === 'staff' && activeTab !== 'shifts' && activeTab !== 'logs' && activeTab !== 'bacheca' && activeTab !== 'chat') {
@@ -274,14 +288,47 @@ export default function App() {
       }
     }, initialBacheca);
 
+    const unsubscribePresence = firestoreSync.subscribePresence((data) => {
+      if (data) setPresenceRecord(data);
+    });
+
     return () => {
       unsubscribeCredentials();
       unsubscribeShifts();
       unsubscribeStaff();
       unsubscribeChat();
       unsubscribeBacheca();
+      unsubscribePresence();
     };
   }, []);
+
+  // Presence heartbeat
+  useEffect(() => {
+    if (!currentUser) return;
+    
+    const updateMyPresence = () => {
+      firestoreSync.updatePresence(currentUser.username, new Date().toISOString());
+    };
+    
+    // Initial update
+    updateMyPresence();
+    
+    // Heartbeat every 1 minute
+    const intervalId = setInterval(updateMyPresence, 60000);
+    
+    // Set offline on unload
+    const handleUnload = () => {
+      firestoreSync.updatePresence(currentUser.username, "1970-01-01T00:00:00.000Z");
+    };
+    
+    window.addEventListener('beforeunload', handleUnload);
+    
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener('beforeunload', handleUnload);
+      handleUnload();
+    };
+  }, [currentUser]);
 
   // Sync state changes with Storage
   useEffect(() => { storage.setResidents(residents); }, [residents]);
@@ -546,6 +593,7 @@ export default function App() {
         unpaidFeesCount={unpaidFeesCount}
         unreadBachecaCount={bacheca.filter(b => !b.visti.includes(currentUser ? (currentUser.role === 'admin' ? `Admin ${currentUser.username}` : currentUser.username) : "")).length}
         activeOperator={activeOperator}
+        onlineUsers={onlineUsers}
         onResetData={() => {
           if (confirm("Sei sicuro di voler ripristinare i dati di esempio iniziali per RESIDENZA VANNUCCI?")) {
             storage.resetToDefaults();

@@ -570,44 +570,7 @@ export const INITIAL_STAFF: StaffMember[] = [
   }
 ];
 
-export const INITIAL_SHIFTS: Shift[] = [
-  {
-    id: "sh-1",
-    staffId: "st-3",
-    data: todayStr,
-    orarioInizio: "07:00",
-    orarioFine: "14:00",
-    tipoTurno: "Mattina",
-    note: "Carrello farmaci e supporto igiene ospiti piano 1"
-  },
-  {
-    id: "sh-2",
-    staffId: "st-2",
-    data: todayStr,
-    orarioInizio: "08:00",
-    orarioFine: "16:00",
-    tipoTurno: "Mattina",
-    note: "Medicazioni e controllo glicemie"
-  },
-  {
-    id: "sh-3",
-    staffId: "st-4",
-    data: todayStr,
-    orarioInizio: "14:00",
-    orarioFine: "21:00",
-    tipoTurno: "Pomeriggio",
-    note: "Assistenza attività e cena"
-  },
-  {
-    id: "sh-4",
-    staffId: "st-3",
-    data: todayStr,
-    orarioInizio: "21:00",
-    orarioFine: "07:00",
-    tipoTurno: "Notte",
-    note: "Vigilanza notturna e cambio posture"
-  }
-];
+export const INITIAL_SHIFTS: Shift[] = [];
 
 export const INITIAL_VISITS: FamilyVisit[] = [
   {

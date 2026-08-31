@@ -40,6 +40,7 @@ interface SidebarProps {
   unpaidFeesCount: number;
   unreadBachecaCount?: number;
   activeOperator: string;
+  onlineUsers?: string[];
   onResetData: () => void;
   onLogout: () => void;
   onResetAllPasswords?: () => void;
@@ -90,6 +91,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   unpaidFeesCount,
   unreadBachecaCount = 0,
   activeOperator,
+  onlineUsers = [],
   onResetData,
   onLogout,
   onResetAllPasswords,
@@ -310,7 +312,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Sidebar Footer */}
-      <div className="p-3 border-t border-slate-800 bg-slate-950/60 space-y-2.5">
+      <div className="p-3 border-t border-slate-800 bg-slate-950/60 space-y-2.5 overflow-visible">
+        
+        {/* Utenti Online */}
+        {onlineUsers && onlineUsers.length > 0 && !isCollapsed && (
+          <div className="bg-slate-800/50 rounded-xl p-2.5 border border-slate-700/50">
+            <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center justify-between">
+              <span>Utenti Online</span>
+              <span className="bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-full">{onlineUsers.length}</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {onlineUsers.map(user => (
+                <div key={user} className="flex items-center gap-1 bg-slate-900/80 px-2 py-1 rounded border border-slate-700/80 shadow-xs">
+                  <span className="relative flex h-1.5 w-1.5 shrink-0">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                  </span>
+                  <span className="text-[10px] font-semibold text-slate-300 truncate max-w-[80px]" title={user}>{user}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {!isCollapsed && (
           <div className="flex items-center justify-between bg-slate-800/80 px-3 py-2 rounded-xl border border-slate-700/80 text-xs">
             <div className="flex items-center gap-2 min-w-0">

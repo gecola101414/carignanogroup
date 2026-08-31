@@ -78,8 +78,37 @@ const STAFF_DOC = doc(db, "appState", "staff");
 const CREDENTIALS_DOC = doc(db, "appState", "credentials");
 const CHAT_DOC = doc(db, "appState", "chat");
 const BACHECA_DOC = doc(db, "appState", "bacheca");
+const PRESENCE_DOC = doc(db, "appState", "presence");
 
 export const firestoreSync = {
+  // Listen to real-time updates for presence
+  subscribePresence(onUpdate: (presenceData: Record<string, string>) => void) {
+    return onSnapshot(
+      PRESENCE_DOC,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          onUpdate(snapshot.data() as Record<string, string>);
+        } else {
+          setDoc(PRESENCE_DOC, {}).catch(err => console.error("Error seeding initial presence:", err));
+        }
+      },
+      (error) => {
+        console.error("Error listening to presence in Firestore:", error);
+      }
+    );
+  },
+
+  // Update presence status (heartbeat)
+  async updatePresence(username: string, timestamp: string) {
+    try {
+      await setDoc(PRESENCE_DOC, {
+        [username]: timestamp
+      }, { merge: true });
+    } catch (error) {
+      console.error("Error updating presence:", error);
+    }
+  },
+
   // Listen to real-time updates for credentials
   subscribeCredentials(onUpdate: (creds: UserCredential[], updatedAt?: string) => void, initialFallback?: UserCredential[]) {
     return onSnapshot(
