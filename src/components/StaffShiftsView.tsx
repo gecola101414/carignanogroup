@@ -13,9 +13,10 @@ import {
   Mail, 
   X, 
   CheckCircle2, 
-  Sun, 
   Moon, 
-  Sunset, 
+  Coffee,
+  Utensils,
+  PhoneCall,
   Calendar,
   Calendar as CalendarIcon,
   Building2,
@@ -87,6 +88,89 @@ export const formatItalianVerbalDate = (dateStr: string): string => {
   return `${getFullWeekdayName(date)}, ${date.getDate()} ${getFullMonthName(date)} ${date.getFullYear()}`;
 };
 
+// Helper to calculate Easter date (Pasqua) for a given year using Meeus/Gauss algorithm
+export function getEasterDate(year: number): { month: number; day: number } {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31) - 1; // 0-indexed month
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return { month, day };
+}
+
+// Italian National Holidays & Sunday check (Festivi)
+export function isItalianFestivo(d: Date | string): { isFestivo: boolean; label?: string } {
+  if (!d) return { isFestivo: false };
+  const date = typeof d === "string" ? new Date(d.includes("T") ? d : `${d}T12:00:00`) : d;
+  if (isNaN(date.getTime())) return { isFestivo: false };
+
+  const dayOfWeek = date.getDay(); // 0 = Sunday
+  const month = date.getMonth(); // 0 - 11
+  const dayOfMonth = date.getDate();
+  const year = date.getFullYear();
+
+  // Fixed Italian Holidays
+  if (month === 0 && dayOfMonth === 1) return { isFestivo: true, label: "Capodanno" };
+  if (month === 0 && dayOfMonth === 6) return { isFestivo: true, label: "Epifania" };
+  if (month === 3 && dayOfMonth === 25) return { isFestivo: true, label: "Liberazione" };
+  if (month === 4 && dayOfMonth === 1) return { isFestivo: true, label: "Festa del Lavoro" };
+  if (month === 5 && dayOfMonth === 2) return { isFestivo: true, label: "Festa della Repubblica" };
+  if (month === 7 && dayOfMonth === 15) return { isFestivo: true, label: "Ferragosto" };
+  if (month === 10 && dayOfMonth === 1) return { isFestivo: true, label: "Ognissanti" };
+  if (month === 11 && dayOfMonth === 8) return { isFestivo: true, label: "Immacolata" };
+  if (month === 11 && dayOfMonth === 25) return { isFestivo: true, label: "Natale" };
+  if (month === 11 && dayOfMonth === 26) return { isFestivo: true, label: "Santo Stefano" };
+
+  // Easter & Easter Monday
+  const easter = getEasterDate(year);
+  if (month === easter.month && dayOfMonth === easter.day) {
+    return { isFestivo: true, label: "Pasqua" };
+  }
+  const pasquettaDate = new Date(year, easter.month, easter.day + 1);
+  if (month === pasquettaDate.getMonth() && dayOfMonth === pasquettaDate.getDate()) {
+    return { isFestivo: true, label: "Pasquetta" };
+  }
+
+  // Sunday (Domenica)
+  if (dayOfWeek === 0) {
+    return { isFestivo: true, label: "Domenica" };
+  }
+
+  return { isFestivo: false };
+}
+
+// Saturday / Prefestivo check
+export function isItalianPrefestivo(d: Date | string): { isPrefestivo: boolean; label?: string } {
+  if (!d) return { isPrefestivo: false };
+  const date = typeof d === "string" ? new Date(d.includes("T") ? d : `${d}T12:00:00`) : d;
+  if (isNaN(date.getTime())) return { isPrefestivo: false };
+
+  const dayOfWeek = date.getDay(); // 6 = Saturday
+
+  if (dayOfWeek === 6) {
+    return { isPrefestivo: true, label: "Sabato" };
+  }
+
+  // Vigilia (day before a fixed national holiday or Easter)
+  const tomorrow = new Date(date);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowFestivo = isItalianFestivo(tomorrow);
+  if (tomorrowFestivo.isFestivo && tomorrowFestivo.label !== "Domenica") {
+    return { isPrefestivo: true, label: `Vigilia (${tomorrowFestivo.label})` };
+  }
+
+  return { isPrefestivo: false };
+}
+
 export interface CustomShiftPreset {
   id: string;
   label: string;
@@ -96,6 +180,38 @@ export interface CustomShiftPreset {
   subtitle?: string;
   isDefault?: boolean;
 }
+
+export const GenovaLandscapeIcon = ({ isMorning }: { isMorning: boolean }) => (
+  <svg viewBox="0 0 32 24" className="w-6 h-6 overflow-visible" aria-label={isMorning ? "Mattina" : "Pomeriggio"}>
+    {/* Sun */}
+    <circle
+      cx={isMorning ? 7 : 25}
+      cy={isMorning ? 11 : 9}
+      r="4.5"
+      fill={isMorning ? "#f59e0b" : "#ea580c"}
+      className={isMorning ? "animate-spin-slow" : ""}
+    />
+    {/* Sea (Left) */}
+    <path
+      d="M 0 14 Q 4 12 8 14 T 16 14 L 16 24 L 0 24 Z"
+      fill="#0ea5e9"
+      opacity="0.9"
+    />
+    <path
+      d="M 0 18 Q 4 16 8 18 T 16 18 L 16 24 L 0 24 Z"
+      fill="#0284c7"
+    />
+    {/* Mountains (Right) */}
+    <path
+      d="M 12 24 L 18 10 L 23 16 L 28 8 L 32 13 L 32 24 Z"
+      fill="#64748b"
+    />
+    <path
+      d="M 15 24 L 21 15 L 25 19 L 29 14 L 32 17 L 32 24 Z"
+      fill="#475569"
+    />
+  </svg>
+);
 
 export const INITIAL_SHIFT_PRESETS: CustomShiftPreset[] = [
   {
@@ -293,6 +409,14 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   const [historyStack, setHistoryStack] = useState<Shift[][]>(() => [shifts]);
   const [historyIndex, setHistoryIndex] = useState<number>(0);
 
+  // Sync initial history stack when shifts prop loads or updates initially
+  useEffect(() => {
+    if (historyStack.length <= 1) {
+      setHistoryStack([shifts]);
+      setHistoryIndex(0);
+    }
+  }, [shifts]);
+
   const applyShiftsUpdate = (newShifts: Shift[]) => {
     if (!onUpdateShifts) return;
     setHistoryStack(prev => {
@@ -399,6 +523,8 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
 
     let shiftCount = 0;
     let totalHours = 0;
+    let festiviCount = 0;
+    let prefestiviCount = 0;
 
     memberShifts.forEach(s => {
       if (s.tipoTurno === "Riposo" || s.tipoTurno === "Ferie") {
@@ -406,6 +532,13 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       }
       
       shiftCount++;
+      
+      const dateObj = new Date(s.data);
+      if (isItalianFestivo(dateObj).isFestivo) {
+        festiviCount++;
+      } else if (isItalianPrefestivo(dateObj).isPrefestivo) {
+        prefestiviCount++;
+      }
 
       // Calculate hours between orarioInizio and orarioFine
       const startParts = s.orarioInizio.split(":");
@@ -429,7 +562,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       }
     });
 
-    return { shiftCount, totalHours: Math.round(totalHours * 10) / 10 };
+    return { shiftCount, totalHours: Math.round(totalHours * 10) / 10, festiviCount, prefestiviCount };
   };
 
   // Real-time helper: weekly stats for shift & hour count in current displayed week
@@ -642,6 +775,14 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       cur.setDate(cur.getDate() + 1);
     }
 
+    const now = new Date();
+    const dateFormatted = `${String(now.getDate()).padStart(2, "0")}/${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()}`;
+    const timeFormatted = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const timestampNote = `Ferie inserite il ${dateFormatted} alle ${timeFormatted}`;
+    const finalNote = vacationNotes && vacationNotes.trim() && vacationNotes.trim() !== "Ferie desiderate"
+      ? `${timestampNote} - ${vacationNotes.trim()}`
+      : timestampNote;
+
     if (!onUpdateShifts) {
       datesToInsert.forEach(dStr => {
         onAddShift({
@@ -651,7 +792,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
           tipoTurno: "Ferie",
           orarioInizio: "00:00",
           orarioFine: "00:00",
-          note: vacationNotes || "Ferie desiderate"
+          note: finalNote
         });
       });
     } else {
@@ -663,7 +804,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
         tipoTurno: "Ferie",
         orarioInizio: "00:00",
         orarioFine: "00:00",
-        note: vacationNotes || "Ferie desiderate"
+        note: finalNote
       }));
 
       applyShiftsUpdate([...existingFiltered, ...ferieShifts]);
@@ -978,6 +1119,19 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       return;
     }
 
+    const now = new Date();
+    const dateFormatted = `${String(now.getDate()).padStart(2, "0")}/${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()}`;
+    const timeFormatted = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+
+    let constructedNote = newNote.trim();
+    if (newTipoTurno === "Ferie" || newTipoTurno === "Riposo") {
+      const labelTipo = newTipoTurno === "Ferie" ? "Ferie inserite" : "Riposo inserito";
+      const timestampStamp = `${labelTipo} il ${dateFormatted} alle ${timeFormatted}`;
+      if (!constructedNote.includes("inserite il") && !constructedNote.includes("inserito il")) {
+        constructedNote = constructedNote ? `${timestampStamp} - ${constructedNote}` : timestampStamp;
+      }
+    }
+
     const shiftObj: Shift = {
       id: `shift-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       staffId: newStaffId,
@@ -985,11 +1139,12 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       tipoTurno: newTipoTurno,
       orarioInizio: newOrarioInizio,
       orarioFine: newOrarioFine,
-      note: newNote,
+      note: constructedNote,
       struttura: newTipoTurno === "Notte" || newTipoTurno === "Riposo" || newTipoTurno === "Ferie" ? "" : newStruttura
     };
 
-    onAddShift(shiftObj);
+    const existingFiltered = shifts.filter(s => !(s.staffId === newStaffId && s.data === newDate));
+    applyShiftsUpdate([...existingFiltered, shiftObj]);
     setShowAddModal(false);
     setNewNote("");
     showToast(`Turno ${newTipoTurno} inserito per il ${newDate}!`);
@@ -1011,11 +1166,8 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     }
 
     setLastDeletedShifts([targetShift]);
-    if (onDeleteShift) {
-      onDeleteShift(shiftId);
-    } else if (onUpdateShifts) {
-      applyShiftsUpdate(shifts.filter(s => s.id !== shiftId));
-    }
+    const updatedShifts = shifts.filter(s => s.id !== shiftId);
+    applyShiftsUpdate(updatedShifts);
     setSelectedShiftForDetail(null);
     showToast(`🗑️ Turno ${targetShift.tipoTurno} cancellato.`, true);
   };
@@ -1987,9 +2139,9 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       return "bg-slate-900 text-slate-100 border-slate-950 hover:bg-slate-950 font-black shadow-xs ring-1 ring-slate-800/80";
     }
 
-    // 1.5 TURNO DI CUCINA: Ambra/Giallo Caldo distintivo
+    // 1.5 TURNO DI CUCINA: Azzurro molto diverso
     if (tipo === "Cucina") {
-      return "bg-amber-50 text-amber-950 border-amber-300 hover:bg-amber-100 font-extrabold shadow-2xs ring-1 ring-amber-400/50";
+      return "bg-sky-100 text-sky-950 border-sky-300 hover:bg-sky-200 font-extrabold shadow-2xs ring-1 ring-sky-400/50";
     }
 
     // 2. FERIE: Sempre Ambra/Giallo
@@ -3165,12 +3317,29 @@ function importaTurniResidenzaVannucci() {
                           {isReferenceDay && (
                             <span className="absolute -top-1 bg-slate-300 text-slate-700 text-[9px] px-2 py-0.5 rounded-b-md font-bold shadow-sm">RIFERIMENTO</span>
                           )}
-                          <span className="uppercase text-[11px] font-black tracking-widest text-indigo-600/90 flex items-center gap-1 justify-center">
-                            {getFullWeekdayName(day)}
-                          </span>
-                          <div className={`text-sm sm:text-base font-extrabold tracking-tight ${isToday ? "text-indigo-800 bg-indigo-50 px-2.5 py-1 rounded-xl border border-indigo-200" : "text-slate-800"} flex items-center justify-center gap-1`}>
-                            {day.getDate()} {getFullMonthName(day)} {day.getFullYear()}
-                          </div>
+                          {(() => {
+                            const festivo = isItalianFestivo(day);
+                            const prefestivo = isItalianPrefestivo(day);
+                            let weekdayColor = "text-indigo-600/90";
+                            let dateColor = isToday ? "text-indigo-800" : "text-slate-800";
+                            if (festivo.isFestivo) {
+                              weekdayColor = "text-red-600";
+                              dateColor = isToday ? "text-red-700" : "text-red-600";
+                            } else if (prefestivo.isPrefestivo) {
+                              weekdayColor = "text-orange-500";
+                              dateColor = isToday ? "text-orange-700" : "text-orange-600";
+                            }
+                            return (
+                              <>
+                                <span className={`uppercase text-[11px] font-black tracking-widest flex items-center gap-1 justify-center ${weekdayColor}`} title={festivo.isFestivo ? festivo.label : prefestivo.isPrefestivo ? prefestivo.label : undefined}>
+                                  {getFullWeekdayName(day)}
+                                </span>
+                                <div className={`text-sm sm:text-base font-extrabold tracking-tight ${isToday ? `bg-indigo-50 px-2.5 py-1 rounded-xl border border-indigo-200 ${dateColor}` : dateColor} flex items-center justify-center gap-1`} title={festivo.isFestivo ? festivo.label : prefestivo.isPrefestivo ? prefestivo.label : undefined}>
+                                  {day.getDate()} {getFullMonthName(day)} {day.getFullYear()}
+                                </div>
+                              </>
+                            );
+                          })()}
                         </div>
 
                         {!isStaffRole && !isReferenceDay && (
@@ -3270,6 +3439,16 @@ function importaTurniResidenzaVannucci() {
                             <span className="text-[9px] font-bold bg-emerald-50/80 text-emerald-700 px-1 rounded border border-emerald-100" title="Ore lavorate nel mese">
                               {getMemberMonthlyStats(member.id).totalHours} ore
                             </span>
+                            {getMemberMonthlyStats(member.id).festiviCount > 0 && (
+                              <span className="text-[9px] font-bold bg-red-50 text-red-700 px-1 rounded border border-red-100" title="Turni festivi nel mese">
+                                Fest: {getMemberMonthlyStats(member.id).festiviCount}
+                              </span>
+                            )}
+                            {getMemberMonthlyStats(member.id).prefestiviCount > 0 && (
+                              <span className="text-[9px] font-bold bg-orange-50 text-orange-700 px-1 rounded border border-orange-100" title="Turni prefestivi nel mese">
+                                Prefest: {getMemberMonthlyStats(member.id).prefestiviCount}
+                              </span>
+                            )}
                             {hasRestDayInCurrentWeek(member.id) ? (
                               <span className="text-[9px] font-bold bg-sky-50 text-sky-700 px-1 rounded border border-sky-100 flex items-center gap-0.5" title="Giorno di riposo presente nella settimana corrente">
                                 🏖️ Riposo OK
@@ -3363,20 +3542,19 @@ function importaTurniResidenzaVannucci() {
                                   <div className="flex items-center justify-between gap-1">
                                     <div className="flex items-center gap-1 flex-wrap">
                                       {!isStaffRole && !isEffectivelyLocked && <GripVertical className={`w-3 h-3 ${isInvalid ? 'text-red-500' : 'text-slate-400 group-hover/shift:text-indigo-600'} transition-colors`} />}
-                                      <span>{s.tipoTurno}</span>
+                                      <span className="uppercase tracking-wider font-extrabold">{s.tipoTurno}</span>
                                       {!s.id.startsWith("auto-") && !isReferenceDay && s.tipoTurno !== "Ferie" && !lockedDays.includes(dateYMD) && (
                                         <span className="text-[8px] font-black text-amber-800 bg-amber-100/90 border border-amber-300/80 px-1 py-0.2 rounded-xs flex items-center gap-0.5 shrink-0" title="Vincolo Manuale Fisso: Non verrà mai sovrascritto dalla generazione automatica">
                                           📌 Fisso
                                         </span>
                                       )}
                                     </div>
-
                                     <div className="flex items-center gap-1.5">
                                       {isInvalid && (
                                         <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
                                       )}
-                                      {s.tipoTurno === "Mattina" && <Sun className="w-5.5 h-5.5 text-amber-500 animate-spin-slow" />}
-                                      {s.tipoTurno === "Pomeriggio" && <Sunset className="w-5.5 h-5.5 text-indigo-500" />}
+                                      {s.tipoTurno === "Mattina" && <GenovaLandscapeIcon isMorning={true} />}
+                                      {s.tipoTurno === "Pomeriggio" && <GenovaLandscapeIcon isMorning={false} />}
                                       {s.tipoTurno === "Notte" && <Moon className="w-5.5 h-5.5 text-slate-400" />}
                                       {s.note && s.note.trim().length > 0 && s.note !== "Programmazione automatica" && (
                                         <span className="relative flex h-2.5 w-2.5 ml-0.5" title={`Nota: ${s.note}`}>
@@ -3407,7 +3585,7 @@ function importaTurniResidenzaVannucci() {
                                     </div>
                                   </div>
 
-                                  <div className="flex items-center justify-between text-[9px] font-mono opacity-90 mt-0.5 border-t border-black/5 pt-1">
+                                  <div className="flex items-center justify-between text-xs font-mono font-bold opacity-90 mt-0.5 border-t border-black/5 pt-1">
                                     <span>{s.orarioInizio} - {s.orarioFine}</span>
                                     {s.struttura && s.tipoTurno !== "Notte" && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie" && (
                                       <span className="bg-white/95 text-slate-800 px-2 py-1 rounded-md text-[9px] font-extrabold border border-black/10 uppercase tracking-tight flex items-center gap-1 shadow-3xs">
@@ -3664,13 +3842,32 @@ function importaTurniResidenzaVannucci() {
                           <div className="absolute top-0 left-0 right-0 h-1 bg-amber-500 animate-pulse" />
                         )}
 
-                        <div className="text-[8px] font-black uppercase text-slate-400 group-hover/mhead:text-indigo-600 flex items-center justify-center gap-0.5">
-                          {day.toLocaleDateString("it-IT", { weekday: "narrow" })}
-                        </div>
+                        {(() => {
+                          const festivo = isItalianFestivo(day);
+                          const prefestivo = isItalianPrefestivo(day);
+                          let weekdayColor = "text-slate-400 group-hover/mhead:text-indigo-600";
+                          let dateColor = isToday ? "text-white bg-indigo-600" : "text-slate-800";
+                          
+                          if (festivo.isFestivo) {
+                            weekdayColor = "text-red-500 group-hover/mhead:text-red-600";
+                            dateColor = isToday ? "text-white bg-red-600" : "text-red-600";
+                          } else if (prefestivo.isPrefestivo) {
+                            weekdayColor = "text-orange-400 group-hover/mhead:text-orange-500";
+                            dateColor = isToday ? "text-white bg-orange-500" : "text-orange-600";
+                          }
 
-                        <div className={`text-[10px] sm:text-xs font-black my-0.5 ${isToday ? "text-white bg-indigo-600 rounded-full w-4 h-4 sm:w-5 sm:h-5 mx-auto flex items-center justify-center shadow-2xs" : "text-slate-800"}`}>
-                          {day.getDate()}
-                        </div>
+                          return (
+                            <>
+                              <div className={`text-[8px] font-black uppercase flex items-center justify-center gap-0.5 ${weekdayColor}`} title={festivo.isFestivo ? festivo.label : prefestivo.isPrefestivo ? prefestivo.label : undefined}>
+                                {day.toLocaleDateString("it-IT", { weekday: "narrow" })}
+                              </div>
+
+                              <div className={`text-[10px] sm:text-xs font-black my-0.5 ${dateColor} ${isToday ? "rounded-full w-4 h-4 sm:w-5 sm:h-5 mx-auto flex items-center justify-center shadow-2xs" : ""}`} title={festivo.isFestivo ? festivo.label : prefestivo.isPrefestivo ? prefestivo.label : undefined}>
+                                {day.getDate()}
+                              </div>
+                            </>
+                          );
+                        })()}
 
                         {/* Action buttons on hover */}
                         {!isPublicView && (
@@ -3745,6 +3942,16 @@ function importaTurniResidenzaVannucci() {
                             <span className="text-[8px] text-emerald-700 bg-emerald-50/85 px-1 py-0.2 rounded border border-emerald-100 whitespace-nowrap">
                               ⏱️ {getMemberMonthlyStats(member.id).totalHours} ore
                             </span>
+                            {getMemberMonthlyStats(member.id).festiviCount > 0 && (
+                              <span className="text-[8px] text-red-700 bg-red-50/85 px-1 py-0.2 rounded border border-red-100 whitespace-nowrap">
+                                🔴 {getMemberMonthlyStats(member.id).festiviCount} festivi
+                              </span>
+                            )}
+                            {getMemberMonthlyStats(member.id).prefestiviCount > 0 && (
+                              <span className="text-[8px] text-orange-700 bg-orange-50/85 px-1 py-0.2 rounded border border-orange-100 whitespace-nowrap">
+                                🟠 {getMemberMonthlyStats(member.id).prefestiviCount} prefest.
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -4079,7 +4286,7 @@ function importaTurniResidenzaVannucci() {
                       >
                         <div>
                           <span>{s.tipoTurno} • {formatItalianDateString(s.data)} {s.struttura ? `(${s.struttura})` : ""}</span>
-                          <div className="text-[10px] font-mono opacity-80">{s.orarioInizio} - {s.orarioFine}</div>
+                          <div className="text-[13px] font-mono font-bold opacity-80 mt-0.5">{s.orarioInizio} - {s.orarioFine}</div>
                         </div>
                         {!isStaffRole && (
                           <Trash2
@@ -4341,7 +4548,7 @@ function importaTurniResidenzaVannucci() {
                             !validity.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
                             "cursor-pointer " + (isSelected
                               ? preset.tipoTurno === "Cucina"
-                                ? "bg-amber-500 border-amber-600 text-slate-950 ring-4 ring-amber-500/30"
+                                ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30"
                                 : preset.tipoTurno === "Notte"
                                 ? "bg-slate-900 border-slate-950 text-white ring-4 ring-slate-800/80"
                                 : newStruttura === "Vannucci 1"
@@ -4350,7 +4557,7 @@ function importaTurniResidenzaVannucci() {
                                 ? "bg-yellow-400 border-yellow-500 text-yellow-950 ring-4 ring-yellow-400/25"
                                 : "bg-emerald-600 border-emerald-700 text-white ring-4 ring-emerald-600/20"
                               : preset.tipoTurno === "Cucina"
-                              ? "bg-amber-50/80 border-amber-300 hover:bg-amber-100 text-amber-950"
+                              ? "bg-sky-50/80 border-sky-300 hover:bg-sky-100 text-sky-950"
                               : preset.tipoTurno === "Notte"
                               ? "bg-slate-900 border-slate-950 text-slate-100 hover:bg-slate-950"
                               : "bg-slate-50 border-slate-200 hover:bg-slate-100")

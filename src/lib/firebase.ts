@@ -76,6 +76,8 @@ export async function testConnection() {
 const SHIFTS_DOC = doc(db, "appState", "shifts");
 const STAFF_DOC = doc(db, "appState", "staff");
 const CREDENTIALS_DOC = doc(db, "appState", "credentials");
+const CHAT_DOC = doc(db, "appState", "chat");
+const BACHECA_DOC = doc(db, "appState", "bacheca");
 
 export const firestoreSync = {
   // Listen to real-time updates for credentials
@@ -186,6 +188,80 @@ export const firestoreSync = {
     } catch (error) {
       console.error("Error saving staff to Firestore:", error);
       handleFirestoreError(error, OperationType.WRITE, "appState/staff");
+    }
+  },
+
+  // Listen to real-time updates for Chat
+  subscribeChat(onUpdate: (chat: any[], updatedAt?: string) => void, initialFallback?: any[]) {
+    return onSnapshot(
+      CHAT_DOC,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          if (data && Array.isArray(data.items)) {
+            onUpdate(data.items, data.updatedAt as string | undefined);
+          }
+        } else if (initialFallback && initialFallback.length > 0) {
+          setDoc(CHAT_DOC, {
+            items: initialFallback,
+            updatedAt: new Date().toISOString()
+          }).catch(err => console.error("Error seeding initial chat:", err));
+        }
+      },
+      (error) => {
+        console.error("Error listening to chat in Firestore:", error);
+        handleFirestoreError(error, OperationType.GET, "appState/chat");
+      }
+    );
+  },
+
+  // Save chat to Firestore
+  async saveChat(chat: any[], updatedAt?: string) {
+    try {
+      await setDoc(CHAT_DOC, {
+        items: chat,
+        updatedAt: updatedAt || new Date().toISOString()
+      });
+    } catch (error) {
+      console.error("Error saving chat to Firestore:", error);
+      handleFirestoreError(error, OperationType.WRITE, "appState/chat");
+    }
+  },
+
+  // Listen to real-time updates for Bacheca
+  subscribeBacheca(onUpdate: (bacheca: any[], updatedAt?: string) => void, initialFallback?: any[]) {
+    return onSnapshot(
+      BACHECA_DOC,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          if (data && Array.isArray(data.items)) {
+            onUpdate(data.items, data.updatedAt as string | undefined);
+          }
+        } else if (initialFallback && initialFallback.length > 0) {
+          setDoc(BACHECA_DOC, {
+            items: initialFallback,
+            updatedAt: new Date().toISOString()
+          }).catch(err => console.error("Error seeding initial bacheca:", err));
+        }
+      },
+      (error) => {
+        console.error("Error listening to bacheca in Firestore:", error);
+        handleFirestoreError(error, OperationType.GET, "appState/bacheca");
+      }
+    );
+  },
+
+  // Save bacheca to Firestore
+  async saveBacheca(bacheca: any[], updatedAt?: string) {
+    try {
+      await setDoc(BACHECA_DOC, {
+        items: bacheca,
+        updatedAt: updatedAt || new Date().toISOString()
+      });
+    } catch (error) {
+      console.error("Error saving bacheca to Firestore:", error);
+      handleFirestoreError(error, OperationType.WRITE, "appState/bacheca");
     }
   }
 };

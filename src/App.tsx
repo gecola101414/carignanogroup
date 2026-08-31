@@ -67,22 +67,6 @@ export default function App() {
   const [bacheca, setBacheca] = useState<BachecaNotice[]>(() => storage.getBacheca());
   const [chatMessages, setChatMessages] = useState<ChatWhatsAppMessage[]>(() => storage.getChat());
 
-  const handleUpdateBacheca = useCallback((newBachecaOrUpdater: BachecaNotice[] | ((prev: BachecaNotice[]) => BachecaNotice[])) => {
-    setBacheca(prev => {
-      const next = typeof newBachecaOrUpdater === "function" ? newBachecaOrUpdater(prev) : newBachecaOrUpdater;
-      storage.setBacheca(next);
-      return next;
-    });
-  }, []);
-
-  const handleUpdateChat = useCallback((newChatOrUpdater: ChatWhatsAppMessage[] | ((prev: ChatWhatsAppMessage[]) => ChatWhatsAppMessage[])) => {
-    setChatMessages(prev => {
-      const next = typeof newChatOrUpdater === "function" ? newChatOrUpdater(prev) : newChatOrUpdater;
-      storage.setChat(next);
-      return next;
-    });
-  }, []);
-
   useEffect(() => {
     if (currentUser?.role === 'staff' && activeTab !== 'shifts' && activeTab !== 'logs' && activeTab !== 'bacheca' && activeTab !== 'chat') {
       setActiveTab('shifts');
@@ -150,6 +134,8 @@ export default function App() {
   const shiftsUpdatedAtRef = useRef<string>(storage.getShiftsUpdatedAt() || "1970-01-01T00:00:00.000Z");
   const staffUpdatedAtRef = useRef<string>(storage.getStaffUpdatedAt() || "1970-01-01T00:00:00.000Z");
   const credentialsUpdatedAtRef = useRef<string>(storage.getCredentialsUpdatedAt() || "1970-01-01T00:00:00.000Z");
+  const chatUpdatedAtRef = useRef<string>("1970-01-01T00:00:00.000Z");
+  const bachecaUpdatedAtRef = useRef<string>("1970-01-01T00:00:00.000Z");
 
   const handleUpdateCredentials = useCallback((newCredsOrUpdater: UserCredential[] | ((prev: UserCredential[]) => UserCredential[])) => {
     setCredentials(prev => {
@@ -162,7 +148,27 @@ export default function App() {
     });
   }, []);
 
-  // Handler to update shifts both locally and remotely
+  const handleUpdateBacheca = useCallback((newBachecaOrUpdater: BachecaNotice[] | ((prev: BachecaNotice[]) => BachecaNotice[])) => {
+    setBacheca(prev => {
+      const next = typeof newBachecaOrUpdater === "function" ? newBachecaOrUpdater(prev) : newBachecaOrUpdater;
+      const now = new Date().toISOString();
+      bachecaUpdatedAtRef.current = now;
+      storage.setBacheca(next);
+      firestoreSync.saveBacheca(next, now);
+      return next;
+    });
+  }, []);
+
+  const handleUpdateChat = useCallback((newChatOrUpdater: ChatWhatsAppMessage[] | ((prev: ChatWhatsAppMessage[]) => ChatWhatsAppMessage[])) => {
+    setChatMessages(prev => {
+      const next = typeof newChatOrUpdater === "function" ? newChatOrUpdater(prev) : newChatOrUpdater;
+      const now = new Date().toISOString();
+      chatUpdatedAtRef.current = now;
+      storage.setChat(next);
+      firestoreSync.saveChat(next, now);
+      return next;
+    });
+  }, []);
   const handleUpdateShifts = useCallback((newShiftsOrUpdater: Shift[] | ((prev: Shift[]) => Shift[])) => {
     setShifts(prevShifts => {
       const nextShifts = typeof newShiftsOrUpdater === "function" ? newShiftsOrUpdater(prevShifts) : newShiftsOrUpdater;
@@ -196,11 +202,13 @@ export default function App() {
     testConnection();
   }, []);
 
-  // Subscribe to real-time Firebase Firestore database listeners for shifts and staff
+  // Subscribe to real-time Firebase Firestore database listeners for shifts, staff, chat, and bacheca
   useEffect(() => {
     const initialShifts = storage.getShifts();
     const initialStaff = storage.getStaff();
     const initialCredentials = storage.getCredentials();
+    const initialChat = storage.getChat();
+    const initialBacheca = storage.getBacheca();
 
     const unsubscribeCredentials = firestoreSync.subscribeCredentials((remoteCreds, remoteUpdatedAt) => {
       if (remoteCreds && Array.isArray(remoteCreds)) {
@@ -244,10 +252,34 @@ export default function App() {
       }
     }, initialStaff);
 
+    const unsubscribeChat = firestoreSync.subscribeChat((remoteChat, remoteUpdatedAt) => {
+      if (remoteChat && Array.isArray(remoteChat)) {
+        if (remoteUpdatedAt && remoteUpdatedAt <= chatUpdatedAtRef.current) {
+          return;
+        }
+        if (remoteUpdatedAt) chatUpdatedAtRef.current = remoteUpdatedAt;
+        storage.setChat(remoteChat);
+        setChatMessages(remoteChat);
+      }
+    }, initialChat);
+
+    const unsubscribeBacheca = firestoreSync.subscribeBacheca((remoteBacheca, remoteUpdatedAt) => {
+      if (remoteBacheca && Array.isArray(remoteBacheca)) {
+        if (remoteUpdatedAt && remoteUpdatedAt <= bachecaUpdatedAtRef.current) {
+          return;
+        }
+        if (remoteUpdatedAt) bachecaUpdatedAtRef.current = remoteUpdatedAt;
+        storage.setBacheca(remoteBacheca);
+        setBacheca(remoteBacheca);
+      }
+    }, initialBacheca);
+
     return () => {
       unsubscribeCredentials();
       unsubscribeShifts();
       unsubscribeStaff();
+      unsubscribeChat();
+      unsubscribeBacheca();
     };
   }, []);
 
