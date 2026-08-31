@@ -139,9 +139,7 @@ export interface StaffMember {
   codiceFiscale: string;
   attivo: boolean;
   coloreBadge: string;
-  orarioMattina?: string; // e.g. "07:00 - 14:00"
-  orarioPomeriggio?: string; // e.g. "14:00 - 21:00"
-  orarioNotte?: string; // e.g. "21:00 - 07:00"
+  tipoContratto?: string;
 }
 
 export interface Shift {

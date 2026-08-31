@@ -179,6 +179,7 @@ export interface CustomShiftPreset {
   orarioFine: string;
   subtitle?: string;
   isDefault?: boolean;
+  struttura?: string;
 }
 
 export const GenovaLandscapeIcon = ({ isMorning }: { isMorning: boolean }) => (
@@ -214,67 +215,109 @@ export const GenovaLandscapeIcon = ({ isMorning }: { isMorning: boolean }) => (
 );
 
 export const INITIAL_SHIFT_PRESETS: CustomShiftPreset[] = [
+  // VANNUCCI 1
   {
-    id: "preset-cucina-1030-1500",
-    label: "🍳 Cucina 10:30 - 15:00",
-    tipoTurno: "Cucina",
-    orarioInizio: "10:30",
-    orarioFine: "15:00",
-    subtitle: "Turno Cucina & Mensa",
-    isDefault: true
-  },
-  {
-    id: "preset-7-14",
-    label: "🌅 7-14",
+    id: "preset-v1-7-15",
+    label: "🌅 07:00-15:00",
     tipoTurno: "Mattina",
     orarioInizio: "07:00",
-    orarioFine: "14:00",
-    subtitle: "Mattina standard",
-    isDefault: true
-  },
-  {
-    id: "preset-14-21",
-    label: "🌆 14-21",
-    tipoTurno: "Pomeriggio",
-    orarioInizio: "14:00",
-    orarioFine: "21:00",
-    subtitle: "Pomeriggio standard",
-    isDefault: true
-  },
-  {
-    id: "preset-8-15",
-    label: "🌅 8-15",
-    tipoTurno: "Mattina",
-    orarioInizio: "08:00",
     orarioFine: "15:00",
-    subtitle: "Mattina posticipato",
+    struttura: "Vannucci 1",
     isDefault: true
   },
   {
-    id: "preset-15-23",
-    label: "🌆 15-23",
-    tipoTurno: "Pomeriggio",
-    orarioInizio: "15:00",
-    orarioFine: "23:00",
-    subtitle: "Pomeriggio prolungato",
-    isDefault: true
-  },
-  {
-    id: "preset-7-11",
-    label: "🌅 7-11",
+    id: "preset-v1-7-11",
+    label: "🧹 07:00-11:00 (Pulizie)",
     tipoTurno: "Mattina",
     orarioInizio: "07:00",
     orarioFine: "11:00",
-    subtitle: "Mattina breve",
+    subtitle: "Pulizie",
+    struttura: "Vannucci 1",
     isDefault: true
   },
   {
-    id: "preset-notte-21-07",
-    label: "🌙 Notte 21-07",
+    id: "preset-v1-15-23",
+    label: "🌆 15:00-23:00",
+    tipoTurno: "Pomeriggio",
+    orarioInizio: "15:00",
+    orarioFine: "23:00",
+    struttura: "Vannucci 1",
+    isDefault: true
+  },
+  {
+    id: "preset-v1-23-07",
+    label: "🌙 23:00-07:00 (Notte)",
     tipoTurno: "Notte",
-    orarioInizio: "21:00",
+    orarioInizio: "23:00",
     orarioFine: "07:00",
-    subtitle: "Unificato nero",
+    struttura: "Vannucci 1",
+    isDefault: true
+  },
+  
+  // VANNUCCI 2
+  {
+    id: "preset-v2-7-14",
+    label: "🌅 07:00-14:00",
+    tipoTurno: "Mattina",
+    orarioInizio: "07:00",
+    orarioFine: "14:00",
+    struttura: "Vannucci 2",
+    isDefault: true
+  },
+  {
+    id: "preset-v2-8-14",
+    label: "🌅 08:00-14:00",
+    tipoTurno: "Mattina",
+    orarioInizio: "08:00",
+    orarioFine: "14:00",
+    struttura: "Vannucci 2",
+    isDefault: true
+  },
+  {
+    id: "preset-v2-8-15",
+    label: "🌅 08:00-15:00",
+    tipoTurno: "Mattina",
+    orarioInizio: "08:00",
+    orarioFine: "15:00",
+    struttura: "Vannucci 2",
+    isDefault: true
+  },
+  {
+    id: "preset-v2-14-21",
+    label: "🌆 14:00-21:00",
+    tipoTurno: "Pomeriggio",
+    orarioInizio: "14:00",
+    orarioFine: "21:00",
+    struttura: "Vannucci 2",
+    isDefault: true
+  },
+  {
+    id: "preset-v2-15-21",
+    label: "🌆 15:00-21:00",
+    tipoTurno: "Pomeriggio",
+    orarioInizio: "15:00",
+    orarioFine: "21:00",
+    struttura: "Vannucci 2",
+    isDefault: true
+  },
+  
+  // VANNUCCI 4
+  {
+    id: "preset-v4-8-15",
+    label: "🌅 08:00-15:00",
+    tipoTurno: "Mattina",
+    orarioInizio: "08:00",
+    orarioFine: "15:00",
+    struttura: "Vannucci 4",
+    isDefault: true
+  },
+  {
+    id: "preset-v4-15-20",
+    label: "🌆 15:00-20:00",
+    tipoTurno: "Pomeriggio",
+    orarioInizio: "15:00",
+    orarioFine: "20:00",
+    struttura: "Vannucci 4",
     isDefault: true
   }
 ];
@@ -399,6 +442,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   const [newStaffRuolo, setNewStaffRuolo] = useState<string>("OSS");
   const [newStaffTelefono, setNewStaffTelefono] = useState<string>("");
   const [newStaffEmail, setNewStaffEmail] = useState<string>("");
+  const [newStaffTipoContratto, setNewStaffTipoContratto] = useState<string>("");
   const [newStaffColoreBadge, setNewStaffColoreBadge] = useState<string>("#4f46e5");
   const [newStaffOrarioMattina, setNewStaffOrarioMattina] = useState<string>("07:00 - 14:00");
   const [newStaffOrarioPomeriggio, setNewStaffOrarioPomeriggio] = useState<string>("14:00 - 21:00");
@@ -625,8 +669,8 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     const hasMattina2 = dayShifts.some(s => s.tipoTurno === "Mattina" && (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2"));
     const hasPomeriggio2 = dayShifts.some(s => s.tipoTurno === "Pomeriggio" && (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2"));
     
-    const hasMattina3 = dayShifts.some(s => s.tipoTurno === "Mattina" && (s.struttura === "Vannucci 3" || s.struttura === "Struttura 3"));
-    const hasPomeriggio3 = dayShifts.some(s => s.tipoTurno === "Pomeriggio" && (s.struttura === "Vannucci 3" || s.struttura === "Struttura 3"));
+    const hasMattina3 = dayShifts.some(s => s.tipoTurno === "Mattina" && (s.struttura === "Vannucci 4" || s.struttura === "Struttura 4"));
+    const hasPomeriggio3 = dayShifts.some(s => s.tipoTurno === "Pomeriggio" && (s.struttura === "Vannucci 4" || s.struttura === "Struttura 4"));
     
     const hasNotte = dayShifts.some(s => s.tipoTurno === "Notte");
     
@@ -658,7 +702,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   // Custom Shift Presets State & Storage Management
   const [savedPresets, setSavedPresets] = useState<CustomShiftPreset[]>(() => {
     try {
-      const saved = localStorage.getItem("casafamiglia_saved_shift_presets");
+      const saved = localStorage.getItem("casafamiglia_saved_shift_presets_v2");
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -676,16 +720,26 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   const savePresetsToStorage = (presets: CustomShiftPreset[]) => {
     setSavedPresets(presets);
     try {
-      localStorage.setItem("casafamiglia_saved_shift_presets", JSON.stringify(presets));
+      localStorage.setItem("casafamiglia_saved_shift_presets_v2", JSON.stringify(presets));
     } catch (e) {
       console.error("Error saving shift presets", e);
     }
   };
 
-  const handleAddNewPreset = (e?: React.FormEvent) => {
+  const handleAddNewPreset = (
+    e?: React.FormEvent, 
+    overrideInizio?: string, 
+    overrideFine?: string, 
+    overrideTipo?: string
+  ) => {
     if (e) e.preventDefault();
-    const rawLabel = customPresetName.trim() || `${customPresetTipo} ${customPresetInizio}-${customPresetFine}`;
-    const icon = customPresetTipo === "Cucina" ? "🍳" : customPresetTipo === "Notte" ? "🌙" : customPresetTipo === "Pomeriggio" ? "🌆" : customPresetTipo === "Mattina" ? "🌅" : "⏱️";
+    
+    const finalInizio = overrideInizio || customPresetInizio || "09:00";
+    const finalFine = overrideFine || customPresetFine || "17:00";
+    const finalTipo = overrideTipo || customPresetTipo || "Personalizzato";
+
+    const rawLabel = customPresetName.trim() || `${finalInizio}-${finalFine}`;
+    const icon = finalTipo === "Cucina" ? "🍳" : finalTipo === "Notte" ? "🌙" : finalTipo === "Pomeriggio" ? "🌆" : finalTipo === "Mattina" ? "🌅" : "⏱️";
     const label = rawLabel.includes("🍳") || rawLabel.includes("🌅") || rawLabel.includes("🌆") || rawLabel.includes("🌙") || rawLabel.includes("⏱️")
       ? rawLabel
       : `${icon} ${rawLabel}`;
@@ -693,10 +747,11 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     const newPreset: CustomShiftPreset = {
       id: `preset-custom-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       label,
-      tipoTurno: customPresetTipo || "Personalizzato",
-      orarioInizio: customPresetInizio || "09:00",
-      orarioFine: customPresetFine || "17:00",
-      subtitle: `Preset ${customPresetTipo} (${customPresetInizio} - ${customPresetFine})`,
+      tipoTurno: finalTipo,
+      orarioInizio: finalInizio,
+      orarioFine: finalFine,
+      subtitle: `Preset ${finalTipo} (${finalInizio} - ${finalFine})`,
+      struttura: newStruttura,
       isDefault: false
     };
 
@@ -851,7 +906,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
   };
 
-  const STRUTTURE = [{ nome: "Vannucci 1" }, { nome: "Vannucci 2" }, { nome: "Vannucci 3" }];
+  const STRUTTURE = [{ nome: "Vannucci 1" }, { nome: "Vannucci 2" }, { nome: "Vannucci 4" }];
 
   const todayStr = formatDateYMD(new Date());
 
@@ -924,82 +979,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     fallbackInizio: string,
     fallbackFine: string
   ): { orarioInizio: string; orarioFine: string } => {
-    if (!targetStaff) return { orarioInizio: fallbackInizio, orarioFine: fallbackFine };
-
-    let rawOrario: string | undefined = undefined;
-    if (tipoTurno === "Mattina") {
-      rawOrario = targetStaff.orarioMattina;
-    } else if (tipoTurno === "Pomeriggio") {
-      rawOrario = targetStaff.orarioPomeriggio;
-    } else if (tipoTurno === "Notte") {
-      rawOrario = targetStaff.orarioNotte;
-    }
-
-    if (rawOrario && rawOrario.includes("-")) {
-      const parts = rawOrario.split("-").map(p => p.trim());
-      if (parts.length === 2 && parts[0] && parts[1]) {
-        return { orarioInizio: parts[0], orarioFine: parts[1] };
-      }
-    }
-
-    // Default shift hours if not customized in staff profile
-    if (tipoTurno === "Mattina") return { orarioInizio: "07:00", orarioFine: "14:00" };
-    if (tipoTurno === "Pomeriggio") return { orarioInizio: "14:00", orarioFine: "21:00" };
-    if (tipoTurno === "Notte") return { orarioInizio: "21:00", orarioFine: "07:00" };
-    if (tipoTurno === "Reperibilità") return { orarioInizio: "00:00", orarioFine: "23:59" };
-    if (tipoTurno === "Riposo" || tipoTurno === "Ferie") return { orarioInizio: "00:00", orarioFine: "00:00" };
-
     return { orarioInizio: fallbackInizio, orarioFine: fallbackFine };
-  };
-
-  // Turno Preset Selection (Adopts custom hours from staff member card if available)
-  const handleSelectPreset = (tipo: "Mattina" | "Pomeriggio" | "Notte" | "Turno 07:11" | "Personalizzato" | "Reperibilità" | "Riposo" | "Ferie", customStaffId?: string) => {
-    setNewTipoTurno(tipo);
-    const selectedStaff = staff.find(s => s.id === (customStaffId || newStaffId));
-
-    if (tipo === "Mattina") {
-      if (selectedStaff?.orarioMattina) {
-        const parts = selectedStaff.orarioMattina.split("-").map(s => s.trim());
-        setNewOrarioInizio(parts[0] || "07:00");
-        setNewOrarioFine(parts[1] || "14:00");
-      } else {
-        setNewOrarioInizio("07:00");
-        setNewOrarioFine("14:00");
-      }
-    } else if (tipo === "Pomeriggio") {
-      if (selectedStaff?.orarioPomeriggio) {
-        const parts = selectedStaff.orarioPomeriggio.split("-").map(s => s.trim());
-        setNewOrarioInizio(parts[0] || "14:00");
-        setNewOrarioFine(parts[1] || "21:00");
-      } else {
-        setNewOrarioInizio("14:00");
-        setNewOrarioFine("21:00");
-      }
-    } else if (tipo === "Notte") {
-      if (selectedStaff?.orarioNotte) {
-        const parts = selectedStaff.orarioNotte.split("-").map(s => s.trim());
-        setNewOrarioInizio(parts[0] || "21:00");
-        setNewOrarioFine(parts[1] || "07:00");
-      } else {
-        setNewOrarioInizio("21:00");
-        setNewOrarioFine("07:00");
-      }
-    } else if (tipo === "Turno 07:11") {
-      setNewOrarioInizio("07:00");
-      setNewOrarioFine("11:00");
-    } else if (tipo === "Personalizzato") {
-      setNewOrarioInizio("09:00");
-      setNewOrarioFine("13:00");
-    } else if (tipo === "Reperibilità") {
-      setNewOrarioInizio("00:00");
-      setNewOrarioFine("23:59");
-    } else if (tipo === "Ferie") {
-      setNewOrarioInizio("00:00");
-      setNewOrarioFine("00:00");
-    } else {
-      setNewOrarioInizio("00:00");
-      setNewOrarioFine("00:00");
-    }
   };
 
   // Automatic Shift Suggestion
@@ -1044,14 +1024,8 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     let endProposed = "14:00";
     
     if (proposedType === "Mattina") {
-      startProposed = staffProfile?.orarioMattina?.split("-")[0]?.trim() || "07:00";
-      endProposed = staffProfile?.orarioMattina?.split("-")[1]?.trim() || "14:00";
     } else if (proposedType === "Pomeriggio") {
-      startProposed = staffProfile?.orarioPomeriggio?.split("-")[0]?.trim() || "14:00";
-      endProposed = staffProfile?.orarioPomeriggio?.split("-")[1]?.trim() || "21:00";
     } else if (proposedType === "Notte") {
-      startProposed = staffProfile?.orarioNotte?.split("-")[0]?.trim() || "21:00";
-      endProposed = staffProfile?.orarioNotte?.split("-")[1]?.trim() || "07:00";
     }
 
     // Convert startProposed to minutes from 00:00 of targetDateStr
@@ -1071,8 +1045,6 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
         } else if (proposedType === "Mattina" || proposedType === "Notte") {
             // If we can't do Mattina, push to Pomeriggio
             proposedType = "Pomeriggio";
-            startProposed = staffProfile?.orarioPomeriggio?.split("-")[0]?.trim() || "14:00";
-            endProposed = staffProfile?.orarioPomeriggio?.split("-")[1]?.trim() || "21:00";
         }
     }
     
@@ -1148,6 +1120,55 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     setShowAddModal(false);
     setNewNote("");
     showToast(`Turno ${newTipoTurno} inserito per il ${newDate}!`);
+  };
+
+  const handleFastSubmit = (preset: { tipoTurno: string; orarioInizio: string; orarioFine: string }) => {
+    if (!newStaffId || !newDate) return;
+
+    if (lockedDays.includes(newDate)) {
+      showToast("🔒 Questo giorno è bloccato! Sbloccalo prima di aggiungere un turno.");
+      return;
+    }
+
+    const validity = checkPotentialShiftValidity(newStaffId, newDate, preset.tipoTurno, newStruttura, preset.orarioInizio, preset.orarioFine);
+    if (!validity.valid) {
+      showToast(validity.reason || "Errore di validazione del turno");
+      return;
+    }
+
+    let constructedNote = newNote.trim();
+    if (preset.tipoTurno === "Cucina" && !constructedNote) {
+      constructedNote = "Servizio Cucina e Mensa";
+    }
+
+    const now = new Date();
+    const dateFormatted = `${String(now.getDate()).padStart(2, "0")}/${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()}`;
+    const timeFormatted = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+
+    if (preset.tipoTurno === "Ferie" || preset.tipoTurno === "Riposo") {
+      const labelTipo = preset.tipoTurno === "Ferie" ? "Ferie inserite" : "Riposo inserito";
+      const timestampStamp = `${labelTipo} il ${dateFormatted} alle ${timeFormatted}`;
+      if (!constructedNote.includes("inserite il") && !constructedNote.includes("inserito il")) {
+        constructedNote = constructedNote ? `${timestampStamp} - ${constructedNote}` : timestampStamp;
+      }
+    }
+
+    const shiftObj: Shift = {
+      id: `shift-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      staffId: newStaffId,
+      data: newDate,
+      tipoTurno: preset.tipoTurno,
+      orarioInizio: preset.orarioInizio,
+      orarioFine: preset.orarioFine,
+      note: constructedNote,
+      struttura: preset.tipoTurno === "Notte" || preset.tipoTurno === "Riposo" || preset.tipoTurno === "Ferie" ? "" : newStruttura
+    };
+
+    const existingFiltered = shifts.filter(s => !(s.staffId === newStaffId && s.data === newDate));
+    applyShiftsUpdate([...existingFiltered, shiftObj]);
+    setShowAddModal(false);
+    setNewNote("");
+    showToast(`Turno ${preset.tipoTurno} inserito per il ${newDate}!`);
   };
 
   // Delete Single Shift with Undo
@@ -1679,10 +1700,8 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       email: newStaffEmail.trim() || "",
       codiceFiscale: "",
       attivo: true,
+      tipoContratto: newStaffTipoContratto.trim() || "",
       coloreBadge: newStaffColoreBadge || "#4f46e5",
-      orarioMattina: newStaffOrarioMattina || "07:00 - 14:00",
-      orarioPomeriggio: newStaffOrarioPomeriggio || "14:00 - 21:00",
-      orarioNotte: newStaffOrarioNotte || "21:00 - 07:00"
     };
 
     const updatedList = [...staff, newMember];
@@ -1856,10 +1875,10 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     const structureSlots: { struttura: string; tipoTurno: "Mattina" | "Pomeriggio"; defaultStart: string; defaultEnd: string }[] = [
       { struttura: "Vannucci 1", tipoTurno: "Mattina", defaultStart: "07:00", defaultEnd: "14:00" },
       { struttura: "Vannucci 2", tipoTurno: "Mattina", defaultStart: "08:00", defaultEnd: "15:00" },
-      { struttura: "Vannucci 3", tipoTurno: "Mattina", defaultStart: "08:00", defaultEnd: "15:00" },
+      { struttura: "Vannucci 4", tipoTurno: "Mattina", defaultStart: "08:00", defaultEnd: "15:00" },
       { struttura: "Vannucci 1", tipoTurno: "Pomeriggio", defaultStart: "14:00", defaultEnd: "21:00" },
       { struttura: "Vannucci 2", tipoTurno: "Pomeriggio", defaultStart: "15:00", defaultEnd: "22:00" },
-      { struttura: "Vannucci 3", tipoTurno: "Pomeriggio", defaultStart: "15:00", defaultEnd: "22:00" },
+      { struttura: "Vannucci 4", tipoTurno: "Pomeriggio", defaultStart: "15:00", defaultEnd: "22:00" },
     ];
 
     // Track total assigned work shifts per member across the week to balance workload
@@ -1906,18 +1925,8 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
 
         // Find valid candidate staff members who pass all rest rules and are not assigned yet today
         const candidates = activeStaff.filter(m => {
-          if (assignedInDay.has(m.id)) return false;
-
           let start = slot.defaultStart;
           let end = slot.defaultEnd;
-
-          if (slot.tipoTurno === "Mattina" && m.orarioMattina) {
-            const parts = m.orarioMattina.split("-");
-            if (parts.length === 2) { start = parts[0].trim(); end = parts[1].trim(); }
-          } else if (slot.tipoTurno === "Pomeriggio" && m.orarioPomeriggio) {
-            const parts = m.orarioPomeriggio.split("-");
-            if (parts.length === 2) { start = parts[0].trim(); end = parts[1].trim(); }
-          }
 
           return checkCandidateShiftValidityForAuto(m.id, dateYMD, slot.tipoTurno, slot.struttura, start, end, updatedShifts);
         });
@@ -1963,14 +1972,6 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
 
           let start = slot.defaultStart;
           let end = slot.defaultEnd;
-
-          if (slot.tipoTurno === "Mattina" && chosenMember.orarioMattina) {
-            const parts = chosenMember.orarioMattina.split("-");
-            if (parts.length === 2) { start = parts[0].trim(); end = parts[1].trim(); }
-          } else if (slot.tipoTurno === "Pomeriggio" && chosenMember.orarioPomeriggio) {
-            const parts = chosenMember.orarioPomeriggio.split("-");
-            if (parts.length === 2) { start = parts[0].trim(); end = parts[1].trim(); }
-          }
 
           updatedShifts.push({
             id: `auto-${Date.now()}-${dayIndex}-${slotIndex}-${Math.random().toString(36).substr(2, 4)}`,
@@ -2162,7 +2163,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     } else if (normStruttura === "Vannucci 2" || normStruttura === "Struttura 2") {
       // Giallo / Yellow
       return "bg-yellow-100/80 text-yellow-950 border-yellow-200 hover:bg-yellow-150 font-bold shadow-2xs ring-1 ring-yellow-400/60";
-    } else if (normStruttura === "Vannucci 3" || normStruttura === "Struttura 3") {
+    } else if (normStruttura === "Vannucci 4" || normStruttura === "Struttura 4") {
       // Verde / Green
       return "bg-emerald-100 text-emerald-950 border-emerald-300 hover:bg-emerald-200 font-bold shadow-2xs ring-1 ring-emerald-400/50";
     }
@@ -2298,7 +2299,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       <body>
         <div class="header">
           <h1>Casa Famiglia Anzio - Tabellone Turni</h1>
-          <p>Settimana dal ${formatDateIT(weekDays[0])} al ${formatDateIT(weekDays[6])}</p>
+          <p>dal ${formatDateIT(weekDays[0])} al ${formatDateIT(weekDays[6])}</p>
         </div>
 
         ${viewMode === 'struttura' ? `
@@ -2971,7 +2972,7 @@ function importaTurniResidenzaVannucci() {
           <span className="text-sm font-extrabold text-slate-800 ml-2">
             {viewMode === "month"
               ? `Mese di ${getFullMonthName(currentDate).toUpperCase()} ${currentDate.getFullYear()}`
-              : `Settimana dal ${weekDays[1].getDate()} ${getFullMonthName(weekDays[1])} al ${weekDays[7].getDate()} ${getFullMonthName(weekDays[7])} ${weekDays[7].getFullYear()}`
+              : `dal ${weekDays[1].getDate()} ${getFullMonthName(weekDays[1])} al ${weekDays[7].getDate()} ${getFullMonthName(weekDays[7])} ${weekDays[7].getFullYear()}`
             }
           </span>
         </div>
@@ -3143,7 +3144,7 @@ function importaTurniResidenzaVannucci() {
                 </button>
 
                 <span className="text-[11px] sm:text-xs font-semibold bg-indigo-800 px-2.5 py-1 rounded-lg border border-indigo-700 whitespace-nowrap text-amber-200">
-                  Settimana dal {weekDays[1].getDate()} {getFullMonthName(weekDays[1])} al {weekDays[7].getDate()} {getFullMonthName(weekDays[7])} {weekDays[7].getFullYear()}
+                  dal {weekDays[1].getDate()} {getFullMonthName(weekDays[1])} al {weekDays[7].getDate()} {getFullMonthName(weekDays[7])} {weekDays[7].getFullYear()}
                 </span>
               </div>
 
@@ -4214,6 +4215,11 @@ function importaTurniResidenzaVannucci() {
                       <div>
                         <h3 className="font-bold text-slate-900 text-sm">{member.nome} {member.cognome}</h3>
                         <p className="text-xs text-slate-500 font-medium">{member.ruolo}</p>
+                        {member.tipoContratto && (
+                          <span className="block mt-1 text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded w-max border border-slate-200">
+                            {member.tipoContratto}
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -4253,9 +4259,6 @@ function importaTurniResidenzaVannucci() {
                     <span>Orari Predefiniti Salvati:</span>
                   </div>
                   <div className="grid grid-cols-3 gap-1 text-[10px] text-slate-600 font-mono">
-                    <div>🌅 M: {member.orarioMattina || "07:00-14:00"}</div>
-                    <div>🌆 P: {member.orarioPomeriggio || "14:00-21:00"}</div>
-                    <div>🌙 N: {member.orarioNotte || "21:00-07:00"}</div>
                   </div>
                 </div>
 
@@ -4310,7 +4313,7 @@ function importaTurniResidenzaVannucci() {
       {/* MODAL: ADD SHIFT */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+          <div className="bg-white rounded-2xl max-w-5xl w-full p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b pb-3">
               <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
                 <CalendarIcon className="w-5 h-5 text-indigo-600" />
@@ -4321,39 +4324,42 @@ function importaTurniResidenzaVannucci() {
               </button>
             </div>
 
-            <form onSubmit={handleFormSubmit} className="space-y-4 text-xs">
-              
-              {/* Informazione Operatore - locked/evidenziato */}
-              <div className="bg-indigo-600/10 border-2 border-indigo-500/30 p-4 rounded-2xl flex items-center justify-between shadow-xs">
-                <div>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-indigo-700 block mb-1">Collaboratore Individuato</span>
-                  <span className="text-xl font-extrabold text-indigo-950 block leading-none">
-                    {staff.find(st => st.id === newStaffId) ? `${staff.find(st => st.id === newStaffId)?.nome} ${staff.find(st => st.id === newStaffId)?.cognome}` : "Operatore"}
-                  </span>
-                  <span className="text-xs font-semibold text-slate-500 block mt-1 uppercase tracking-wide">
-                    💼 {staff.find(st => st.id === newStaffId)?.ruolo || "Staff"}
-                  </span>
-                </div>
-                <div className="w-12 h-12 rounded-full bg-indigo-600 text-white font-black flex items-center justify-center text-base border-2 border-white shadow-md uppercase">
-                  {(() => {
-                    const activeStaff = staff.find(st => st.id === newStaffId);
-                    return activeStaff ? `${activeStaff.nome.charAt(0)}${activeStaff.cognome.charAt(0)}` : "OP";
-                  })()}
-                </div>
-              </div>
+            <form onSubmit={handleFormSubmit} className="flex flex-col text-xs">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                
+                {/* LEFT COLUMN: Context Info */}
+                <div className="space-y-4">
+                  {/* Informazione Operatore - locked/evidenziato */}
+                  <div className="bg-indigo-600/10 border-2 border-indigo-500/30 p-4 rounded-2xl flex items-center justify-between shadow-xs">
+                    <div>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-indigo-700 block mb-1">Collaboratore Individuato</span>
+                      <span className="text-xl font-extrabold text-indigo-950 block leading-none">
+                        {staff.find(st => st.id === newStaffId) ? `${staff.find(st => st.id === newStaffId)?.nome} ${staff.find(st => st.id === newStaffId)?.cognome}` : "Operatore"}
+                      </span>
+                      <span className="text-xs font-semibold text-slate-500 block mt-1 uppercase tracking-wide">
+                        💼 {staff.find(st => st.id === newStaffId)?.ruolo || "Staff"}
+                      </span>
+                    </div>
+                    <div className="w-12 h-12 rounded-full bg-indigo-600 text-white font-black flex items-center justify-center text-base border-2 border-white shadow-md uppercase shrink-0 ml-2">
+                      {(() => {
+                        const activeStaff = staff.find(st => st.id === newStaffId);
+                        return activeStaff ? `${activeStaff.nome.charAt(0)}${activeStaff.cognome.charAt(0)}` : "OP";
+                      })()}
+                    </div>
+                  </div>
 
-              {/* Data del Turno - Grande e per esteso */}
-              <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-2xl text-center shadow-3xs">
-                <span className="text-[10px] font-black uppercase tracking-widest text-amber-800 block mb-1">Data Turno</span>
-                <span className="text-base font-extrabold text-slate-800 block capitalize">
-                  📅 {formatItalianVerbalDate(newDate)}
-                </span>
-              </div>
+                  {/* Data del Turno - Grande e per esteso */}
+                  <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-2xl text-center shadow-3xs">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-amber-800 block mb-1">Data Turno</span>
+                    <span className="text-base font-extrabold text-slate-800 block capitalize">
+                      📅 {formatItalianVerbalDate(newDate)}
+                    </span>
+                  </div>
 
-              {/* Scelta Struttura - tre pulsanti indipendenti con colori specifici */}
-              <div className="space-y-1.5">
-                <label className="block font-black text-slate-700 tracking-wide uppercase text-[10px]">Struttura di Assegnazione *</label>
-                <div className="grid grid-cols-3 gap-2">
+                  {/* Scelta Struttura - tre pulsanti indipendenti con colori specifici */}
+                  <div className="space-y-1.5">
+                    <label className="block font-black text-slate-700 tracking-wide uppercase text-[10px]">Struttura di Assegnazione *</label>
+                    <div className="grid grid-cols-3 gap-2">
                   {(() => {
                     const sat1 = isStrutturaSatura("Vannucci 1", newDate);
                     return (
@@ -4395,28 +4401,31 @@ function importaTurniResidenzaVannucci() {
                     );
                   })()}
                   {(() => {
-                    const sat3 = isStrutturaSatura("Vannucci 3", newDate);
+                    const sat3 = isStrutturaSatura("Vannucci 4", newDate);
                     return (
                       <button
                         type="button"
-                        onClick={() => !sat3 && setNewStruttura("Vannucci 3")}
+                        onClick={() => !sat3 && setNewStruttura("Vannucci 4")}
                         disabled={sat3}
                         title={sat3 ? "Struttura satura (Mattina e Pomeriggio già assegnati)" : ""}
                         className={`p-3 rounded-xl border font-black transition-all text-center text-xs flex flex-col items-center justify-center ${
                           sat3 ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400 grayscale" :
-                          "cursor-pointer " + (newStruttura === "Vannucci 3"
+                          "cursor-pointer " + (newStruttura === "Vannucci 4"
                             ? "bg-emerald-600 text-white border-emerald-700 ring-4 ring-emerald-600/20 scale-102"
                             : "bg-emerald-50/50 text-emerald-950 border-emerald-200 hover:bg-emerald-100")
                         }`}
                       >
                         <span className="text-[11px]">Vannucci</span>
-                        <strong className="text-base font-black leading-none">3</strong>
+                        <strong className="text-base font-black leading-none">4</strong>
                       </button>
                     );
                   })()}
                 </div>
               </div>
+            </div>
 
+            {/* MIDDLE COLUMN: Presets */}
+            <div className="space-y-4">
               {/* Shift Presets */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -4525,7 +4534,19 @@ function importaTurniResidenzaVannucci() {
 
                 {/* Preset Buttons Grid */}
                 <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
-                  {savedPresets.map((preset) => {
+                  {savedPresets
+                    .filter((preset) => {
+                      if (!preset.struttura) {
+                        return newStruttura.includes("1");
+                      }
+                      const currentS = newStruttura.toLowerCase();
+                      const presetS = preset.struttura.toLowerCase();
+                      if (currentS.includes("1") && presetS.includes("1")) return true;
+                      if (currentS.includes("2") && presetS.includes("2")) return true;
+                      if (currentS.includes("4") && presetS.includes("4")) return true;
+                      return false;
+                    })
+                    .map((preset) => {
                     const isSelected = newTipoTurno === preset.tipoTurno && newOrarioInizio === preset.orarioInizio && newOrarioFine === preset.orarioFine;
                     const validity = checkPotentialShiftValidity(newStaffId, newDate, preset.tipoTurno, newStruttura, preset.orarioInizio, preset.orarioFine);
 
@@ -4533,6 +4554,10 @@ function importaTurniResidenzaVannucci() {
                       <div key={preset.id} className="relative group/preset">
                         <button
                           type="button"
+                          onDoubleClick={() => {
+                            if (!validity.valid) return;
+                            handleFastSubmit(preset);
+                          }}
                           onClick={() => {
                             if (!validity.valid) return;
                             setNewTipoTurno(preset.tipoTurno);
@@ -4585,6 +4610,7 @@ function importaTurniResidenzaVannucci() {
                   {/* Riposo */}
                   <button
                     type="button"
+                    onDoubleClick={() => handleFastSubmit({ tipoTurno: "Riposo", orarioInizio: "00:00", orarioFine: "00:00" })}
                     onClick={() => {
                       setNewTipoTurno("Riposo");
                       setNewOrarioInizio("00:00");
@@ -4601,6 +4627,7 @@ function importaTurniResidenzaVannucci() {
                   {/* Ferie */}
                   <button
                     type="button"
+                    onDoubleClick={() => handleFastSubmit({ tipoTurno: "Ferie", orarioInizio: "00:00", orarioFine: "00:00" })}
                     onClick={() => {
                       setNewTipoTurno("Ferie");
                       setNewOrarioInizio("00:00");
@@ -4614,18 +4641,23 @@ function importaTurniResidenzaVannucci() {
                     <span className="text-[9px] opacity-75 font-normal">Pianificate / Desiderate</span>
                   </button>
                 </div>
+              </div>
+            </div>
 
-                {/* Custom Time Picker & Quick Save */}
-                <div className="bg-indigo-50/70 p-3 rounded-xl border border-indigo-100 mt-2 space-y-2">
+            {/* RIGHT COLUMN: Custom Time & Notes */}
+            <div className="space-y-4 flex flex-col">
+              {/* Custom Time Picker & Quick Save */}
+              <div className="bg-indigo-50/70 p-3 rounded-xl border border-indigo-100 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-black uppercase text-indigo-900 block">Modifica / Personalizza Orario Effettivo</span>
                     <button
                       type="button"
-                      onClick={() => {
+                      onClick={(e) => {
                         setCustomPresetInizio(newOrarioInizio);
                         setCustomPresetFine(newOrarioFine);
-                        setCustomPresetTipo(newTipoTurno === "Riposo" || newTipoTurno === "Ferie" ? "Cucina" : newTipoTurno);
-                        handleAddNewPreset();
+                        const computedTipo = newTipoTurno === "Riposo" || newTipoTurno === "Ferie" ? "Cucina" : newTipoTurno;
+                        setCustomPresetTipo(computedTipo);
+                        handleAddNewPreset(e as any, newOrarioInizio, newOrarioFine, computedTipo);
                       }}
                       className="text-[10px] font-extrabold text-indigo-700 hover:text-indigo-900 bg-indigo-100 hover:bg-indigo-200 px-2 py-0.5 rounded-md flex items-center gap-1 cursor-pointer transition-colors"
                       title="Salva l'orario inserito nei tuoi preset memorizzati"
@@ -4655,7 +4687,6 @@ function importaTurniResidenzaVannucci() {
                     </div>
                   </div>
                 </div>
-              </div>
 
               {/* Notes */}
               <div>
@@ -4667,9 +4698,9 @@ function importaTurniResidenzaVannucci() {
                   className="w-full border p-2.5 rounded-xl bg-slate-50 font-medium focus:bg-white"
                   placeholder="es. Responsabile carrello medicinali / Sostituzione turno"
                 />
-              </div>
-
-              <div className="pt-3 flex justify-end gap-2 border-t">
+            </div>
+            
+              <div className="pt-3 flex justify-end gap-2 border-t mt-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
@@ -4684,10 +4715,11 @@ function importaTurniResidenzaVannucci() {
                   Salva Turno in Calendario
                 </button>
               </div>
-
-            </form>
+            </div>
           </div>
+          </form>
         </div>
+      </div>
       )}
 
       {/* MODAL: EDIT STAFF MEMBER CARD & CUSTOM DEFAULT HOURS */}
@@ -4773,6 +4805,19 @@ function importaTurniResidenzaVannucci() {
                 </div>
 
                 <div>
+                  <label className="block font-semibold mb-1">Tipo di Contratto</label>
+                  <input
+                    type="text"
+                    value={editingStaffMember.tipoContratto || ""}
+                    onChange={e => setEditingStaffMember({ ...editingStaffMember, tipoContratto: e.target.value })}
+                    className="w-full border p-2 rounded-xl"
+                    placeholder="es. Part-time 24h, P.IVA..."
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
                   <label className="block font-semibold mb-1">Colore Distintivo Badge</label>
                   <div className="flex items-center gap-2">
                     <input
@@ -4802,8 +4847,6 @@ function importaTurniResidenzaVannucci() {
                     <input
                       type="text"
                       placeholder="07:00 - 14:00"
-                      value={editingStaffMember.orarioMattina || "07:00 - 14:00"}
-                      onChange={e => setEditingStaffMember({ ...editingStaffMember, orarioMattina: e.target.value })}
                       className="w-full border p-2 rounded-xl bg-white font-mono text-center"
                     />
                   </div>
@@ -4813,8 +4856,6 @@ function importaTurniResidenzaVannucci() {
                     <input
                       type="text"
                       placeholder="14:00 - 21:00"
-                      value={editingStaffMember.orarioPomeriggio || "14:00 - 21:00"}
-                      onChange={e => setEditingStaffMember({ ...editingStaffMember, orarioPomeriggio: e.target.value })}
                       className="w-full border p-2 rounded-xl bg-white font-mono text-center"
                     />
                   </div>
@@ -4824,8 +4865,6 @@ function importaTurniResidenzaVannucci() {
                     <input
                       type="text"
                       placeholder="21:00 - 07:00"
-                      value={editingStaffMember.orarioNotte || "21:00 - 07:00"}
-                      onChange={e => setEditingStaffMember({ ...editingStaffMember, orarioNotte: e.target.value })}
                       className="w-full border p-2 rounded-xl bg-white font-mono text-center"
                     />
                   </div>
@@ -4961,6 +5000,19 @@ function importaTurniResidenzaVannucci() {
                     placeholder="es. maria.rossi@villaserena.it"
                     value={newStaffEmail}
                     onChange={e => setNewStaffEmail(e.target.value)}
+                    className="w-full border p-2.5 rounded-xl font-medium bg-slate-50 focus:bg-white"
+                  />
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1">Tipo di Contratto</label>
+                  <input
+                    type="text"
+                    placeholder="es. Part-time 24h, P.IVA..."
+                    value={newStaffTipoContratto}
+                    onChange={e => setNewStaffTipoContratto(e.target.value)}
                     className="w-full border p-2.5 rounded-xl font-medium bg-slate-50 focus:bg-white"
                   />
                 </div>
@@ -5236,22 +5288,22 @@ function importaTurniResidenzaVannucci() {
                           );
                         })()}
                         {(() => {
-                          const sat3 = isStrutturaSatura("Vannucci 3", editShiftDate, selectedShiftForDetail?.id);
+                          const sat3 = isStrutturaSatura("Vannucci 4", editShiftDate, selectedShiftForDetail?.id);
                           return (
                             <button
                               type="button"
-                              onClick={() => !sat3 && setEditShiftStruttura("Vannucci 3")}
+                              onClick={() => !sat3 && setEditShiftStruttura("Vannucci 4")}
                               disabled={sat3}
                               title={sat3 ? "Struttura satura (Mattina e Pomeriggio già assegnati)" : ""}
                               className={`p-3 rounded-xl border font-black transition-all text-center text-xs flex flex-col items-center justify-center ${
                                 sat3 ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400 grayscale" :
-                                "cursor-pointer " + (editShiftStruttura === "Vannucci 3" || editShiftStruttura === "Struttura 3"
+                                "cursor-pointer " + (editShiftStruttura === "Vannucci 4" || editShiftStruttura === "Struttura 4"
                                   ? "bg-emerald-600 text-white border-emerald-700 ring-4 ring-emerald-600/20 scale-102"
                                   : "bg-emerald-50/50 text-emerald-950 border-emerald-200 hover:bg-emerald-100")
                               }`}
                             >
                               <span className="text-[11px]">Vannucci</span>
-                              <strong className="text-base font-black leading-none">3</strong>
+                              <strong className="text-base font-black leading-none">4</strong>
                             </button>
                           );
                         })()}

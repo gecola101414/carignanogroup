@@ -184,6 +184,10 @@ export const apiSync = {
     try {
       const res = await fetch("/api/shifts");
       if (!res.ok) return { shifts: null, updatedAt: null };
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        return { shifts: null, updatedAt: null };
+      }
       const data = await res.json();
       return { shifts: data.shifts || null, updatedAt: data.updatedAt || null };
     } catch {
@@ -199,10 +203,14 @@ export const apiSync = {
         body: JSON.stringify({ shifts, updatedAt })
       });
       if (!res.ok) return null;
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        return null;
+      }
       const data = await res.json();
       return data.updatedAt || null;
     } catch (e) {
-      console.error("Failed to sync shifts to server", e);
+      console.warn("Failed to sync shifts to server (offline or starting up)");
       return null;
     }
   },
@@ -211,6 +219,10 @@ export const apiSync = {
     try {
       const res = await fetch("/api/staff");
       if (!res.ok) return { staff: null, updatedAt: null };
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        return { staff: null, updatedAt: null };
+      }
       const data = await res.json();
       return { staff: data.staff || null, updatedAt: data.updatedAt || null };
     } catch {
@@ -226,10 +238,14 @@ export const apiSync = {
         body: JSON.stringify({ staff, updatedAt })
       });
       if (!res.ok) return null;
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        return null;
+      }
       const data = await res.json();
       return data.updatedAt || null;
     } catch (e) {
-      console.error("Failed to sync staff to server", e);
+      console.warn("Failed to sync staff to server (offline or starting up)");
       return null;
     }
   }
