@@ -2168,9 +2168,9 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
 
   // Badge Color Styles for Turno Types (Varies color dynamically if shift hours are customized!)
   const getShiftBadgeStyle = (tipo: string, start?: string, end?: string, struttura?: string) => {
-    // 1. TURNO DI NOTTE: Sempre Nero per tutte le strutture
+    // 1. TURNO DI NOTTE: Blu come richiesto (ex Nero)
     if (tipo === "Notte") {
-      return "bg-slate-900 text-slate-100 border-slate-950 hover:bg-slate-950 font-black shadow-xs ring-1 ring-slate-800/80";
+      return "bg-blue-600 text-white border-blue-700 hover:bg-blue-700 font-black shadow-xs ring-1 ring-blue-600/80";
     }
 
     // 1.5 TURNO DI CUCINA: Azzurro molto diverso
@@ -2180,7 +2180,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
 
     // 2. FERIE: Sempre Ambra/Giallo
     if (tipo === "Ferie") {
-      return "bg-amber-400 text-amber-950 border-amber-500 hover:bg-amber-300 font-black shadow-xs ring-2 ring-amber-500/50";
+      return "bg-amber-800 text-amber-50 border-amber-900 hover:bg-amber-900 font-black shadow-xs ring-2 ring-amber-800/50";
     }
 
     // 3. RIPOSO: Sempre Grigio chiaro
@@ -2191,14 +2191,14 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     // 4. STRUTTURE COLORI DIVERSI (per Mattina, Pomeriggio, Reperibilità, ecc.)
     const normStruttura = struttura || "";
     if (normStruttura === "Vannucci 1" || normStruttura === "Struttura 1") {
-      // Arancione / Orange
-      return "bg-orange-100 text-orange-950 border-orange-300 hover:bg-orange-200 font-bold shadow-2xs ring-1 ring-orange-400/50";
+      // Giallo intenso
+      return "bg-yellow-400 text-yellow-950 border-yellow-500 hover:bg-yellow-500 font-bold shadow-2xs ring-1 ring-yellow-500/50";
     } else if (normStruttura === "Vannucci 2" || normStruttura === "Struttura 2") {
-      // Giallo / Yellow
-      return "bg-yellow-100/80 text-yellow-950 border-yellow-200 hover:bg-yellow-150 font-bold shadow-2xs ring-1 ring-yellow-400/60";
+      // Arancione vivo
+      return "bg-orange-500 text-white border-orange-600 hover:bg-orange-600 font-bold shadow-2xs ring-1 ring-orange-500/60";
     } else if (normStruttura === "Vannucci 4" || normStruttura === "Struttura 4") {
-      // Verde / Green
-      return "bg-emerald-100 text-emerald-950 border-emerald-300 hover:bg-emerald-200 font-bold shadow-2xs ring-1 ring-emerald-400/50";
+      // Verde chiaro
+      return "bg-lime-300 text-lime-950 border-lime-400 hover:bg-lime-400 font-bold shadow-2xs ring-1 ring-lime-400/50";
     }
 
     // 5. FALLBACK IN ASSENZA DI STRUTTURA SPECIFICATA
@@ -2401,7 +2401,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
                         ${memberShifts.map(s => `
                           <div class="shift-box ${s.tipoTurno === 'Ferie' ? 'badge-ferie' : ''}">
                             <div class="shift-title">${s.tipoTurno}</div>
-                            <div class="shift-staff">${s.struttura}</div>
+                            <div class="shift-staff">${!["Notte", "Riposo", "Ferie", "Cucina"].includes(s.tipoTurno) && s.struttura ? s.struttura : ""}</div>
                             <div class="shift-time">${s.orarioInizio}-${s.orarioFine}</div>
                           </div>
                         `).join('')}
@@ -3485,7 +3485,7 @@ function importaTurniResidenzaVannucci() {
                             )}
                             {hasRestDayInCurrentWeek(member.id) ? (
                               <span className="text-[9px] font-bold bg-sky-50 text-sky-700 px-1 rounded border border-sky-100 flex items-center gap-0.5" title="Giorno di riposo presente nella settimana corrente">
-                                🏖️ Riposo OK
+                                🛋️ Riposo OK
                               </span>
                             ) : (
                               <span className="text-[9px] font-bold bg-rose-50 text-rose-700 px-1 rounded border border-rose-100 flex items-center gap-0.5 animate-pulse" title="NESSUN riposo pianificato nella settimana corrente!">
@@ -3621,7 +3621,7 @@ function importaTurniResidenzaVannucci() {
 
                                   <div className="flex items-center justify-between text-xs font-mono font-bold opacity-90 mt-0.5 border-t border-black/5 pt-1">
                                     <span>{s.orarioInizio} - {s.orarioFine}</span>
-                                    {s.struttura && s.tipoTurno !== "Notte" && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie" && (
+                                    {s.struttura && s.tipoTurno !== "Notte" && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie" && s.tipoTurno !== "Cucina" && (
                                       <span className="bg-white/95 text-slate-800 px-2 py-1 rounded-md text-[9px] font-extrabold border border-black/10 uppercase tracking-tight flex items-center gap-1 shadow-3xs">
                                         {(s.struttura === "Vannucci 1" || s.struttura === "Struttura 1") ? (
                                           <span>Vannucci <strong className="text-[15px] sm:text-[17px] font-black text-orange-600 leading-none">1</strong></span>
@@ -4061,7 +4061,7 @@ function importaTurniResidenzaVannucci() {
                                     className={`px-0.5 py-0.5 rounded text-[9px] font-black border shadow-2xs hover:scale-110 transition-transform flex items-center justify-center min-w-[16px] relative ${
                                       isPublicView || s.tipoTurno === "Ferie" || lockedDays.includes(dateYMD) ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"
                                     } ${badgeStyle} ${
-                                      s.tipoTurno === "Ferie" ? "animate-pulse ring-1 ring-amber-500 border-amber-500 border-2" : ""
+                                      s.tipoTurno === "Ferie" ? "animate-pulse ring-1 ring-amber-800 border-amber-800 border-2" : ""
                                     }`}
                                     title={s.tipoTurno === "Ferie" ? `Ferie inamovibili - Clicca per dettagli` : lockedDays.includes(dateYMD) ? `Giorno Bloccato: ${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine})` : `${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine}) - Clicca per dettagli`}
                                   >
@@ -4321,7 +4321,7 @@ function importaTurniResidenzaVannucci() {
                         className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center justify-between cursor-pointer ${getShiftBadgeStyle(s.tipoTurno, s.orarioInizio, s.orarioFine, s.struttura)}`}
                       >
                         <div>
-                          <span>{s.tipoTurno} • {formatItalianDateString(s.data)} {s.struttura ? `(${s.struttura})` : ""}</span>
+                          <span>{s.tipoTurno} • {formatItalianDateString(s.data)} {(s.struttura && !["Notte", "Riposo", "Ferie", "Cucina"].includes(s.tipoTurno)) ? ` (${s.struttura})` : ""}</span>
                           <div className="text-[13px] font-mono font-bold opacity-80 mt-0.5">{s.orarioInizio} - {s.orarioFine}</div>
                         </div>
                         {!isStaffRole && (
@@ -4404,8 +4404,8 @@ function importaTurniResidenzaVannucci() {
                         className={`p-3 rounded-xl border font-black transition-all text-center text-xs flex flex-col items-center justify-center ${
                           sat1 ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400 grayscale" :
                           "cursor-pointer " + (newStruttura === "Vannucci 1"
-                            ? "bg-orange-500 text-white border-orange-600 ring-4 ring-orange-500/20 scale-102"
-                            : "bg-orange-50/50 text-orange-950 border-orange-200 hover:bg-orange-100")
+                            ? "bg-yellow-400 text-yellow-950 border-yellow-500 ring-4 ring-yellow-400/25 scale-102"
+                            : "bg-yellow-50/50 text-yellow-950 border-yellow-200 hover:bg-yellow-100")
                         }`}
                       >
                         <span className="text-[11px]">Vannucci</span>
@@ -4424,8 +4424,8 @@ function importaTurniResidenzaVannucci() {
                         className={`p-3 rounded-xl border font-black transition-all text-center text-xs flex flex-col items-center justify-center ${
                           sat2 ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400 grayscale" :
                           "cursor-pointer " + (newStruttura === "Vannucci 2"
-                            ? "bg-yellow-400 text-yellow-950 border-yellow-500 ring-4 ring-yellow-400/25 scale-102"
-                            : "bg-yellow-50/50 text-yellow-950 border-yellow-200 hover:bg-yellow-100")
+                            ? "bg-orange-500 text-white border-orange-600 ring-4 ring-orange-500/20 scale-102"
+                            : "bg-orange-50/50 text-orange-950 border-orange-200 hover:bg-orange-100")
                         }`}
                       >
                         <span className="text-[11px]">Vannucci</span>
@@ -4444,8 +4444,8 @@ function importaTurniResidenzaVannucci() {
                         className={`p-3 rounded-xl border font-black transition-all text-center text-xs flex flex-col items-center justify-center ${
                           sat3 ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400 grayscale" :
                           "cursor-pointer " + (newStruttura === "Vannucci 4"
-                            ? "bg-emerald-600 text-white border-emerald-700 ring-4 ring-emerald-600/20 scale-102"
-                            : "bg-emerald-50/50 text-emerald-950 border-emerald-200 hover:bg-emerald-100")
+                            ? "bg-lime-400 text-lime-950 border-lime-500 ring-4 ring-lime-400/25 scale-102"
+                            : "bg-lime-50/50 text-lime-950 border-lime-200 hover:bg-lime-100")
                         }`}
                       >
                         <span className="text-[11px]">Vannucci</span>
@@ -4654,7 +4654,7 @@ function importaTurniResidenzaVannucci() {
                       if (!newNote) setNewNote("Turno di Notte");
                     }}
                     className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
-                      newTipoTurno === "Notte" && newOrarioInizio === "23:00" && newOrarioFine === "07:00" ? "bg-slate-900 border-slate-950 text-white ring-4 ring-slate-800/80" : "bg-slate-800 border-slate-900 hover:bg-slate-900 text-slate-100"
+                      newTipoTurno === "Notte" && newOrarioInizio === "23:00" && newOrarioFine === "07:00" ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30" : "bg-blue-50/80 border-blue-200 hover:bg-blue-100 text-blue-900"
                     }`}
                   >
                     <span className="font-extrabold text-[12px]">🌙 Notte</span>
@@ -4716,7 +4716,7 @@ function importaTurniResidenzaVannucci() {
                       newTipoTurno === "Riposo" ? "bg-slate-200 border-slate-400 text-slate-700 ring-4 ring-slate-400/30" : "bg-slate-50 border-slate-200 hover:bg-slate-100"
                     }`}
                   >
-                    <span className="font-extrabold text-[12px]">🏖️ Riposo</span>
+                    <span className="font-extrabold text-[12px]">🛋️ Riposo</span>
                     <span className="text-[9px] opacity-75 font-normal">Giorno libero</span>
                   </button>
 
@@ -4730,10 +4730,10 @@ function importaTurniResidenzaVannucci() {
                       setNewOrarioFine("00:00");
                     }}
                     className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
-                      newTipoTurno === "Ferie" ? "bg-amber-400 border-amber-500 text-amber-950 ring-4 ring-amber-500/40" : "bg-slate-50 border-slate-200 hover:bg-slate-100"
+                      newTipoTurno === "Ferie" ? "bg-amber-800 border-amber-900 text-white ring-4 ring-amber-800/40" : "bg-slate-50 border-slate-200 hover:bg-slate-100"
                     }`}
                   >
-                    <span className="font-extrabold text-[12px]">🌴 Ferie</span>
+                    <span className="font-extrabold text-[12px]">🏖️ Ferie</span>
                     <span className="text-[9px] opacity-75 font-normal">Pianificate / Desiderate</span>
                   </button>
                 </div>
@@ -5276,7 +5276,7 @@ function importaTurniResidenzaVannucci() {
                         </span>
                       </div>
 
-                      {selectedShiftForDetail.struttura && selectedShiftForDetail.tipoTurno !== "Notte" && selectedShiftForDetail.tipoTurno !== "Riposo" && selectedShiftForDetail.tipoTurno !== "Ferie" && (
+                      {selectedShiftForDetail.struttura && selectedShiftForDetail.tipoTurno !== "Notte" && selectedShiftForDetail.tipoTurno !== "Riposo" && selectedShiftForDetail.tipoTurno !== "Ferie" && selectedShiftForDetail.tipoTurno !== "Cucina" && (
                         <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                           <span className="text-slate-500 font-semibold">Struttura:</span>
                           <span className="font-extrabold text-slate-900 bg-white px-2.5 py-1 rounded-lg border border-slate-200 text-[11px] shadow-2xs">
@@ -5353,8 +5353,8 @@ function importaTurniResidenzaVannucci() {
                                 className={`p-3 rounded-xl border font-black transition-all text-center text-xs flex flex-col items-center justify-center ${
                                   sat1 ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400 grayscale" :
                                   "cursor-pointer " + (editShiftStruttura === "Vannucci 1" || editShiftStruttura === "Struttura 1"
-                                    ? "bg-orange-500 text-white border-orange-600 ring-4 ring-orange-500/20 scale-102"
-                                    : "bg-orange-50/50 text-orange-950 border-orange-200 hover:bg-orange-100")
+                                    ? "bg-yellow-400 text-yellow-950 border-yellow-500 ring-4 ring-yellow-400/25 scale-102"
+                                    : "bg-yellow-50/50 text-yellow-950 border-yellow-200 hover:bg-yellow-100")
                                 }`}
                               >
                                 <span className="text-[11px]">Vannucci</span>
@@ -5373,8 +5373,8 @@ function importaTurniResidenzaVannucci() {
                                 className={`p-3 rounded-xl border font-black transition-all text-center text-xs flex flex-col items-center justify-center ${
                                   sat2 ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400 grayscale" :
                                   "cursor-pointer " + (editShiftStruttura === "Vannucci 2" || editShiftStruttura === "Struttura 2"
-                                    ? "bg-yellow-400 text-yellow-950 border-yellow-500 ring-4 ring-yellow-400/25 scale-102"
-                                    : "bg-yellow-50/50 text-yellow-950 border-yellow-200 hover:bg-yellow-100")
+                                    ? "bg-orange-500 text-white border-orange-600 ring-4 ring-orange-500/20 scale-102"
+                                    : "bg-orange-50/50 text-orange-950 border-orange-200 hover:bg-orange-100")
                                 }`}
                               >
                                 <span className="text-[11px]">Vannucci</span>
@@ -5393,8 +5393,8 @@ function importaTurniResidenzaVannucci() {
                                 className={`p-3 rounded-xl border font-black transition-all text-center text-xs flex flex-col items-center justify-center ${
                                   sat3 ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400 grayscale" :
                                   "cursor-pointer " + (editShiftStruttura === "Vannucci 4" || editShiftStruttura === "Struttura 4"
-                                    ? "bg-emerald-600 text-white border-emerald-700 ring-4 ring-emerald-600/20 scale-102"
-                                    : "bg-emerald-50/50 text-emerald-950 border-emerald-200 hover:bg-emerald-100")
+                                    ? "bg-lime-400 text-lime-950 border-lime-500 ring-4 ring-lime-400/25 scale-102"
+                                    : "bg-lime-50/50 text-lime-950 border-lime-200 hover:bg-lime-100")
                                 }`}
                               >
                                 <span className="text-[11px]">Vannucci</span>
@@ -5455,16 +5455,16 @@ function importaTurniResidenzaVannucci() {
                                       ? preset.tipoTurno === "Cucina"
                                         ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30"
                                         : preset.tipoTurno === "Notte"
-                                        ? "bg-slate-900 border-slate-950 text-white ring-4 ring-slate-800/80"
+                                        ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30"
                                         : editShiftStruttura === "Vannucci 1" || editShiftStruttura === "Struttura 1"
-                                        ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
-                                        : editShiftStruttura === "Vannucci 2" || editShiftStruttura === "Struttura 2"
                                         ? "bg-yellow-400 border-yellow-500 text-yellow-950 ring-4 ring-yellow-400/25"
-                                        : "bg-emerald-600 border-emerald-700 text-white ring-4 ring-emerald-600/20"
+                                        : editShiftStruttura === "Vannucci 2" || editShiftStruttura === "Struttura 2"
+                                        ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
+                                        : "bg-lime-400 border-lime-500 text-lime-950 ring-4 ring-lime-400/25"
                                       : preset.tipoTurno === "Cucina"
                                       ? "bg-sky-50/80 border-sky-300 hover:bg-sky-100 text-sky-950"
                                       : preset.tipoTurno === "Notte"
-                                      ? "bg-slate-900 border-slate-950 text-slate-100 hover:bg-slate-950"
+                                      ? "bg-blue-50 border-blue-200 hover:bg-blue-100 text-blue-900"
                                       : "bg-slate-50 border-slate-200 hover:bg-slate-100")
                                   }`}
                                 >
@@ -5487,7 +5487,7 @@ function importaTurniResidenzaVannucci() {
                               if (!editShiftNote) setEditShiftNote("Turno di Notte");
                             }}
                             className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
-                              selectedShiftForDetail?.tipoTurno === "Notte" && editShiftInizio === "23:00" && editShiftFine === "07:00" ? "bg-slate-900 border-slate-950 text-white ring-4 ring-slate-800/80" : "bg-slate-800 border-slate-900 hover:bg-slate-900 text-slate-100"
+                              selectedShiftForDetail?.tipoTurno === "Notte" && editShiftInizio === "23:00" && editShiftFine === "07:00" ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30" : "bg-blue-50/80 border-blue-200 hover:bg-blue-100 text-blue-900"
                             }`}
                           >
                             <span className="font-extrabold text-[12px]">🌙 Notte</span>
@@ -5540,7 +5540,7 @@ function importaTurniResidenzaVannucci() {
                               selectedShiftForDetail?.tipoTurno === "Riposo" ? "bg-slate-200 border-slate-400 text-slate-700 ring-4 ring-slate-400/30" : "bg-slate-50 border-slate-200 hover:bg-slate-100"
                             }`}
                           >
-                            <span className="font-extrabold text-[12px]">🏖️ Riposo</span>
+                            <span className="font-extrabold text-[12px]">🛋️ Riposo</span>
                             <span className="text-[9px] opacity-75 font-normal">Giorno libero</span>
                           </button>
 
@@ -5553,10 +5553,10 @@ function importaTurniResidenzaVannucci() {
                               setEditShiftFine("00:00");
                             }}
                             className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
-                              selectedShiftForDetail?.tipoTurno === "Ferie" ? "bg-amber-400 border-amber-500 text-amber-950 ring-4 ring-amber-500/40" : "bg-slate-50 border-slate-200 hover:bg-slate-100"
+                              selectedShiftForDetail?.tipoTurno === "Ferie" ? "bg-amber-800 border-amber-900 text-white ring-4 ring-amber-800/40" : "bg-slate-50 border-slate-200 hover:bg-slate-100"
                             }`}
                           >
-                            <span className="font-extrabold text-[12px]">🌴 Ferie</span>
+                            <span className="font-extrabold text-[12px]">🏖️ Ferie</span>
                             <span className="text-[9px] opacity-75 font-normal">Pianificate / Desiderate</span>
                           </button>
                         </div>
