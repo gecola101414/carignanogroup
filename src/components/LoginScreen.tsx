@@ -122,7 +122,7 @@ export function LoginScreen({ credentials, onLogin, onUpdatePassword }: LoginScr
                         <option value="" disabled>-- Seleziona --</option>
                         {credentials.map(c => (
                           <option key={c.username} value={c.username}>
-                            {c.username} {c.role === 'admin' ? '(Amministratore)' : '(Collaboratore)'}
+                            {c.username} {c.username.toLowerCase() === 'antonio' ? '(Direttore / Super Admin)' : c.role === 'admin' ? '(Amministratore)' : '(Collaboratore)'}
                           </option>
                         ))}
                       </select>

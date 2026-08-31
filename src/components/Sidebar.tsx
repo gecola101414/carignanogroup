@@ -42,6 +42,8 @@ interface SidebarProps {
   activeOperator: string;
   onResetData: () => void;
   onLogout: () => void;
+  onResetAllPasswords?: () => void;
+  isSuperAdmin?: boolean;
 }
 
 interface MenuItemConfig {
@@ -89,7 +91,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   unreadBachecaCount = 0,
   activeOperator,
   onResetData,
-  onLogout
+  onLogout,
+  onResetAllPasswords,
+  isSuperAdmin
 }) => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
@@ -322,6 +326,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
 
         {/* Buttons */}
+        {isSuperAdmin && onResetAllPasswords && (
+          <button
+            onClick={onResetAllPasswords}
+            title="Azzera tutte le password a 1234"
+            className="flex w-full items-center justify-center gap-1.5 py-2 px-2.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-500 rounded-xl text-xs font-semibold border border-amber-500/30 transition-all cursor-pointer mb-2"
+          >
+            <UserCheck className="w-3.5 h-3.5" />
+            {!isCollapsed && <span>Azzera Password</span>}
+          </button>
+        )}
         <div className={`grid ${isCollapsed ? "grid-cols-1" : "grid-cols-2"} gap-2`}>
           <button
             onClick={onLogout}

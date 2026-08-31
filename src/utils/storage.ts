@@ -116,6 +116,7 @@ export const storage = {
     
     // Assicura che i 4 amministratori di base ci siano sempre
     const baseAdmins = [
+      { username: "ANTONIO", role: "admin", passwordHash: "1234", mustChange: true },
       { username: "BEPPE", role: "admin", passwordHash: "1234", mustChange: true },
       { username: "DEBORAH", role: "admin", passwordHash: "1234", mustChange: true },
       { username: "CLAUDIA", role: "admin", passwordHash: "1234", mustChange: true }

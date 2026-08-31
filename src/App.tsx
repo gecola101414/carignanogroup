@@ -555,6 +555,22 @@ export default function App() {
           sessionStorage.removeItem("current_user");
           window.location.reload();
         }}
+        isSuperAdmin={currentUser.username.toLowerCase() === 'antonio'}
+        onResetAllPasswords={() => {
+          if (confirm("Attenzione: Vuoi reimpostare le password di tutti gli utenti al valore predefinito '1234'? Al prossimo accesso, a ciascuno verrà chiesto di crearne una nuova.")) {
+            const updatedCreds = credentials.map(c => {
+              // Non resettare la password del Super Admin Antonio stesso per comodità
+              if (c.username.toLowerCase() === 'antonio') return c;
+              return {
+                ...c,
+                passwordHash: "1234",
+                mustChange: true
+              };
+            });
+            handleUpdateCredentials(updatedCreds);
+            alert("Le password (eccetto quella del Direttore) sono state reimpostate a '1234'.");
+          }
+        }}
       />
 
       {/* Main Container View Area (Maximized height for Calendar & Views) */}
