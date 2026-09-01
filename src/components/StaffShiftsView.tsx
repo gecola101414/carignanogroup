@@ -843,15 +843,23 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     showToast("🔄 Preset orari ripristinati a quelli di default!");
   };
 
+  // Hover states for shift & operator cross-highlighting
+  const [hoveredShiftId, setHoveredShiftId] = useState<string | null>(null);
+  const [hoveredStaffId, setHoveredStaffId] = useState<string | null>(null);
+
   // Vacation / Ferie Form State
   const [showVacationModal, setShowVacationModal] = useState<boolean>(false);
   const [vacationStaffId, setVacationStaffId] = useState<string>(staff[0]?.id || "");
   const [vacationStartDate, setVacationStartDate] = useState<string>(new Date().toISOString().split("T")[0]);
   const [vacationEndDate, setVacationEndDate] = useState<string>(new Date().toISOString().split("T")[0]);
   const [vacationNotes, setVacationNotes] = useState<string>("Ferie desiderate");
+  const [vacationMode, setVacationMode] = useState<"single" | "range">("range");
+  const [vacationCalendarMonth, setVacationCalendarMonth] = useState<Date>(new Date());
 
-  const handleOpenVacationModal = () => {
-    if (currentUser?.role === 'staff') {
+  const handleOpenVacationModal = (staffId?: string, dateStr?: string) => {
+    if (staffId) {
+      setVacationStaffId(staffId);
+    } else if (currentUser?.role === 'staff') {
       const myStaff = staff.find(s => s.nome.toLowerCase() === currentUser.username.toLowerCase());
       if (myStaff) {
         setVacationStaffId(myStaff.id);
@@ -863,6 +871,15 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
         setVacationStaffId(staff[0].id);
       }
     }
+
+    const initialDate = dateStr || new Date().toISOString().split("T")[0];
+    setVacationStartDate(initialDate);
+    setVacationEndDate(initialDate);
+    const d = new Date(initialDate);
+    if (!isNaN(d.getTime())) {
+      setVacationCalendarMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+    }
+    setShowAddModal(false);
     setShowVacationModal(true);
   };
 
@@ -1287,6 +1304,59 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     showToast(`Turno ${preset.tipoTurno} inserito per il ${newDate}!`);
   };
 
+  // Special Rule: Add both Pulizie (07:00-11:00) + Notte (23:00-07:00) on the same day for the staff member
+  const handleAddComboPulizieNotte = (staffId: string, dateStr: string) => {
+    if (!staffId || !dateStr) return;
+    if (lockedDays.includes(dateStr)) {
+      showToast("🔒 Questo giorno è bloccato! Sbloccalo prima di aggiungere turni.");
+      return;
+    }
+
+    const pulizieValidity = checkPotentialShiftValidity(staffId, dateStr, "Pulizie", "", "07:00", "11:00");
+    const notteValidity = checkPotentialShiftValidity(staffId, dateStr, "Notte", "", "23:00", "07:00");
+
+    if (!pulizieValidity.valid) {
+      showToast(`⚠️ Turno Pulizie: ${pulizieValidity.reason}`);
+      return;
+    }
+    if (!notteValidity.valid) {
+      showToast(`⚠️ Turno Notte: ${notteValidity.reason}`);
+      return;
+    }
+
+    const pulizieShift: Shift = {
+      id: `shift-${Date.now()}-pulizie-${Math.random().toString(36).substr(2, 4)}`,
+      staffId: staffId,
+      data: dateStr,
+      tipoTurno: "Pulizie",
+      orarioInizio: "07:00",
+      orarioFine: "11:00",
+      note: "Servizio Pulizie & Supporto Alzate (Combo Regola Speciale Notte)",
+      struttura: ""
+    };
+
+    const notteShift: Shift = {
+      id: `shift-${Date.now() + 1}-notte-${Math.random().toString(36).substr(2, 4)}`,
+      staffId: staffId,
+      data: dateStr,
+      tipoTurno: "Notte",
+      orarioInizio: "23:00",
+      orarioFine: "07:00",
+      note: "Turno di Notte (Combo Regola Speciale Pulizie - 1h oggi)",
+      struttura: ""
+    };
+
+    // Remove any Riposo or overlapping work shift on that day for this staff member
+    const otherStaffShifts = shifts.filter(s => !(s.staffId === staffId && s.data === dateStr));
+    const updatedShiftsList = [...otherStaffShifts, pulizieShift, notteShift];
+
+    applyShiftsUpdate(updatedShiftsList);
+    setShowAddModal(false);
+    setNewNote("");
+    const staffName = staff.find(st => st.id === staffId)?.nome || "Operatore";
+    showToast(`⚡ Caricata Combo Speciale per ${staffName}: Pulizie (07:00-11:00) + Notte (23:00-07:00)!`);
+  };
+
   // Delete Single Shift with Undo
   const handleDeleteSingleShift = (shiftId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -1607,8 +1677,13 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
           s.staffId === finalStaffId && s.data === targetDateYMD && s.id !== draggedShift.id
         );
 
+        const isPulizieNotteCombo = existingTargetShift && (
+          (draggedShift.tipoTurno === "Pulizie" && existingTargetShift.tipoTurno === "Notte") ||
+          (draggedShift.tipoTurno === "Notte" && existingTargetShift.tipoTurno === "Pulizie")
+        );
+
         if (!isCopy) {
-          if (existingTargetShift) {
+          if (existingTargetShift && !isPulizieNotteCombo) {
             // SWAP SHIFTS BETWEEN DRAGGED CELL AND TARGET CELL (SCAMBIO TURNI)
             const timesForDragged = getStaffHoursForShiftType(targetStaffObj, draggedShift.tipoTurno, draggedShift.orarioInizio, draggedShift.orarioFine);
             const timesForExisting = getStaffHoursForShiftType(sourceStaffObj, existingTargetShift.tipoTurno, existingTargetShift.orarioInizio, existingTargetShift.orarioFine);
@@ -1641,7 +1716,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
             const sourceName = sourceStaffObj ? sourceStaffObj.nome : "Operatore";
             showToast(`🔄 Turni SCAMBIATI di posto tra ${sourceName} e ${targetName}!`);
           } else {
-            // MOVE SHIFT TO EMPTY TARGET CELL
+            // MOVE SHIFT TO TARGET CELL (EITHER EMPTY OR FORMING A PULIZIE+NOTTE COMBO)
             const times = getStaffHoursForShiftType(targetStaffObj, draggedShift.tipoTurno, draggedShift.orarioInizio, draggedShift.orarioFine);
             const updated = shifts.map(s => {
               if (s.id === draggedShift.id) {
@@ -1657,14 +1732,19 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
             });
 
             applyShiftsUpdate(updated);
-            showToast(`↔️ Turno ${draggedShift.tipoTurno} SPOSTATO a ${targetStaffObj ? targetStaffObj.nome : ""} (${times.orarioInizio}-${times.orarioFine})!`);
+            if (isPulizieNotteCombo) {
+              showToast(`⚡ Combo Creata! Turno ${draggedShift.tipoTurno} unito a ${existingTargetShift?.tipoTurno} per ${targetStaffObj ? targetStaffObj.nome : ""}!`);
+            } else {
+              showToast(`↔️ Turno ${draggedShift.tipoTurno} SPOSTATO a ${targetStaffObj ? targetStaffObj.nome : ""} (${times.orarioInizio}-${times.orarioFine})!`);
+            }
           }
         } else {
           // DUPLICATE / COPY SHIFT TO TARGET CELL
           const times = getStaffHoursForShiftType(targetStaffObj, draggedShift.tipoTurno, draggedShift.orarioInizio, draggedShift.orarioFine);
-          const shiftsWithoutTargetCell = shifts.filter(s =>
-            !(s.staffId === finalStaffId && s.data === targetDateYMD && s.id !== draggedShift.id)
-          );
+          const shiftsWithoutTargetCell = isPulizieNotteCombo 
+            ? shifts 
+            : shifts.filter(s => !(s.staffId === finalStaffId && s.data === targetDateYMD && s.id !== draggedShift.id));
+          
           const newCopyShift: Shift = {
             ...draggedShift,
             id: `shift-copy-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
@@ -1675,7 +1755,11 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
           };
 
           applyShiftsUpdate([...shiftsWithoutTargetCell, newCopyShift]);
-          showToast(`📋 Turno ${draggedShift.tipoTurno} COPIATO a ${targetStaffObj ? targetStaffObj.nome : ""} (${times.orarioInizio}-${times.orarioFine})!`);
+          if (isPulizieNotteCombo) {
+            showToast(`⚡ Combo Creata! Turno ${draggedShift.tipoTurno} duplicato e unito a ${existingTargetShift?.tipoTurno} per ${targetStaffObj ? targetStaffObj.nome : ""}!`);
+          } else {
+            showToast(`📋 Turno ${draggedShift.tipoTurno} COPIATO a ${targetStaffObj ? targetStaffObj.nome : ""} (${times.orarioInizio}-${times.orarioFine})!`);
+          }
         }
       } else if (data.type === "day") {
         // ENTIRE DAY DRAG (MOVE OR COPY)
@@ -3598,13 +3682,22 @@ function importaTurniResidenzaVannucci() {
               </thead>
               <tbody className="divide-y divide-slate-200 text-xs">
                 {displayedStaff.map(member => (
-                  <tr key={member.id} className="hover:bg-slate-50/60 transition-colors">
+                  <tr 
+                    key={member.id} 
+                    className={`transition-colors ${hoveredStaffId === member.id ? 'bg-indigo-50/70' : 'hover:bg-slate-50/60'}`}
+                  >
                     
                     {/* Member Details Cell - Click to edit staff card */}
                     <td 
-                      className={`p-3 border-r border-slate-200 sticky left-0 z-10 bg-white/95 backdrop-blur-xs shadow-xs transition-colors group/staff ${
+                      className={`p-3 border-r border-slate-200 sticky left-0 z-10 backdrop-blur-xs shadow-xs transition-all group/staff ${
+                        hoveredStaffId === member.id 
+                          ? 'bg-indigo-50/95 ring-2 ring-indigo-500 border-indigo-400 shadow-sm' 
+                          : 'bg-white/95'
+                      } ${
                         isStaffRole ? "" : "cursor-pointer hover:bg-slate-100"
                       }`}
+                      onMouseEnter={() => setHoveredStaffId(member.id)}
+                      onMouseLeave={() => setHoveredStaffId(null)}
                       onClick={() => {
                         if (!isStaffRole) setEditingStaffMember(member);
                       }}
@@ -3613,13 +3706,17 @@ function importaTurniResidenzaVannucci() {
                       <div className="flex flex-col space-y-1.5">
                         <div className="flex items-center gap-2.5">
                           <div
-                            className="w-8 h-8 rounded-full flex items-center justify-center font-extrabold text-white text-xs shadow-xs shrink-0"
+                            className={`w-8 h-8 rounded-full flex items-center justify-center font-extrabold text-white text-xs shadow-xs shrink-0 transition-transform ${
+                              hoveredStaffId === member.id ? 'ring-2 ring-indigo-600 ring-offset-1 scale-105 shadow-sm' : ''
+                            }`}
                             style={{ backgroundColor: member.coloreBadge }}
                           >
                             {member.nome[0]}{member.cognome[0]}
                           </div>
                           <div className="overflow-hidden">
-                            <div className="font-bold text-slate-900 text-xs flex items-center gap-1">
+                            <div className={`font-bold text-xs flex items-center gap-1 transition-colors ${
+                              hoveredStaffId === member.id ? 'text-indigo-950 font-black' : 'text-slate-900'
+                            }`}>
                               <span>{member.nome} {member.cognome}</span>
                               {!isStaffRole && <Edit3 className="w-3 h-3 text-slate-400 opacity-0 group-hover/staff:opacity-100 transition-opacity" />}
                             </div>
@@ -3679,6 +3776,10 @@ function importaTurniResidenzaVannucci() {
                       const isReferenceDay = dIdx === 0; // Domenica precedente (riferimento)
                       const isEffectivelyLocked = lockedDays.includes(dateYMD) || isReferenceDay;
 
+                      const hasPulizieInCell = dayShifts.some(s => s.tipoTurno === "Pulizie" || (s.orarioInizio === "07:00" && s.orarioFine === "11:00"));
+                      const hasNotteInCell = dayShifts.some(s => s.tipoTurno === "Notte" || (s.orarioInizio === "23:00" && s.orarioFine === "07:00"));
+                      const isComboDayInCell = hasPulizieInCell && hasNotteInCell;
+
                       return (
                         <td
                           key={dIdx}
@@ -3704,7 +3805,9 @@ function importaTurniResidenzaVannucci() {
                           className={`p-2 transition-all relative group/cell h-24 align-top ${
                             isStaffRole || isReferenceDay ? "" : "cursor-pointer"
                           } ${
-                            isDayComplete(dateYMD) && !isReferenceDay
+                            isComboDayInCell
+                              ? "bg-gradient-to-b from-teal-50/40 via-indigo-50/20 to-transparent border-2 border-teal-400/70 shadow-xs"
+                              : isDayComplete(dateYMD) && !isReferenceDay
                               ? "border-x-2 border-emerald-500 shadow-2xs"
                               : "border-r border-slate-200 last:border-r-0"
                           } ${
@@ -3716,38 +3819,72 @@ function importaTurniResidenzaVannucci() {
                               ? "bg-indigo-50/20"
                               : ""
                           }`}
-                          title={isStaffRole ? `${member.nome} — Turni del giorno` : isReferenceDay ? "Giorno di riferimento (sola lettura)" : lockedDays.includes(dateYMD) ? "🔒 Questo giorno è bloccato!" : "Doppio clic per aggiungere un turno in questo giorno"}
+                          title={isStaffRole ? `${member.nome} — Turni del giorno` : isReferenceDay ? "Giorno di riferimento (sola lettura)" : lockedDays.includes(dateYMD) ? "🔒 Questo giorno è bloccato!" : isComboDayInCell ? "⚡ Combo Speciale: Pulizie (07-11) + Notte (23-07)" : "Doppio clic per aggiungere un turno in questo giorno"}
                         >
                           <div className="flex flex-col h-full justify-between space-y-1">
                             <div className={`space-y-1.5 ${isReferenceDay ? 'grayscale-[30%]' : ''}`}>
+                              {isComboDayInCell && (
+                                <div className="bg-gradient-to-r from-teal-800 via-indigo-900 to-blue-900 text-white px-2 py-1 rounded-lg text-[9px] font-black shadow-xs flex items-center justify-between border border-teal-400/50 ring-1 ring-teal-400/30">
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[11px] leading-none">⚡</span>
+                                    <span className="tracking-wide uppercase">Combo Speciale</span>
+                                  </div>
+                                  <span className="bg-amber-300 text-amber-950 font-black px-1.5 py-0.2 rounded text-[8px]">
+                                    5h oggi
+                                  </span>
+                                </div>
+                              )}
                               {dayShifts.map(s => {
                                 const validity = checkShiftValidity(s);
                                 const isInvalid = !validity.valid && !isReferenceDay;
+                                const isHovered = hoveredShiftId === s.id;
+                                const isStaffHovered = hoveredStaffId === s.staffId;
+
                                 return (
                                 <div
                                   key={s.id}
-                                  draggable={!isStaffRole && s.tipoTurno !== "Ferie"}
+                                  draggable={!isStaffRole && !isEffectivelyLocked}
                                   onDragStart={(e) => {
-                                    if (!isStaffRole && s.tipoTurno !== "Ferie") handleDragStartSingleShift(e, s);
+                                    if (!isStaffRole && !isEffectivelyLocked) handleDragStartSingleShift(e, s);
+                                  }}
+                                  onMouseEnter={() => {
+                                    setHoveredShiftId(s.id);
+                                    setHoveredStaffId(s.staffId);
+                                  }}
+                                  onMouseLeave={() => {
+                                    setHoveredShiftId(null);
+                                    setHoveredStaffId(null);
                                   }}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleOpenDetailModal(s);
                                   }}
                                   className={`group/shift p-1.5 rounded-lg border text-[11px] font-bold transition-all shadow-2xs relative flex flex-col ${
-                                    isStaffRole || s.tipoTurno === "Ferie" || isEffectivelyLocked ? "cursor-pointer hover:shadow-md" : "cursor-grab active:cursor-grabbing"
+                                    isStaffRole || isEffectivelyLocked ? "cursor-pointer hover:shadow-md" : "cursor-grab active:cursor-grabbing"
                                   } ${getShiftBadgeStyle(s.tipoTurno, s.orarioInizio, s.orarioFine, s.struttura)} ${
                                     s.tipoTurno === "Ferie" ? "animate-pulse ring-2 ring-amber-500 ring-offset-1 border-amber-500 border-2" : ""
                                   } ${
                                     isInvalid ? "animate-pulse ring-4 ring-red-600 ring-offset-1 !border-red-600 !bg-red-100 !text-red-900" : ""
+                                  } ${
+                                    isHovered ? "ring-2 ring-indigo-600 shadow-lg scale-[1.03] z-30" : isStaffHovered ? "ring-1 ring-indigo-400 shadow-xs" : ""
                                   }`}
-                                  title={isInvalid ? `⚠️ ERRORE: ${validity.reason}` : isStaffRole ? `${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine}) - Clicca per dettagli` : s.tipoTurno === "Ferie" ? "Ferie inamovibili - Clicca per dettagli" : isReferenceDay ? "Turno di riferimento - Clicca per dettagli" : lockedDays.includes(dateYMD) ? "Giorno bloccato - Clicca per dettagli" : "Trascina per spostare o duplicare, oppure clicca per dettagli"}
+                                  title={isInvalid ? `⚠️ ERRORE: ${validity.reason}` : isStaffRole ? `${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine}) - Clicca per dettagli` : s.tipoTurno === "Ferie" ? "🏖️ Ferie — Trascina per spostare/duplicare o clicca per dettagli" : isReferenceDay ? "Turno di riferimento - Clicca per dettagli" : lockedDays.includes(dateYMD) ? "Giorno bloccato - Clicca per dettagli" : "Trascina per spostare o duplicare, oppure clicca per dettagli"}
                                 >
                                   {/* Shift Header & Trash Hover Button */}
                                   <div className="flex items-center justify-between gap-1">
                                     <div className="flex items-center gap-1 flex-wrap">
                                       {!isStaffRole && !isEffectivelyLocked && <GripVertical className={`w-3 h-3 ${isInvalid ? 'text-red-500' : 'text-slate-400 group-hover/shift:text-indigo-600'} transition-colors`} />}
                                       <span className="uppercase tracking-wider font-extrabold">{s.tipoTurno}</span>
+                                      {isComboDayInCell && s.tipoTurno === "Pulizie" && (
+                                        <span className="text-[8px] font-black text-teal-950 bg-teal-100/90 border border-teal-400 px-1 py-0.2 rounded-xs flex items-center gap-0.5">
+                                          ⚡ +Notte
+                                        </span>
+                                      )}
+                                      {isComboDayInCell && s.tipoTurno === "Notte" && (
+                                        <span className="text-[8px] font-black text-blue-950 bg-blue-100/90 border border-blue-400 px-1 py-0.2 rounded-xs flex items-center gap-0.5">
+                                          ⚡ +Pulizie (1h oggi)
+                                        </span>
+                                      )}
                                       {!s.id.startsWith("auto-") && !isReferenceDay && s.tipoTurno !== "Ferie" && !lockedDays.includes(dateYMD) && (
                                         <span className="text-[8px] font-black text-amber-800 bg-amber-100/90 border border-amber-300/80 px-1 py-0.2 rounded-xs flex items-center gap-0.5 shrink-0" title="Vincolo Manuale Fisso: Non verrà mai sovrascritto dalla generazione automatica">
                                           📌 Fisso
@@ -4117,13 +4254,20 @@ function importaTurniResidenzaVannucci() {
               </thead>
               <tbody className="divide-y divide-slate-200 text-xs">
                 {displayedStaff.map(member => (
-                  <tr key={member.id} className="hover:bg-slate-50/60 transition-colors">
+                  <tr 
+                    key={member.id} 
+                    className={`transition-colors ${hoveredStaffId === member.id ? 'bg-indigo-50/60' : 'hover:bg-slate-50/60'}`}
+                  >
                     
                     {/* Member Details Sticky Cell */}
                     <td
-                      className={`p-1.5 border-r border-slate-200 sticky left-0 z-10 bg-white/95 backdrop-blur-xs transition-colors group/staff shadow-2xs overflow-hidden ${
+                      className={`p-1.5 border-r border-slate-200 sticky left-0 z-10 backdrop-blur-xs transition-all group/staff shadow-2xs overflow-hidden ${
+                        hoveredStaffId === member.id ? 'bg-indigo-100/95 ring-2 ring-indigo-500 border-indigo-400 z-30' : 'bg-white/95'
+                      } ${
                         isPublicView ? "" : "cursor-pointer hover:bg-slate-100"
                       }`}
+                      onMouseEnter={() => setHoveredStaffId(member.id)}
+                      onMouseLeave={() => setHoveredStaffId(null)}
                       onClick={() => {
                         if (!isPublicView) setEditingStaffMember(member);
                       }}
@@ -4131,13 +4275,13 @@ function importaTurniResidenzaVannucci() {
                     >
                       <div className="flex items-center gap-1.5">
                         <div
-                          className="w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center font-extrabold text-white text-[9px] shadow-xs shrink-0"
+                          className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center font-extrabold text-white text-[9px] shadow-xs shrink-0 transition-transform ${hoveredStaffId === member.id ? 'ring-2 ring-indigo-600 scale-105' : ''}`}
                           style={{ backgroundColor: member.coloreBadge }}
                         >
                           {member.nome[0]}{member.cognome[0]}
                         </div>
                         <div className="truncate min-w-0">
-                          <div className="font-bold text-slate-900 text-[10px] sm:text-xs truncate">
+                          <div className={`font-bold text-[10px] sm:text-xs truncate transition-colors ${hoveredStaffId === member.id ? 'text-indigo-950 font-black' : 'text-slate-900'}`}>
                             {member.nome} {member.cognome[0]}.
                           </div>
                           <div className="text-[8px] text-slate-400 truncate hidden md:block">{member.ruolo}</div>
@@ -4173,9 +4317,15 @@ function importaTurniResidenzaVannucci() {
                       const isDragOverCell = dragOverCellKey === cellKey;
                       const dayShifts = shifts.filter(s => s.staffId === member.id && s.data === dateYMD);
 
+                      const hasPulizieInCell = dayShifts.some(s => s.tipoTurno === "Pulizie" || (s.orarioInizio === "07:00" && s.orarioFine === "11:00"));
+                      const hasNotteInCell = dayShifts.some(s => s.tipoTurno === "Notte" || (s.orarioInizio === "23:00" && s.orarioFine === "07:00"));
+                      const isComboDayInCell = hasPulizieInCell && hasNotteInCell;
+
                       return (
                         <td
                           key={dIdx}
+                          onMouseEnter={() => setHoveredStaffId(member.id)}
+                          onMouseLeave={() => setHoveredStaffId(null)}
                           onDoubleClick={() => {
                             if (isPublicView) return;
                             if (lockedDays.includes(dateYMD)) {
@@ -4194,21 +4344,30 @@ function importaTurniResidenzaVannucci() {
                           className={`p-0.5 transition-all relative group/cell text-center align-middle h-10 ${
                             isPublicView ? "" : "cursor-pointer"
                           } ${
-                            isDayComplete(dateYMD)
+                            isComboDayInCell
+                              ? "bg-gradient-to-br from-teal-50/90 via-indigo-50/60 to-blue-50/90 border-2 border-teal-400/90 shadow-2xs"
+                              : isDayComplete(dateYMD)
                               ? "border-x-2 border-emerald-500 shadow-2xs"
                               : "border-r border-slate-200 last:border-r-0"
                           } ${
                             isDragOverCell
                               ? "bg-indigo-100 border-2 border-indigo-500 shadow-inner"
+                              : hoveredStaffId === member.id
+                              ? "bg-indigo-50/40"
                               : isToday
                               ? "bg-indigo-50/40"
                               : isWeekend
                               ? "bg-amber-50/20"
                               : ""
                           }`}
-                          title={lockedDays.includes(dateYMD) ? `🔒 ${member.nome}: Giorno Bloccato` : `${member.nome}: ${dayShifts.length ? dayShifts.map(s => `${s.tipoTurno} (${s.orarioInizio}-${s.orarioFine})`).join(", ") : "Nessun turno"}.`}
+                          title={lockedDays.includes(dateYMD) ? `🔒 ${member.nome}: Giorno Bloccato` : isComboDayInCell ? `⚡ ${member.nome}: Combo Speciale Pulizie (07-11) + Notte (23-07)` : `${member.nome}: ${dayShifts.length ? dayShifts.map(s => `${s.tipoTurno} (${s.orarioInizio}-${s.orarioFine})`).join(", ") : "Nessun turno"}.`}
                         >
                           <div className="flex flex-wrap items-center justify-center gap-0.5 h-full">
+                            {isComboDayInCell && (
+                              <span className="absolute -top-1 -right-1 text-[8px] bg-teal-600 text-white rounded-full px-1 font-black shadow-xs z-20" title="Combo Pulizie + Notte">
+                                ⚡
+                              </span>
+                            )}
                             {dayShifts.length > 0 ? (
                               dayShifts.map(s => {
                                 let badgeText = s.tipoTurno.substring(0, 1).toUpperCase();
@@ -4219,26 +4378,40 @@ function importaTurniResidenzaVannucci() {
                                 else if (s.tipoTurno === "Cucina") badgeText = "🍲";
                                 else if (s.tipoTurno === "Pulizie") badgeText = "🪣🧹";
                                 else if (s.tipoTurno === "Riposo") badgeText = "💤";
+                                else if (s.tipoTurno === "Ferie") badgeText = "🏖️";
 
                                 const badgeStyle = getShiftBadgeStyle(s.tipoTurno, s.orarioInizio, s.orarioFine, s.struttura);
+                                const isShiftHovered = hoveredShiftId === s.id;
 
                                 return (
                                   <div
                                     key={s.id}
-                                    draggable={!isPublicView && s.tipoTurno !== "Ferie" && !lockedDays.includes(dateYMD)}
+                                    draggable={!isPublicView && !lockedDays.includes(dateYMD)}
                                     onDragStart={(e) => {
-                                      if (!isPublicView && s.tipoTurno !== "Ferie") handleDragStartSingleShift(e, s);
+                                      if (!isPublicView) handleDragStartSingleShift(e, s);
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.stopPropagation();
+                                      setHoveredShiftId(s.id);
+                                      setHoveredStaffId(member.id);
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.stopPropagation();
+                                      setHoveredShiftId(null);
+                                      setHoveredStaffId(null);
                                     }}
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       handleOpenDetailModal(s);
                                     }}
                                     className={`px-0.5 py-0.5 rounded text-[9px] font-black border shadow-2xs hover:scale-110 transition-transform flex items-center justify-center min-w-[16px] relative ${
-                                      isPublicView || s.tipoTurno === "Ferie" || lockedDays.includes(dateYMD) ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"
+                                      isPublicView || lockedDays.includes(dateYMD) ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"
                                     } ${badgeStyle} ${
                                       s.tipoTurno === "Ferie" ? "animate-pulse ring-1 ring-amber-800 border-amber-800 border-2" : ""
+                                    } ${
+                                      isShiftHovered ? "ring-2 ring-indigo-600 scale-125 z-30 shadow-md" : ""
                                     }`}
-                                    title={s.tipoTurno === "Ferie" ? `Ferie inamovibili - Clicca per dettagli` : lockedDays.includes(dateYMD) ? `Giorno Bloccato: ${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine})` : `${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine}) - Clicca per dettagli`}
+                                    title={s.tipoTurno === "Ferie" ? `🏖️ Ferie — Trascina per spostare/duplicare o clicca per dettagli` : lockedDays.includes(dateYMD) ? `Giorno Bloccato: ${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine})` : `${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine}) - Clicca per dettagli`}
                                   >
                                     {badgeText}
                                     {s.note && s.note.trim().length > 0 && s.note !== "Programmazione automatica" && (
@@ -4667,6 +4840,100 @@ function importaTurniResidenzaVannucci() {
                   </div>
                 </div>
 
+                {/* SPECIAL RULE SMART BANNERS FOR PULIZIE + NOTTE */}
+                {(() => {
+                  const memberDayShifts = shifts.filter(s => s.staffId === newStaffId && s.data === newDate && s.tipoTurno !== "Riposo");
+                  const hasPulizieOnDay = memberDayShifts.some(s => s.tipoTurno === "Pulizie" || (s.orarioInizio === "07:00" && s.orarioFine === "11:00"));
+                  const hasNotteOnDay = memberDayShifts.some(s => s.tipoTurno === "Notte" || (s.orarioInizio === "23:00" && s.orarioFine === "07:00"));
+                  const isComboAlreadyActive = hasPulizieOnDay && hasNotteOnDay;
+
+                  if (isComboAlreadyActive) {
+                    return (
+                      <div className="bg-gradient-to-r from-teal-800 via-indigo-900 to-blue-900 text-white rounded-xl p-2.5 shadow-md space-y-1 animate-in fade-in duration-200 border border-teal-400/40">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 font-black text-xs text-amber-300">
+                            <span>⚡</span>
+                            <span>Combo Speciale Già Assegnata</span>
+                          </div>
+                          <span className="text-[9px] font-bold bg-white/20 text-white px-2 py-0.5 rounded-full">5h Oggi (4h+1h)</span>
+                        </div>
+                        <p className="text-[10px] text-teal-100 leading-tight">
+                          Questo giorno ha già sia <strong>🪣 Pulizie (07-11)</strong> che <strong>🌙 Notte (23-07)</strong> con 12h di riposo garantite.
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  if (hasPulizieOnDay && !hasNotteOnDay) {
+                    return (
+                      <div className="bg-gradient-to-r from-teal-500/15 via-indigo-500/15 to-blue-500/15 border-2 border-teal-500/60 rounded-xl p-3 space-y-2 shadow-xs animate-in fade-in duration-200">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 font-black text-teal-950 text-xs">
+                            <span className="text-base leading-none">⚡</span>
+                            <span>Regola Speciale Disponibile!</span>
+                          </div>
+                          <span className="text-[9px] font-bold bg-teal-600 text-white px-2 py-0.5 rounded-full">12h Riposo OK</span>
+                        </div>
+                        <p className="text-[10px] text-slate-700 leading-tight">
+                          L'operatore ha già il turno <strong>🪣 Pulizie (07:00-11:00)</strong>. In base alla regola speciale, puoi caricare anche il turno di <strong>🌙 Notte (23:00-07:00)</strong> nello stesso giorno (1h conteggiata oggi).
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => handleFastSubmit({ tipoTurno: "Notte", orarioInizio: "23:00", orarioFine: "07:00" })}
+                          className="w-full py-2 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-extrabold rounded-lg text-xs shadow flex items-center justify-center gap-2 cursor-pointer transition-transform active:scale-95"
+                        >
+                          <Moon className="w-3.5 h-3.5 text-blue-200" />
+                          <span>+ Aggiungi Turno Notte (23:00 - 07:00)</span>
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  if (hasNotteOnDay && !hasPulizieOnDay) {
+                    return (
+                      <div className="bg-gradient-to-r from-blue-500/15 via-indigo-500/15 to-teal-500/15 border-2 border-blue-500/60 rounded-xl p-3 space-y-2 shadow-xs animate-in fade-in duration-200">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 font-black text-blue-950 text-xs">
+                            <span className="text-base leading-none">⚡</span>
+                            <span>Regola Speciale Disponibile!</span>
+                          </div>
+                          <span className="text-[9px] font-bold bg-blue-600 text-white px-2 py-0.5 rounded-full">12h Riposo OK</span>
+                        </div>
+                        <p className="text-[10px] text-slate-700 leading-tight">
+                          L'operatore ha già il turno <strong>🌙 Notte (23:00-07:00)</strong>. In base alla regola speciale, puoi caricare anche il turno di <strong>🪣 Pulizie (07:00-11:00)</strong> nello stesso giorno.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => handleFastSubmit({ tipoTurno: "Pulizie", orarioInizio: "07:00", orarioFine: "11:00" })}
+                          className="w-full py-2 bg-gradient-to-r from-teal-600 to-emerald-700 hover:from-teal-700 hover:to-emerald-800 text-white font-extrabold rounded-lg text-xs shadow flex items-center justify-center gap-2 cursor-pointer transition-transform active:scale-95"
+                        >
+                          <span>🪣🧹</span>
+                          <span>+ Aggiungi Turno Pulizie (07:00 - 11:00)</span>
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="bg-gradient-to-r from-teal-50 via-indigo-50 to-blue-50 border-2 border-indigo-300/80 rounded-xl p-2.5 space-y-1.5 shadow-2xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-indigo-950 flex items-center gap-1">
+                          <span>⚡ Regola Speciale Turni</span>
+                          <span className="text-[9px] bg-indigo-600 text-white font-bold px-1.5 py-0.2 rounded-full">1-Click Combo</span>
+                        </span>
+                        <span className="text-[9px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.2 rounded">5h oggi (4h+1h)</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleAddComboPulizieNotte(newStaffId, newDate)}
+                        className="w-full py-2 bg-gradient-to-r from-teal-600 via-indigo-600 to-blue-700 hover:from-teal-700 hover:via-indigo-700 hover:to-blue-800 text-white font-black rounded-lg text-xs shadow flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                      >
+                        <span>✨ Carica Insieme: Pulizie (07-11) + Notte (23-07)</span>
+                      </button>
+                    </div>
+                  );
+                })()}
+
                 {/* Inline form to create and save a new preset */}
                 {showAddPresetForm && (
                   <div className="bg-indigo-500/10 border border-indigo-500/30 p-3 rounded-xl space-y-2 text-xs animate-in fade-in duration-150">
@@ -4880,6 +5147,24 @@ function importaTurniResidenzaVannucci() {
                   >
                     <span className="font-extrabold text-[12px] flex items-center gap-1">🪣🧹 Pulizie</span>
                     <span className="text-[9px] opacity-75 font-normal">07:00 - 11:00 (Aiuto Alzate V1)</span>
+                  </button>
+
+                  {/* COMBO SPECIALE 2-COL BUTTON */}
+                  <button
+                    type="button"
+                    onClick={() => handleAddComboPulizieNotte(newStaffId, newDate)}
+                    className="col-span-2 p-2.5 rounded-xl border-2 border-teal-500/60 bg-gradient-to-r from-teal-500/15 via-indigo-500/15 to-blue-500/15 hover:from-teal-500/25 hover:to-blue-500/25 text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer shadow-xs"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-black text-xs text-indigo-950 flex items-center gap-1">
+                        <span>⚡ Combo Regola Speciale</span>
+                        <span className="text-[9px] bg-teal-700 text-white px-1.5 py-0.2 rounded-full font-bold">12h Riposo</span>
+                      </span>
+                      <span className="text-[9px] font-extrabold text-amber-800 bg-amber-100 px-1.5 py-0.2 rounded">5h oggi (4h+1h)</span>
+                    </div>
+                    <span className="text-[10px] text-slate-700 font-semibold mt-0.5">
+                      ✨ Carica: 🪣 Pulizie (07:00-11:00) + 🌙 Notte (23:00-07:00)
+                    </span>
                   </button>
 
                   {/* Riposo */}
@@ -6033,24 +6318,28 @@ function importaTurniResidenzaVannucci() {
       {/* MODAL: VACATION / FERIE REQUEST FOR EMPLOYEES */}
       {showVacationModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl space-y-5 animate-in fade-in zoom-in duration-200 border border-amber-200">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-7 shadow-2xl space-y-5 animate-in fade-in zoom-in duration-200 border border-amber-200 my-4">
             <div className="flex items-center justify-between border-b pb-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-400 flex items-center justify-center shadow-md">
-                  <Palmtree className="w-5 h-5 text-slate-950" />
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-400 flex items-center justify-center shadow-md text-xl shrink-0">
+                  🏖️
                 </div>
                 <div>
-                  <h3 className="font-black text-slate-900 text-base">
-                    Richiesta & Inserimento Ferie Dipendente
+                  <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
+                    <span>Pianificazione & Inserimento Ferie</span>
+                    <span className="text-[10px] font-bold bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full border border-amber-300">
+                      Calendario Interattivo
+                    </span>
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Seleziona il tuo nome e le date per registrare le ferie nel tabellone
+                    Seleziona un singolo giorno o un intervallo (dal-al) cliccando direttamente sul calendario
                   </p>
                 </div>
               </div>
               <button 
+                type="button"
                 onClick={() => setShowVacationModal(false)} 
-                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-100 transition-colors"
+                className="text-slate-400 hover:text-slate-600 p-2 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -6060,8 +6349,13 @@ function importaTurniResidenzaVannucci() {
               
               {/* Select Staff Member */}
               <div>
-                <label className="block font-bold text-slate-800 text-xs mb-1.5">
-                  Operatore / Dipendente *
+                <label className="block font-bold text-slate-800 text-xs mb-1.5 flex items-center justify-between">
+                  <span>Operatore / Dipendente *</span>
+                  {currentUser?.role === 'staff' && (
+                    <span className="text-[10px] font-normal text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md">
+                      👤 Il tuo account personale
+                    </span>
+                  )}
                 </label>
                 <select
                   value={vacationStaffId}
@@ -6070,7 +6364,7 @@ function importaTurniResidenzaVannucci() {
                     setVacationStaffId(e.target.value);
                   }}
                   disabled={currentUser?.role === 'staff'}
-                  className="w-full border border-slate-300 p-3 rounded-2xl font-bold bg-slate-50 focus:bg-white focus:ring-2 focus:ring-amber-500 text-sm text-slate-900 disabled:opacity-80 disabled:cursor-not-allowed"
+                  className="w-full border border-slate-300 p-2.5 rounded-2xl font-bold bg-slate-50 focus:bg-white focus:ring-2 focus:ring-amber-500 text-sm text-slate-900 disabled:opacity-80 disabled:cursor-not-allowed shadow-3xs"
                   required
                 >
                   {currentUser?.role === 'staff' ? (
@@ -6089,58 +6383,290 @@ function importaTurniResidenzaVannucci() {
                 </select>
               </div>
 
-              {/* Start & End Dates */}
+              {/* Mode Switcher: Singolo Giorno vs Intervallo Dal-Al */}
+              <div className="bg-slate-100 p-1 rounded-2xl flex gap-1 border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setVacationMode('single');
+                    setVacationEndDate(vacationStartDate);
+                  }}
+                  className={`flex-1 py-2 px-3 rounded-xl font-extrabold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    vacationMode === 'single'
+                      ? 'bg-white text-slate-950 shadow-xs border border-slate-200/80 ring-1 ring-black/5'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                  }`}
+                >
+                  <span>📅</span>
+                  <span>Singolo Giorno</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVacationMode('range')}
+                  className={`flex-1 py-2 px-3 rounded-xl font-extrabold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    vacationMode === 'range'
+                      ? 'bg-amber-500 text-white shadow-xs ring-1 ring-amber-600'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                  }`}
+                >
+                  <span>📆</span>
+                  <span>Intervallo Date (Dal - Al)</span>
+                </button>
+              </div>
+
+              {/* Interactive Calendar Month Picker */}
+              <div className="border border-amber-200/90 rounded-2xl p-3.5 bg-gradient-to-b from-amber-50/40 to-white shadow-3xs space-y-3">
+                {/* Calendar Header with navigation */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const prev = new Date(vacationCalendarMonth.getFullYear(), vacationCalendarMonth.getMonth() - 1, 1);
+                        setVacationCalendarMonth(prev);
+                      }}
+                      className="p-1.5 rounded-xl hover:bg-amber-100 text-slate-700 font-bold transition-colors cursor-pointer border border-amber-200/60 bg-white"
+                      title="Mese precedente"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <span className="font-black text-slate-900 text-sm capitalize">
+                      {vacationCalendarMonth.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = new Date(vacationCalendarMonth.getFullYear(), vacationCalendarMonth.getMonth() + 1, 1);
+                        setVacationCalendarMonth(next);
+                      }}
+                      className="p-1.5 rounded-xl hover:bg-amber-100 text-slate-700 font-bold transition-colors cursor-pointer border border-amber-200/60 bg-white"
+                      title="Mese successivo"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const today = new Date();
+                      setVacationCalendarMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+                    }}
+                    className="text-[10px] font-bold text-amber-800 bg-amber-100/90 hover:bg-amber-200 px-2 py-1 rounded-lg border border-amber-300 transition-colors cursor-pointer"
+                  >
+                    Mese Corrente
+                  </button>
+                </div>
+
+                {/* Weekday headers */}
+                <div className="grid grid-cols-7 gap-1 text-center font-black text-[10px] text-slate-500 border-b border-slate-100 pb-1.5">
+                  <span>Lun</span>
+                  <span>Mar</span>
+                  <span>Mer</span>
+                  <span>Gio</span>
+                  <span>Ven</span>
+                  <span className="text-amber-700">Sab</span>
+                  <span className="text-red-600">Dom</span>
+                </div>
+
+                {/* Days Grid */}
+                <div className="grid grid-cols-7 gap-1">
+                  {(() => {
+                    const year = vacationCalendarMonth.getFullYear();
+                    const month = vacationCalendarMonth.getMonth();
+                    const firstDayOfMonth = new Date(year, month, 1);
+                    const lastDayOfMonth = new Date(year, month + 1, 0);
+                    const totalDays = lastDayOfMonth.getDate();
+                    
+                    // Day of week index (0=Sun, 1=Mon, ..., 6=Sat) converted to Monday=0
+                    const startWeekday = (firstDayOfMonth.getDay() + 6) % 7;
+
+                    const dayCells = [];
+                    // Pad empty cells before 1st of month
+                    for (let i = 0; i < startWeekday; i++) {
+                      dayCells.push(<div key={`pad-${i}`} className="h-9" />);
+                    }
+
+                    // Render days
+                    for (let d = 1; d <= totalDays; d++) {
+                      const dateObj = new Date(year, month, d);
+                      const monthStr = String(month + 1).padStart(2, "0");
+                      const dayStr = String(d).padStart(2, "0");
+                      const dateStr = `${year}-${monthStr}-${dayStr}`;
+
+                      const isStart = dateStr === vacationStartDate;
+                      const isEnd = dateStr === vacationEndDate;
+                      const isBetween = vacationStartDate && vacationEndDate && dateStr > vacationStartDate && dateStr < vacationEndDate;
+                      const isSelected = isStart || isEnd || isBetween;
+                      const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
+                      const isToday = dateStr === todayStr;
+
+                      // Check if employee already has ferie or work shift
+                      const existingStaffShifts = shifts.filter(s => s.staffId === vacationStaffId && s.data === dateStr);
+                      const hasExistingFerie = existingStaffShifts.some(s => s.tipoTurno === "Ferie");
+                      const hasExistingWork = existingStaffShifts.some(s => s.tipoTurno !== "Ferie" && s.tipoTurno !== "Riposo");
+
+                      let buttonClasses = "h-9 w-full rounded-xl text-xs font-bold transition-all relative flex flex-col items-center justify-center cursor-pointer ";
+                      if (isStart && isEnd) {
+                        buttonClasses += "bg-gradient-to-tr from-amber-500 to-orange-500 text-white font-black shadow-md ring-2 ring-amber-300 scale-105 z-10 ";
+                      } else if (isStart) {
+                        buttonClasses += "bg-amber-500 text-white font-black shadow-md rounded-r-none z-10 ";
+                      } else if (isEnd) {
+                        buttonClasses += "bg-orange-500 text-white font-black shadow-md rounded-l-none z-10 ";
+                      } else if (isBetween) {
+                        buttonClasses += "bg-amber-100 text-amber-950 font-black rounded-none border-y border-amber-300 ";
+                      } else if (isToday) {
+                        buttonClasses += "bg-indigo-50 text-indigo-900 border border-indigo-300 hover:bg-amber-50 ";
+                      } else if (isWeekend) {
+                        buttonClasses += "bg-slate-50/70 text-slate-700 hover:bg-amber-100/70 ";
+                      } else {
+                        buttonClasses += "hover:bg-amber-100/80 text-slate-800 ";
+                      }
+
+                      dayCells.push(
+                        <button
+                          key={dateStr}
+                          type="button"
+                          onClick={() => {
+                            if (vacationMode === 'single') {
+                              setVacationStartDate(dateStr);
+                              setVacationEndDate(dateStr);
+                            } else {
+                              // Range mode
+                              if (vacationStartDate === vacationEndDate) {
+                                if (dateStr >= vacationStartDate) {
+                                  setVacationEndDate(dateStr);
+                                } else {
+                                  setVacationEndDate(vacationStartDate);
+                                  setVacationStartDate(dateStr);
+                                }
+                              } else {
+                                // Reset range to clicked date
+                                setVacationStartDate(dateStr);
+                                setVacationEndDate(dateStr);
+                              }
+                            }
+                          }}
+                          className={buttonClasses}
+                          title={
+                            hasExistingFerie
+                              ? `${d}: Già registrate Ferie per questo giorno`
+                              : hasExistingWork
+                              ? `${d}: Presente turno di lavoro (verrà sostituito con Ferie)`
+                              : `${d} ${vacationCalendarMonth.toLocaleDateString("it-IT", { month: "long" })}`
+                          }
+                        >
+                          <span className="leading-none">{d}</span>
+                          {/* Mini badges for status */}
+                          <div className="flex items-center gap-0.5 mt-0.5">
+                            {hasExistingFerie && !isSelected && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" title="Ferie già impostate" />
+                            )}
+                            {hasExistingWork && !isSelected && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" title="Turno presente" />
+                            )}
+                          </div>
+                        </button>
+                      );
+                    }
+
+                    return dayCells;
+                  })()}
+                </div>
+
+                {/* Range Summary Box */}
+                <div className="mt-2 pt-2 border-t border-amber-200/60 flex items-center justify-between text-[11px]">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-950">
+                    <span>🏖️</span>
+                    <span>
+                      {(() => {
+                        if (!vacationStartDate || !vacationEndDate) return "Nessuna data selezionata";
+                        const s = new Date(vacationStartDate);
+                        const e = new Date(vacationEndDate);
+                        const diffTime = Math.abs(e.getTime() - s.getTime());
+                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+                        if (vacationStartDate === vacationEndDate) {
+                          return `1 giorno selezionato (${s.toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "numeric" })})`;
+                        }
+                        return `${diffDays} giorni selezionati (dal ${s.toLocaleDateString("it-IT", { day: "numeric", month: "short" })} al ${e.toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "numeric" })})`;
+                      })()}
+                    </span>
+                  </div>
+
+                  <span className="text-[10px] text-slate-500 font-medium">
+                    {vacationMode === 'single' ? 'Clicca un giorno' : 'Clicca 2 date per definire Dal / Al'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Start & End Dates (Text inputs synchronized with calendar) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-800 text-xs mb-1.5">
-                    Data Inizio Ferie *
+                  <label className="block font-bold text-slate-800 text-xs mb-1">
+                    Data Inizio *
                   </label>
                   <input
                     type="date"
                     required
                     value={vacationStartDate}
-                    onChange={e => setVacationStartDate(e.target.value)}
-                    className="w-full border border-slate-300 p-3 rounded-2xl font-bold bg-slate-50 focus:bg-white focus:ring-2 focus:ring-amber-500 text-sm text-slate-900"
+                    onChange={e => {
+                      setVacationStartDate(e.target.value);
+                      if (vacationMode === 'single' || e.target.value > vacationEndDate) {
+                        setVacationEndDate(e.target.value);
+                      }
+                      const d = new Date(e.target.value);
+                      if (!isNaN(d.getTime())) {
+                        setVacationCalendarMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+                      }
+                    }}
+                    className="w-full border border-slate-300 p-2.5 rounded-2xl font-bold bg-slate-50 focus:bg-white focus:ring-2 focus:ring-amber-500 text-xs text-slate-900 shadow-3xs"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-800 text-xs mb-1.5">
-                    Data Fine Ferie (Inclusa) *
+                  <label className="block font-bold text-slate-800 text-xs mb-1">
+                    Data Fine (Inclusa) *
                   </label>
                   <input
                     type="date"
                     required
                     value={vacationEndDate}
-                    onChange={e => setVacationEndDate(e.target.value)}
-                    className="w-full border border-slate-300 p-3 rounded-2xl font-bold bg-slate-50 focus:bg-white focus:ring-2 focus:ring-amber-500 text-sm text-slate-900"
+                    disabled={vacationMode === 'single'}
+                    onChange={e => {
+                      setVacationEndDate(e.target.value);
+                      const d = new Date(e.target.value);
+                      if (!isNaN(d.getTime())) {
+                        setVacationCalendarMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+                      }
+                    }}
+                    className="w-full border border-slate-300 p-2.5 rounded-2xl font-bold bg-slate-50 focus:bg-white focus:ring-2 focus:ring-amber-500 text-xs text-slate-900 disabled:opacity-60 disabled:cursor-not-allowed shadow-3xs"
                   />
                 </div>
               </div>
 
               {/* Notes / Reason */}
               <div>
-                <label className="block font-bold text-slate-800 text-xs mb-1.5">
+                <label className="block font-bold text-slate-800 text-xs mb-1">
                   Note / Motivo Richiesta (Opzionale)
                 </label>
                 <input
                   type="text"
-                  placeholder="Es. Ferie estive, permesso studio, ecc..."
+                  placeholder="Es. Ferie estive, riposo concordato, permesso studio..."
                   value={vacationNotes}
                   onChange={e => setVacationNotes(e.target.value)}
-                  className="w-full border border-slate-300 p-3 rounded-2xl font-medium bg-slate-50 focus:bg-white focus:ring-2 focus:ring-amber-500 text-xs text-slate-900"
+                  className="w-full border border-slate-300 p-2.5 rounded-2xl font-medium bg-slate-50 focus:bg-white focus:ring-2 focus:ring-amber-500 text-xs text-slate-900 shadow-3xs"
                 />
               </div>
 
-              <div className="bg-amber-50 border border-amber-200/80 rounded-2xl p-3.5 text-amber-900 text-[11px] leading-relaxed flex items-start gap-2.5">
-                <span className="text-base shrink-0">ℹ️</span>
+              <div className="bg-amber-50 border border-amber-200/80 rounded-2xl p-3 text-amber-950 text-[11px] leading-relaxed flex items-start gap-2">
+                <span className="text-base shrink-0">🌴</span>
                 <span>
-                  L'inserimento assegnerà il tipo turno <strong>"Ferie"</strong> per ogni giorno del periodo selezionato, aggiornando istantaneamente il calendario in tempo reale.
+                  L'inserimento assegnerà il turno <strong>"Ferie"</strong> per ogni data del periodo selezionato, evidenziandolo e materializzandolo all'istante sia sul tabellone settimanale che mensile.
                 </span>
               </div>
 
               {/* Modal Buttons */}
-              <div className="pt-3 flex items-center justify-end gap-2 border-t">
+              <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setShowVacationModal(false)}
@@ -6153,7 +6679,7 @@ function importaTurniResidenzaVannucci() {
                   className="px-6 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black rounded-2xl text-xs shadow-lg shadow-amber-500/20 transition-all cursor-pointer flex items-center gap-2"
                 >
                   <Palmtree className="w-4 h-4" />
-                  <span>Conferma & Salva Ferie</span>
+                  <span>Conferma & Materializza Ferie</span>
                 </button>
               </div>
 
