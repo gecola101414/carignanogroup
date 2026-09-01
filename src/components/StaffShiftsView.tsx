@@ -676,62 +676,50 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     });
   };
 
-  // Helper to check if a day is complete: Mattina + Pomeriggio for each structure + at least 1 Notte + Cucina (Pulizie is extra)
+  // Helper to check if a day is complete: Mattina + Pomeriggio for each structure + at least 1 Notte + Cucina + Alzate ore 07:00 (almeno 2 turni che partono alle 07:00)
   const getMissingShiftsForDay = (dateStr: string): string[] => {
     const dayShifts = shifts.filter(s => s.data === dateStr && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie");
     const missing: string[] = [];
 
-    // Check if support for Vannucci 1 morning wake-ups (07:00-08:00) is present:
-    // 1. Dedicated Pulizie shift (🪣🧹)
-    // 2. Or Vannucci 2 morning shift starting at 07:00 (same floor connecting passage)
-    const hasPulizie = dayShifts.some(s => 
-      s.tipoTurno === "Pulizie" ||
-      ((s.orarioInizio === "07:00" && s.orarioFine === "11:00") || (s.note && s.note.toLowerCase().includes("puliz")))
-    );
-    const hasV2MorningAt7 = dayShifts.some(s =>
-      (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2") &&
-      s.tipoTurno === "Mattina" &&
-      s.orarioInizio === "07:00"
-    );
-    const hasV1MorningSupport = hasPulizie || hasV2MorningAt7;
-
-    // Vannucci 1: Needs 2 morning operators unless Pulizie or V2 (07:00) is present
-    const v1MorningShifts = dayShifts.filter(s => 
-      (s.struttura === "Vannucci 1" || s.struttura === "Struttura 1") && 
-      s.tipoTurno === "Mattina"
-    );
-    const requiredV1Morning = hasV1MorningSupport ? 1 : 2;
-
-    if (v1MorningShifts.length < requiredV1Morning) {
-      if (v1MorningShifts.length === 0) {
-        missing.push(requiredV1Morning === 2 ? "Vannucci 1: 2x Mattina (Alzate ore 07:00)" : "Vannucci 1: Mattina (07:00 / 08:00)");
-      } else if (v1MorningShifts.length === 1 && requiredV1Morning === 2) {
-        missing.push("Vannucci 1: 2° operatore Mattina (Alzate 07:00 o Pulizie 🪣🧹 / V2 ore 07:00)");
-      }
-    }
-
+    // 1. Vannucci 1 (Mattina & Pomeriggio)
+    const hasMattina1 = dayShifts.some(s => s.tipoTurno === "Mattina" && (s.struttura === "Vannucci 1" || s.struttura === "Struttura 1"));
     const hasPomeriggio1 = dayShifts.some(s => s.tipoTurno === "Pomeriggio" && (s.struttura === "Vannucci 1" || s.struttura === "Struttura 1"));
+    if (!hasMattina1) missing.push("Vannucci 1: Mattina (07:00 / 08:00)");
     if (!hasPomeriggio1) missing.push("Vannucci 1: Pomeriggio (14:00 / 15:00)");
 
-    // Vannucci 2
+    // 2. Vannucci 2 (Mattina & Pomeriggio)
     const hasMattina2 = dayShifts.some(s => s.tipoTurno === "Mattina" && (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2"));
     const hasPomeriggio2 = dayShifts.some(s => s.tipoTurno === "Pomeriggio" && (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2"));
     if (!hasMattina2) missing.push("Vannucci 2: Mattina (07:00 / 08:00)");
     if (!hasPomeriggio2) missing.push("Vannucci 2: Pomeriggio (14:00 / 15:00)");
 
-    // Vannucci 4
-    const hasMattina3 = dayShifts.some(s => s.tipoTurno === "Mattina" && (s.struttura === "Vannucci 4" || s.struttura === "Struttura 4"));
-    const hasPomeriggio3 = dayShifts.some(s => s.tipoTurno === "Pomeriggio" && (s.struttura === "Vannucci 4" || s.struttura === "Struttura 4"));
-    if (!hasMattina3) missing.push("Vannucci 4: Mattina (08:00 - 15:00)");
-    if (!hasPomeriggio3) missing.push("Vannucci 4: Pomeriggio (15:00 - 22:00)");
+    // 3. Vannucci 4 (Mattina & Pomeriggio)
+    const hasMattina4 = dayShifts.some(s => s.tipoTurno === "Mattina" && (s.struttura === "Vannucci 4" || s.struttura === "Struttura 4"));
+    const hasPomeriggio4 = dayShifts.some(s => s.tipoTurno === "Pomeriggio" && (s.struttura === "Vannucci 4" || s.struttura === "Struttura 4"));
+    if (!hasMattina4) missing.push("Vannucci 4: Mattina (08:00 - 15:00)");
+    if (!hasPomeriggio4) missing.push("Vannucci 4: Pomeriggio (15:00 - 22:00)");
 
-    // Notte (Generale)
+    // 4. Notte (Generale)
     const hasNotte = dayShifts.some(s => s.tipoTurno === "Notte");
-    if (!hasNotte) missing.push("Notte (23:00 - 07:00)");
+    if (!hasNotte) missing.push("Turno di Notte (23:00 - 07:00)");
 
-    // Cucina (Generale - Obbligatoria per completare la giornata)
+    // 5. Cucina (Generale - Obbligatoria per completare la giornata)
     const hasCucina = dayShifts.some(s => s.tipoTurno === "Cucina");
-    if (!hasCucina) missing.push("Cucina (10:30 - 15:00)");
+    if (!hasCucina) missing.push("Servizio Cucina (10:30 - 15:00)");
+
+    // 6. Alzate (Almeno 2 turni che partono alle 07:00 tra V1, V2 e Pulizie 07:00-11:00)
+    const shiftsAt7 = dayShifts.filter(s => 
+      s.orarioInizio === "07:00" || 
+      s.tipoTurno === "Pulizie" ||
+      (s.note && s.note.toLowerCase().includes("alzat"))
+    );
+    if (shiftsAt7.length < 2) {
+      if (shiftsAt7.length === 0) {
+        missing.push("Alzate ore 07:00: Mancano 2 turni alle 07:00 (V1, V2 o Pulizie 🪣)");
+      } else {
+        missing.push("Alzate ore 07:00: Manca 2° turno alle 07:00 (V1, V2 o Pulizie 🪣)");
+      }
+    }
 
     return missing;
   };
@@ -769,19 +757,25 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
         });
     };
 
-    const hasPulizie = dayShifts.some(s => 
+    // Shifts starting at 07:00 for Alzate
+    const shiftsAt7 = dayShifts.filter(s => 
+      s.orarioInizio === "07:00" || 
       s.tipoTurno === "Pulizie" ||
-      ((s.orarioInizio === "07:00" && s.orarioFine === "11:00") || (s.note && s.note.toLowerCase().includes("puliz")))
+      (s.note && s.note.toLowerCase().includes("alzat"))
     );
-    const hasV2MorningAt7 = dayShifts.some(s =>
-      (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2") &&
-      s.tipoTurno === "Mattina" &&
-      s.orarioInizio === "07:00"
-    );
-    const hasV1MorningSupport = hasPulizie || hasV2MorningAt7;
-    const v1MorningStaff = findAssigned("Mattina", "Vannucci 1");
-    const requiredV1Morning = hasV1MorningSupport ? 1 : 2;
-    const isV1MorningCovered = v1MorningStaff.length >= requiredV1Morning;
+    const isAlzateCovered = shiftsAt7.length >= 2;
+    const alzateAssigned = shiftsAt7.map(s => {
+      const st = staff.find(m => m.id === s.staffId);
+      const loc = s.struttura || (s.tipoTurno === "Pulizie" ? "Pulizie" : s.tipoTurno);
+      return {
+        id: s.staffId,
+        nome: st ? st.nome : "Operatore",
+        cognome: st ? st.cognome : "",
+        orarioInizio: s.orarioInizio,
+        orarioFine: s.orarioFine,
+        struttura: loc
+      };
+    });
 
     const mandatorySlots = [
       {
@@ -789,13 +783,10 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
         label: "Vannucci 1 — Mattina",
         struttura: "Vannucci 1",
         tipoTurno: "Mattina",
-        orarioStandard: requiredV1Morning === 2 ? "2x Operatori (07:00)" : "07:00 / 08:00",
+        orarioStandard: "07:00 / 08:00",
         icon: "🌅",
-        isCovered: isV1MorningCovered,
-        assignedStaff: v1MorningStaff,
-        requirementNote: hasV1MorningSupport 
-          ? (hasPulizie ? "1 op. richiesto (Supporto Pulizie 🪣 attivo per alzate)" : "1 op. richiesto (Supporto V2 07:00 attivo)")
-          : "2 op. richiesti per alzate ore 07:00"
+        isCovered: findAssigned("Mattina", "Vannucci 1").length > 0,
+        assignedStaff: findAssigned("Mattina", "Vannucci 1")
       },
       {
         id: "v1_p",
@@ -866,6 +857,21 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
         icon: "🍲",
         isCovered: findAssigned("Cucina").length > 0,
         assignedStaff: findAssigned("Cucina")
+      },
+      {
+        id: "alzate",
+        label: "Alzate (ore 07:00)",
+        struttura: "Supporto Alzate",
+        tipoTurno: "Alzate",
+        orarioStandard: "Almeno 2 turni dalle 07:00",
+        icon: "⏰",
+        isCovered: isAlzateCovered,
+        assignedStaff: alzateAssigned,
+        requirementNote: shiftsAt7.length === 0 
+          ? "Mancano 2 operatori alle 07:00 (V1, V2 o Pulizie 🪣)" 
+          : shiftsAt7.length === 1 
+          ? `Presente solo 1 op. (${alzateAssigned[0].nome}) - Manca 2° turno alle 07:00`
+          : "Almeno 2 turni attivi alle 07:00"
       }
     ];
 
@@ -879,7 +885,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
         icon: "🪣🧹",
         isCovered: findAssigned("Pulizie").length > 0,
         assignedStaff: findAssigned("Pulizie"),
-        note: "Turno extra: non necessario per completare il turno giornaliero."
+        note: "Turno extra: concorre anche alle alzate ore 07:00."
       }
     ];
 
@@ -906,6 +912,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       extraSlots,
       ferieStaff,
       riposoStaff,
+      shiftsAt7Count: shiftsAt7.length,
       totalRequired: mandatorySlots.length,
       totalCovered: coveredMandatory.length
     };
@@ -1288,11 +1295,16 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     let endProposed = "14:00";
     
     if (proposedType === "Mattina") {
-      if (staffStartingAt07Today >= 2 || currentStruttura === "Vannucci 2" || currentStruttura === "Vannucci 4") {
-        if (staffStartingAt07Today >= 2 || currentStruttura === "Vannucci 4") {
-          startProposed = "08:00";
-          endProposed = "15:00";
-        }
+      // Ensure at least 2 people start at 07:00 for alzata support (V1, V2, or Pulizie)
+      if (staffStartingAt07Today < 2 && (currentStruttura === "Vannucci 1" || currentStruttura === "Vannucci 2")) {
+        startProposed = "07:00";
+        endProposed = "14:00";
+      } else if (currentStruttura === "Vannucci 1") {
+        startProposed = "07:00";
+        endProposed = "14:00";
+      } else {
+        startProposed = "08:00";
+        endProposed = "15:00";
       }
     } else if (proposedType === "Pomeriggio") {
       startProposed = "15:00";
@@ -1475,7 +1487,8 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     };
 
     let updatedShiftsList: Shift[];
-    if (preset.tipoTurno === "Riposo" || preset.tipoTurno === "Ferie") {
+    if (preset.tipoTurno === "Riposo" || preset.tipoTurno === "Ferie" || preset.tipoTurno === "Cucina") {
+      // Direct replacement for Riposo, Ferie, and Cucina
       const existingFiltered = shifts.filter(s => !(s.staffId === newStaffId && s.data === newDate));
       updatedShiftsList = [...existingFiltered, shiftObj];
     } else {
@@ -1509,15 +1522,15 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   };
 
   // Special Rule: Add both Pulizie (07:00-11:00) + Notte (23:00-07:00) on the same day for the staff member
-  const handleAddComboPulizieNotte = (staffId: string, dateStr: string) => {
+  const handleAddComboPulizieNotte = (staffId: string, dateStr: string, struttura: string = "") => {
     if (!staffId || !dateStr) return;
     if (lockedDays.includes(dateStr)) {
       showToast("🔒 Questo giorno è bloccato! Sbloccalo prima di aggiungere turni.");
       return;
     }
 
-    const pulizieValidity = checkPotentialShiftValidity(staffId, dateStr, "Pulizie", "", "07:00", "11:00");
-    const notteValidity = checkPotentialShiftValidity(staffId, dateStr, "Notte", "", "23:00", "07:00");
+    const pulizieValidity = checkPotentialShiftValidity(staffId, dateStr, "Pulizie", struttura, "07:00", "11:00");
+    const notteValidity = checkPotentialShiftValidity(staffId, dateStr, "Notte", struttura, "23:00", "07:00");
 
     if (!pulizieValidity.valid) {
       showToast(`⚠️ Turno Pulizie: ${pulizieValidity.reason}`);
@@ -1536,7 +1549,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       orarioInizio: "07:00",
       orarioFine: "11:00",
       note: "Servizio Pulizie & Supporto Alzate (Combo Regola Speciale Notte)",
-      struttura: ""
+      struttura: struttura
     };
 
     const notteShift: Shift = {
@@ -1547,7 +1560,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       orarioInizio: "23:00",
       orarioFine: "07:00",
       note: "Turno di Notte (Combo Regola Speciale Pulizie - 1h oggi)",
-      struttura: ""
+      struttura: struttura
     };
 
     // Remove any Riposo or overlapping work shift on that day for this staff member
@@ -1581,6 +1594,41 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     applyShiftsUpdate(updatedShifts);
     setSelectedShiftForDetail(null);
     showToast(`🗑️ Turno ${targetShift.tipoTurno} cancellato.`, true);
+  };
+
+  const handleDeleteWeekShifts = () => {
+    if (isStaffRole) {
+      showToast("⛔ Gli operatori non possono eliminare i turni.");
+      return;
+    }
+
+    if (!window.confirm("Sei sicuro di voler cancellare TUTTI i turni non bloccati di questa settimana? Questa azione è irreversibile.")) {
+      return;
+    }
+    
+    // Explicitly calculate target dates for the current week being viewed (Monday to Sunday)
+    const start = getStartOfWeek(currentDate);
+    const targetDates = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(start);
+      d.setDate(d.getDate() + i);
+      return formatDateYMD(d);
+    });
+
+    const targetShifts = shifts.filter(s => 
+      targetDates.includes(s.data) && 
+      !lockedDays.includes(s.data) &&
+      !s.id.startsWith("auto-sunday-ref")
+    );
+
+    if (targetShifts.length === 0) {
+      showToast("Nessun turno da cancellare in questa settimana (o giorni bloccati).");
+      return;
+    }
+
+    setLastDeletedShifts(targetShifts);
+    const updatedShifts = shifts.filter(s => !targetShifts.some(ts => ts.id === s.id));
+    applyShiftsUpdate(updatedShifts);
+    showToast(`🗑️ Cancellati ${targetShifts.length} turni della settimana.`, true);
   };
 
   // Trigger Delete Day Confirmation Modal
@@ -2149,7 +2197,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     showToast(`🗑️ Operatore ${memberToDelete.nome} ${memberToDelete.cognome} rimosso dall'organico.`);
   };
 
-  // Helper to validate shift candidate for automatic generation (prevents 11-hour rest violations and double bookings)
+  // Helper to validate shift candidate for automatic generation (strictly enforces 11-hour rest and prevents same-day double bookings)
   const checkCandidateShiftValidityForAuto = (
     staffId: string,
     dateStr: string,
@@ -2161,27 +2209,11 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   ): boolean => {
     if (tipoTurno === "Riposo" || tipoTurno === "Ferie") return true;
 
-    // 1. Check if staff already has an OVERLAPPING work shift on this date
-    const timeToMin = (tStr: string) => {
-      if (!tStr) return 0;
-      const [h, m] = tStr.split(":").map(Number);
-      return (h || 0) * 60 + (m || 0);
-    };
-
-    const isOverlap = (s1: string, e1: string, s2: string, e2: string) => {
-      let start1 = timeToMin(s1);
-      let end1 = timeToMin(e1);
-      let start2 = timeToMin(s2);
-      let end2 = timeToMin(e2);
-      if (end1 <= start1) end1 = 1440;
-      if (end2 <= start2) end2 = 1440;
-      return Math.max(start1, start2) < Math.min(end1, end2);
-    };
-
-    const hasOverlappingShiftThisDay = currentShiftsList.some(
-      s => s.staffId === staffId && s.data === dateStr && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie" && isOverlap(inizio, fine, s.orarioInizio, s.orarioFine)
+    // 1. Strict single-shift rule for automatic scheduler: Staff cannot have ANY other shift (Work, Ferie, Notte, Riposo) on the same date
+    const hasAnyShiftThisDay = currentShiftsList.some(
+      s => s.staffId === staffId && s.data === dateStr
     );
-    if (hasOverlappingShiftThisDay) return false;
+    if (hasAnyShiftThisDay) return false;
 
     // 2. Check duplicate structure & tipoTurno on this date
     const sameStructureShift = currentShiftsList.some(
@@ -2189,7 +2221,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     );
     if (sameStructureShift) return false;
 
-    // 3. Check 11-hour rule with PREVIOUS day's shifts
+    // 3. Check strict 11-hour rest rule with PREVIOUS day's shifts (e.g., Afternoon -> Morning is forbidden if <11h)
     const targetDateObj = new Date(dateStr);
     targetDateObj.setDate(targetDateObj.getDate() - 1);
     const prevDateStr = formatDateYMD(targetDateObj);
@@ -2203,6 +2235,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       const endParts = s.orarioFine.split(":");
       if (endParts.length === 2) {
         let mins = parseInt(endParts[0], 10) * 60 + parseInt(endParts[1], 10);
+        // Night shift (23:00 - 07:00) ends at 07:00 of the target date (today)
         if (s.tipoTurno === "Notte" || (parseInt(s.orarioFine.split(":")[0], 10) < parseInt(s.orarioInizio.split(":")[0], 10))) {
           mins += 24 * 60;
         }
@@ -2220,7 +2253,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       }
     }
 
-    // 4. Check 11-hour rule with NEXT day's existing (manual/locked) shifts
+    // 4. Check strict 11-hour rest rule with NEXT day's existing shifts (e.g. Afternoon -> next Morning)
     const nextDateObj = new Date(dateStr);
     nextDateObj.setDate(nextDateObj.getDate() + 1);
     const nextDateStr = formatDateYMD(nextDateObj);
@@ -2341,9 +2374,9 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     });
 
     // Required structure slots per day
-    const structureSlots: { struttura: string; tipoTurno: "Mattina" | "Pomeriggio"; defaultStart: string; defaultEnd: string }[] = [
+    const structureSlots: { struttura: string; tipoTurno: string; defaultStart: string; defaultEnd: string }[] = [
       { struttura: "Vannucci 1", tipoTurno: "Mattina", defaultStart: "07:00", defaultEnd: "14:00" },
-      { struttura: "Vannucci 2", tipoTurno: "Mattina", defaultStart: "08:00", defaultEnd: "15:00" },
+      { struttura: "Vannucci 2", tipoTurno: "Mattina", defaultStart: "07:00", defaultEnd: "14:00" },
       { struttura: "Vannucci 4", tipoTurno: "Mattina", defaultStart: "08:00", defaultEnd: "15:00" },
       { struttura: "Vannucci 1", tipoTurno: "Pomeriggio", defaultStart: "14:00", defaultEnd: "21:00" },
       { struttura: "Vannucci 2", tipoTurno: "Pomeriggio", defaultStart: "15:00", defaultEnd: "22:00" },
@@ -2379,6 +2412,15 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
         }
       });
 
+      // COUNT ALZATE (07:00 shifts in V1, V2, Pulizie)
+      const countAlzate = () => {
+        return updatedShifts.filter(s => 
+          s.data === dateYMD && 
+          s.orarioInizio === "07:00" && 
+          (s.struttura === "Vannucci 1" || s.struttura === "Vannucci 2" || s.tipoTurno === "Pulizie")
+        ).length;
+      };
+
       structureSlots.forEach((slot, slotIndex) => {
         // Check if this structure slot (struttura + tipoTurno) is ALREADY satisfied by an existing shift on dateYMD
         const isSlotAlreadyCovered = updatedShifts.some(s =>
@@ -2392,11 +2434,22 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
           return;
         }
 
+        // DYNAMIC START TIME ADJUSTMENT FOR ALZATE RULE (Max 2 at 07:00)
+        let start = slot.defaultStart;
+        let end = slot.defaultEnd;
+
+        // If assigning V1 or V2 Mattina and we already have 2 alzate (including Pulizie manual), push to 08:00
+        if ((slot.struttura === "Vannucci 1" || slot.struttura === "Vannucci 2") && slot.tipoTurno === "Mattina" && start === "07:00") {
+          // If we already have 2 shifts at 07:00 (e.g. Pulizie and one Vannucci), the next one goes to 08:00
+          if (countAlzate() >= 2) {
+            start = "08:00";
+            end = "15:00";
+          }
+        }
+
         // Find valid candidate staff members who pass all rest rules and are not assigned yet today
         const candidates = activeStaff.filter(m => {
-          let start = slot.defaultStart;
-          let end = slot.defaultEnd;
-
+          if (assignedInDay.has(m.id)) return false;
           return checkCandidateShiftValidityForAuto(m.id, dateYMD, slot.tipoTurno, slot.struttura, start, end, updatedShifts);
         });
 
@@ -2414,16 +2467,11 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
 
         let chosenMember = candidates[0];
 
-        // SFORZO SUPPLEMENTARE (EXTRA EFFORT FALLBACK FOR HEAVY CONSECUTIVE CONSTRAINTS):
-        // If no candidate passed strict rest checks (due to tight multi-day manual constraints),
-        // pick from active staff members not assigned yet today and not on Ferie/manual Riposo.
+        // Safe Fallback: only pick staff members who are NOT assigned today and STILL pass the 11-hour rest constraint
         if (!chosenMember) {
           const fallbackCandidates = activeStaff.filter(m => {
             if (assignedInDay.has(m.id)) return false;
-            const onFerieOrRiposo = updatedShifts.some(s =>
-              s.staffId === m.id && s.data === dateYMD && (s.tipoTurno === "Ferie" || s.tipoTurno === "Riposo")
-            );
-            return !onFerieOrRiposo;
+            return checkCandidateShiftValidityForAuto(m.id, dateYMD, slot.tipoTurno, slot.struttura, slot.defaultStart, slot.defaultEnd, updatedShifts);
           });
 
           fallbackCandidates.sort((a, b) => {
@@ -2438,9 +2486,6 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
         if (chosenMember) {
           assignedInDay.add(chosenMember.id);
           shiftCountMap[chosenMember.id] = (shiftCountMap[chosenMember.id] || 0) + 1;
-
-          let start = slot.defaultStart;
-          let end = slot.defaultEnd;
 
           updatedShifts.push({
             id: `auto-${Date.now()}-${dayIndex}-${slotIndex}-${Math.random().toString(36).substr(2, 4)}`,
@@ -2488,7 +2533,22 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   ): { valid: boolean; reason?: string } => {
     if (tipoTurno === "Riposo" || tipoTurno === "Ferie") return { valid: true };
 
-    // 0. Check max 2 operators starting at 07:00 on the same day (Alzate support: Vannucci 1 + Pulizie o V2)
+    // 0. New rule: Only one global shift of type Notte, Cucina, or Pulizie per day
+    if (["Notte", "Cucina", "Pulizie"].includes(tipoTurno)) {
+      const globalShiftExists = shifts.some(s => 
+        s.data === dateStr && 
+        s.tipoTurno === tipoTurno && 
+        s.id !== shiftIdToIgnore
+      );
+      if (globalShiftExists) {
+        return { 
+          valid: false, 
+          reason: `Il turno ${tipoTurno} è già presente in organico per questo giorno (assegnato ad un altro operatore).` 
+        };
+      }
+    }
+
+    // 0.5 Check max 2 operators starting at 07:00 on the same day (Alzate support: Vannucci 1 + Pulizie o V2)
     if (inizio === "07:00" && tipoTurno !== "Pulizie") {
       const staffStartingAt07 = shifts.filter(s =>
         s.data === dateStr &&
@@ -2852,31 +2912,44 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
         <meta charset="utf-8">
         <title>Tabellone Turni - Casa Famiglia Anzio</title>
         <style>
-          @page { size: landscape; margin: 8mm; }
-          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; font-size: 11px; color: #0f172a; margin: 0; padding: 10px; background: #ffffff; }
-          .header { text-align: center; margin-bottom: 15px; border-bottom: 2px solid #3b82f6; padding-bottom: 8px; }
-          .header h1 { margin: 0; font-size: 18px; color: #1e293b; font-weight: 800; text-transform: uppercase; }
-          .header p { margin: 4px 0 0 0; color: #475569; font-size: 11px; font-weight: 600; }
-          table { width: 100%; border-collapse: collapse; margin-top: 5px; table-layout: fixed; }
-          th, td { border: 1px solid #cbd5e1; padding: 5px; text-align: left; vertical-align: top; word-wrap: break-word; }
-          th { background-color: #f1f5f9; font-weight: 700; color: #334155; }
-          .day-header { text-align: center; font-size: 10px; }
-          .day-name { font-size: 11px; text-transform: uppercase; color: #2563eb; font-weight: bold; }
-          .day-date { font-size: 9px; color: #64748b; }
-          .struct-header { background-color: #eff6ff; font-weight: bold; color: #1e40af; text-align: center; font-size: 12px; padding: 6px; }
-          .shift-box { background: #f8fafc; border-left: 3px solid #2563eb; padding: 3px 4px; margin-bottom: 3px; border-radius: 2px; }
-          .shift-title { font-weight: bold; font-size: 10px; color: #1e40af; }
-          .shift-time { font-size: 8.5px; color: #64748b; }
-          .shift-staff { font-size: 9.5px; margin-top: 1px; font-weight: 600; color: #0f172a; }
-          .badge-riposo { background: #f1f5f9; border-left-color: #94a3b8; color: #64748b; font-style: italic; }
-          .badge-ferie { background: #fef3c7; border-left-color: #d97706; color: #92400e; }
-          .footer { margin-top: 15px; text-align: right; font-size: 9px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 4px; }
+          @page { size: landscape; margin: 6mm; }
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; font-size: 10px; color: #0f172a; margin: 0; padding: 6px; background: #ffffff; }
+          .header { text-align: center; margin-bottom: 10px; border-bottom: 2px solid #3b82f6; padding-bottom: 6px; }
+          .header h1 { margin: 0; font-size: 16px; color: #1e293b; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; }
+          .header p { margin: 3px 0 0 0; color: #475569; font-size: 10px; font-weight: 600; }
+          table { width: 100%; border-collapse: collapse; margin-top: 4px; table-layout: fixed; }
+          th, td { border: 1px solid #cbd5e1; padding: 4px; text-align: left; vertical-align: top; word-wrap: break-word; }
+          th { background-color: #f1f5f9; font-weight: 800; color: #334155; }
+          .staff-th { width: 13%; background-color: #f8fafc; font-size: 10px; }
+          .day-header { text-align: center; font-size: 9.5px; }
+          .day-name { font-size: 10px; text-transform: uppercase; color: #2563eb; font-weight: 800; }
+          .day-date { font-size: 8.5px; color: #64748b; font-weight: 600; }
+          .ref-day { background-color: #f8fafc; opacity: 0.85; }
+          .struct-header { background-color: #eff6ff; font-weight: 800; color: #1e40af; text-align: center; font-size: 11px; padding: 6px; }
+          
+          .shift-box { border-radius: 4px; padding: 2.5px 4px; margin-bottom: 2px; border: 1px solid transparent; font-size: 9px; }
+          .shift-box-mattina { background: #fffbeb; border-color: #fcd34d; color: #78350f; }
+          .shift-box-pomeriggio { background: #eef2ff; border-color: #c7d2fe; color: #312e81; }
+          .shift-box-notte { background: #0f172a; border-color: #1e293b; color: #ffffff; }
+          .shift-box-pulizie { background: #f0fdfa; border-color: #99f6e4; color: #115e59; }
+          .shift-box-cucina { background: #e0f2fe; border-color: #7dd3fc; color: #0369a1; }
+          .shift-box-ferie { background: #fff7ed; border-color: #fed7aa; color: #9a3412; }
+          .shift-box-riposo { background: #f1f5f9; border-color: #e2e8f0; color: #64748b; font-style: italic; }
+          
+          .shift-top { display: flex; justify-content: space-between; align-items: center; font-weight: 800; }
+          .shift-hours { font-family: monospace; font-size: 8px; font-weight: 700; opacity: 0.9; }
+          .struct-tag { font-size: 7.5px; font-weight: 800; padding: 1px 3px; border-radius: 2px; background: rgba(255,255,255,0.9); display: inline-block; margin-top: 1px; }
+          .struct-v1 { color: #ea580c; border: 1px solid #fdba74; }
+          .struct-v2 { color: #ca8a04; border: 1px solid #fde047; }
+          .struct-v4 { color: #16a34a; border: 1px solid #86efac; }
+          
+          .footer { margin-top: 10px; text-align: right; font-size: 8px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 3px; }
         </style>
       </head>
       <body>
         <div class="header">
           <h1>Casa Famiglia Anzio - Tabellone Turni</h1>
-          <p>dal ${formatDateIT(weekDays[0])} al ${formatDateIT(weekDays[6])}</p>
+          <p>Settimana dal ${formatDateIT(weekDays[1] || weekDays[0])} al ${formatDateIT(weekDays[weekDays.length - 1])}</p>
         </div>
 
         ${viewMode === 'struttura' ? `
@@ -2884,9 +2957,9 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
             <thead>
               <tr>
                 <th style="width: 12%;">Struttura</th>
-                ${weekDays.map(d => `
-                  <th class="day-header">
-                    <div class="day-name">${d.toLocaleDateString('it-IT', { weekday: 'short' })}</div>
+                ${weekDays.map((d, idx) => `
+                  <th class="day-header ${idx === 0 ? 'ref-day' : ''}">
+                    <div class="day-name">${idx === 0 ? 'Dom. Prec.' : d.toLocaleDateString('it-IT', { weekday: 'short' })}</div>
                     <div class="day-date">${d.getDate()}/${d.getMonth()+1}</div>
                   </th>
                 `).join('')}
@@ -2901,12 +2974,16 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
                     const dayShifts = shifts.filter(s => s.data === dateStr && s.struttura === struct.nome);
                     return `
                       <td>
-                        ${dayShifts.length === 0 ? '<div style="color:#cbd5e1; text-align:center; font-style:italic;">-</div>' : dayShifts.map(s => {
+                        ${dayShifts.length === 0 ? '<div style="color:#cbd5e1; text-align:center; font-style:italic; font-size:9px;">-</div>' : dayShifts.map(s => {
                           const staffM = staff.find(m => m.id === s.staffId);
+                          const boxClass = s.tipoTurno === "Mattina" ? "shift-box-mattina" : s.tipoTurno === "Pomeriggio" ? "shift-box-pomeriggio" : "shift-box-riposo";
                           return `
-                            <div class="shift-box">
-                              <div class="shift-title">${s.tipoTurno} <span class="shift-time">(${s.orarioInizio}-${s.orarioFine})</span></div>
-                              <div class="shift-staff">${staffM ? staffM.nome : 'Non assegnato'}</div>
+                            <div class="shift-box ${boxClass}">
+                              <div class="shift-top">
+                                <span>${s.tipoTurno}</span>
+                                <span class="shift-hours">${s.orarioInizio}-${s.orarioFine}</span>
+                              </div>
+                              <div style="font-weight:700; font-size:8.5px; margin-top:1px;">${staffM ? staffM.nome : 'Non assegnato'}</div>
                             </div>
                           `;
                         }).join('')}
@@ -2921,10 +2998,10 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
           <table>
             <thead>
               <tr>
-                <th style="width: 14%;">Operatore</th>
-                ${weekDays.map(d => `
-                  <th class="day-header">
-                    <div class="day-name">${d.toLocaleDateString('it-IT', { weekday: 'short' })}</div>
+                <th class="staff-th">Operatore</th>
+                ${weekDays.map((d, idx) => `
+                  <th class="day-header ${idx === 0 ? 'ref-day' : ''}">
+                    <div class="day-name">${idx === 0 ? 'Dom. Prec.' : d.toLocaleDateString('it-IT', { weekday: 'short' })}</div>
                     <div class="day-date">${d.getDate()}/${d.getMonth()+1}</div>
                   </th>
                 `).join('')}
@@ -2933,22 +3010,39 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
             <tbody>
               ${activeStaff.map(member => `
                 <tr>
-                  <td style="font-weight: bold; vertical-align: middle; background-color: #f8fafc;">${member.nome}</td>
-                  ${weekDays.map(d => {
+                  <td style="font-weight: 800; vertical-align: middle; background-color: #f8fafc; font-size: 9.5px;">${member.nome}</td>
+                  ${weekDays.map((d, idx) => {
                     const dateStr = formatDateYMD(d);
                     const memberShifts = shifts.filter(s => s.staffId === member.id && s.data === dateStr);
                     if (memberShifts.length === 0) {
-                      return `<td><div class="shift-box badge-riposo">Riposo</div></td>`;
+                      return `<td class="${idx === 0 ? 'ref-day' : ''}"><div class="shift-box shift-box-riposo">🛋️ Riposo</div></td>`;
                     }
                     return `
-                      <td>
-                        ${memberShifts.map(s => `
-                          <div class="shift-box ${s.tipoTurno === 'Ferie' ? 'badge-ferie' : ''}">
-                            <div class="shift-title">${s.tipoTurno}</div>
-                            <div class="shift-staff">${!["Notte", "Riposo", "Ferie", "Cucina"].includes(s.tipoTurno) && s.struttura ? s.struttura : ""}</div>
-                            <div class="shift-time">${s.orarioInizio}-${s.orarioFine}</div>
-                          </div>
-                        `).join('')}
+                      <td class="${idx === 0 ? 'ref-day' : ''}">
+                        ${memberShifts.map(s => {
+                          let boxClass = "shift-box-mattina";
+                          let icon = "🌅";
+                          if (s.tipoTurno === "Pomeriggio") { boxClass = "shift-box-pomeriggio"; icon = "🌆"; }
+                          else if (s.tipoTurno === "Notte") { boxClass = "shift-box-notte"; icon = "🌙"; }
+                          else if (s.tipoTurno === "Pulizie") { boxClass = "shift-box-pulizie"; icon = "🪣🧹"; }
+                          else if (s.tipoTurno === "Cucina") { boxClass = "shift-box-cucina"; icon = "🍲"; }
+                          else if (s.tipoTurno === "Ferie") { boxClass = "shift-box-ferie"; icon = "🏖️"; }
+                          else if (s.tipoTurno === "Riposo") { boxClass = "shift-box-riposo"; icon = "🛋️"; }
+
+                          const structClass = s.struttura === "Vannucci 1" ? "struct-v1" : s.struttura === "Vannucci 2" ? "struct-v2" : "struct-v4";
+
+                          return `
+                            <div class="shift-box ${boxClass}">
+                              <div class="shift-top">
+                                <span>${icon} ${s.tipoTurno}</span>
+                                ${s.tipoTurno !== "Ferie" && s.tipoTurno !== "Riposo" ? `<span class="shift-hours">${s.orarioInizio}-${s.orarioFine}</span>` : ''}
+                              </div>
+                              ${s.struttura && !["Notte", "Riposo", "Ferie", "Cucina", "Pulizie"].includes(s.tipoTurno) ? `
+                                <div class="struct-tag ${structClass}">Vannucci ${s.struttura.replace(/\D/g, '')}</div>
+                              ` : ''}
+                            </div>
+                          `;
+                        }).join('')}
                       </td>
                     `;
                   }).join('')}
@@ -3117,6 +3211,16 @@ function importaTurniResidenzaVannucci() {
     navigator.clipboard.writeText(scriptCode);
     showToast("📋 Codice Google Apps Script COPIATO negli appunti! Seguilo nelle istruzioni.");
   };
+
+  // Helpers to check if a global shift already exists for the selected date in Add Modal
+  const hasNotteOnSelectedDay = shifts.some(s => s.data === newDate && s.tipoTurno === "Notte");
+  const hasCucinaOnSelectedDay = shifts.some(s => s.data === newDate && s.tipoTurno === "Cucina");
+  const hasPulizieOnSelectedDay = shifts.some(s => s.data === newDate && s.tipoTurno === "Pulizie");
+
+  // Helpers to check if a global shift already exists for the selected date in Edit Modal
+  const hasNotteOnEditDay = shifts.some(s => s.data === editShiftDate && s.tipoTurno === "Notte" && s.id !== selectedShiftForDetail?.id);
+  const hasCucinaOnEditDay = shifts.some(s => s.data === editShiftDate && s.tipoTurno === "Cucina" && s.id !== selectedShiftForDetail?.id);
+  const hasPulizieOnEditDay = shifts.some(s => s.data === editShiftDate && s.tipoTurno === "Pulizie" && s.id !== selectedShiftForDetail?.id);
 
   return (
     <div className="space-y-6 pb-12 relative">
@@ -3372,6 +3476,29 @@ function importaTurniResidenzaVannucci() {
             </div>
           )}
 
+          {/* GENERATE / DELETE ACTIONS - MOVED HERE FOR BETTER VISIBILITY */}
+          {!isPublicView && onUpdateShifts && (
+            <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
+              <button
+                onClick={handleGenerateAutomaticShifts}
+                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-lg text-[10px] uppercase flex items-center gap-1.5 transition-all shadow-sm cursor-pointer whitespace-nowrap"
+                title="Genera automaticamente i turni della settimana"
+              >
+                <Sparkles className="w-3 h-3 fill-slate-950" />
+                <span>Genera Turni</span>
+              </button>
+
+              <button
+                onClick={handleDeleteWeekShifts}
+                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-lg text-[10px] uppercase flex items-center gap-1.5 transition-all shadow-sm cursor-pointer whitespace-nowrap"
+                title="Cancella tutti i turni della settimana corrente"
+              >
+                <Trash2 className="w-3 h-3" />
+                <span>Cancella Settimana</span>
+              </button>
+            </div>
+          )}
+
           {/* DRAG ACTION MODE TOGGLE (SPOSTA vs DUPLICA) - ADMIN ONLY */}
           {!isPublicView && (
             <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
@@ -3426,14 +3553,25 @@ function importaTurniResidenzaVannucci() {
           )}
 
           {!isPublicView && onUpdateShifts && (
-            <button
-              onClick={handleGenerateAutomaticShifts}
-              className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
-              title="Genera automaticamente i turni per tutte le strutture (Struttura 1 dalle 07:00, Struttura 2 e 3 dalle 08:00)"
-            >
-              <Sparkles className="w-4 h-4 fill-slate-950" />
-              <span>⚡ Genera Turni Automatici</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleGenerateAutomaticShifts}
+                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
+                title="Genera automaticamente i turni per tutte le strutture (Struttura 1 dalle 07:00, Struttura 2 e 3 dalle 08:00)"
+              >
+                <Sparkles className="w-4 h-4 fill-slate-950" />
+                <span>⚡ Genera Turni</span>
+              </button>
+
+              <button
+                onClick={handleDeleteWeekShifts}
+                className="px-3.5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
+                title="Cancella tutti i turni non bloccati della settimana corrente"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Cancella Settimana</span>
+              </button>
+            </div>
           )}
 
           {!isPublicView && (
@@ -3660,14 +3798,10 @@ function importaTurniResidenzaVannucci() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setViewMode("roster")}
-                    className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                      viewMode === "roster"
-                        ? "bg-indigo-600 text-white shadow-xs font-black"
-                        : "text-indigo-200 hover:text-white hover:bg-indigo-800/60"
-                    }`}
+                    onClick={handleDeleteWeekShifts}
+                    className={`px-3 py-1 rounded-md text-xs font-black bg-rose-600 text-white shadow-xs hover:bg-rose-500 transition-all cursor-pointer whitespace-nowrap`}
                   >
-                    👤 {isStaffRole ? "Scheda Personale" : "Schedes"}
+                    🗑️ Cancella Settimana
                   </button>
                 </div>
 
@@ -3825,11 +3959,11 @@ function importaTurniResidenzaVannucci() {
           </div>
 
           {/* TABLE CONTAINER - EXPANDED WIDTH TO ENSURE ALL 7 DAYS FIT PERFECTLY WITHOUT CLIPPING */}
-          <div className="overflow-auto max-h-[calc(100vh-250px)] w-full">
-            <table id="weekly-schedule-table" className="w-full text-left border-collapse min-w-[1150px] sm:min-w-[1300px]">
+          <div className={`w-full ${isFullScreen ? "overflow-y-auto overflow-x-hidden flex-1 max-h-[calc(100vh-70px)]" : "overflow-auto max-h-[calc(100vh-250px)]"}`}>
+            <table id="weekly-schedule-table" className={`w-full text-left border-collapse ${isFullScreen ? "table-fixed min-w-0" : "min-w-[1150px] sm:min-w-[1300px]"}`}>
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-xs font-extrabold text-slate-700">
-                  <th className="p-4 w-48 min-w-[190px] border-r border-slate-200 sticky top-0 left-0 z-40 bg-slate-100 shadow-xs">
+                  <th className={`border-r border-slate-200 sticky top-0 left-0 z-40 bg-slate-100 shadow-xs ${isFullScreen ? "w-[15%] min-w-0 p-2.5" : "w-48 min-w-[190px] p-4"}`}>
                     <span className="md:hidden">Operatore</span>
                     <span className="hidden md:inline">Operatore / Ruolo</span>
                   </th>
@@ -3879,7 +4013,9 @@ function importaTurniResidenzaVannucci() {
                           setHoveredDayCoverageDate(null);
                           setHoveredDayCoveragePos(null);
                         }}
-                        className={`p-3 text-center transition-all select-none relative group min-w-[135px] sm:min-w-[155px] sticky top-0 z-30 ${
+                         className={`text-center transition-all select-none relative group sticky top-0 z-30 ${
+                          isFullScreen ? "w-[10.625%] min-w-0 p-1.5" : "min-w-[135px] sm:min-w-[155px] p-3"
+                        } ${
                           isPublicView ? "" : "cursor-grab active:cursor-grabbing"
                         } ${
                           isDayComplete(dateYMD) && !isReferenceDay
@@ -3887,14 +4023,14 @@ function importaTurniResidenzaVannucci() {
                             : "border-r border-slate-200 last:border-r-0"
                         } ${
                           isReferenceDay
-                            ? "bg-slate-100/90 text-slate-500 border-x-4 border-slate-300 shadow-inner"
+                            ? "bg-slate-100 text-slate-500 border-x-4 border-slate-300 shadow-inner"
                             : isDragOver
                             ? "bg-indigo-100 text-indigo-900 border-indigo-400 ring-2 ring-indigo-400"
                             : isHolding
                             ? "bg-amber-200 text-amber-950 animate-pulse"
                             : isToday
-                            ? "bg-indigo-50/80 text-indigo-900"
-                            : "bg-slate-50 hover:bg-slate-100/80"
+                            ? "bg-white text-indigo-950 border-b-2 border-indigo-500 shadow-sm opacity-100"
+                            : "bg-slate-50 hover:bg-slate-100 opacity-100"
                         }`}
                       >
                         {/* Long Press Visual Indicator */}
@@ -4110,126 +4246,191 @@ function importaTurniResidenzaVannucci() {
                               : "border-r border-slate-200 last:border-r-0"
                           } ${
                             isReferenceDay
-                              ? "bg-slate-100/60 opacity-90"
+                              ? "bg-slate-100 text-slate-500 opacity-100"
                               : isDragOverCell
-                              ? "bg-indigo-100/70 border-2 border-indigo-500 shadow-inner"
+                              ? "bg-indigo-100 border-2 border-indigo-500 shadow-inner"
                               : isToday
-                              ? "bg-indigo-50/20"
-                              : ""
+                              ? "bg-white text-indigo-950 opacity-100"
+                              : "bg-white opacity-100"
                           }`}
                           title={isStaffRole ? `${member.nome} — Turni del giorno` : isReferenceDay ? "Giorno di riferimento (sola lettura)" : lockedDays.includes(dateYMD) ? "🔒 Questo giorno è bloccato!" : `${member.nome}: ${dayShifts.length ? dayShifts.map(s => `${s.tipoTurno} (${s.orarioInizio}-${s.orarioFine})`).join(", ") : "Nessun turno"}. Doppio clic per aggiungere/modificare.`}
                         >
-                          <div className="flex flex-col h-full justify-between space-y-1">
+                          <div className="flex flex-col h-full justify-between">
                             <div className={`space-y-1.5 ${isReferenceDay ? 'grayscale-[30%]' : ''}`}>
-                              {dayShifts.map(s => {
-                                const validity = checkShiftValidity(s);
-                                const isInvalid = !validity.valid && !isReferenceDay;
-                                const isHovered = hoveredShiftId === s.id;
-                                const isStaffHovered = hoveredStaffId === s.staffId;
-
-                                return (
-                                <div
-                                  key={s.id}
-                                  draggable={!isStaffRole && !isEffectivelyLocked}
-                                  onDragStart={(e) => {
-                                    if (!isStaffRole && !isEffectivelyLocked) handleDragStartSingleShift(e, s);
-                                  }}
-                                  onMouseEnter={() => {
-                                    setHoveredShiftId(s.id);
-                                    setHoveredStaffId(s.staffId);
-                                  }}
-                                  onMouseLeave={() => {
-                                    setHoveredShiftId(null);
-                                    setHoveredStaffId(null);
-                                  }}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleOpenDetailModal(s);
-                                  }}
-                                  className={`group/shift p-1.5 rounded-lg border text-[11px] font-bold transition-all shadow-2xs relative flex flex-col ${
-                                    isStaffRole || isEffectivelyLocked ? "cursor-pointer hover:shadow-md" : "cursor-grab active:cursor-grabbing"
-                                  } ${getShiftBadgeStyle(s.tipoTurno, s.orarioInizio, s.orarioFine, s.struttura)} ${
-                                    s.tipoTurno === "Ferie" ? "animate-pulse ring-2 ring-amber-500 ring-offset-1 border-amber-500 border-2" : ""
-                                  } ${
-                                    isInvalid ? "animate-pulse ring-4 ring-red-600 ring-offset-1 !border-red-600 !bg-red-100 !text-red-900" : ""
-                                  } ${
-                                    isHovered ? "ring-2 ring-indigo-600 shadow-lg scale-[1.03] z-30" : isStaffHovered ? "ring-1 ring-indigo-400 shadow-xs" : ""
-                                  }`}
-                                  title={isInvalid ? `⚠️ ERRORE: ${validity.reason}` : isStaffRole ? `${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine}) - Clicca per dettagli` : s.tipoTurno === "Ferie" ? "🏖️ Ferie — Clicca per dettagli" : isReferenceDay ? "Turno di riferimento - Clicca per dettagli" : lockedDays.includes(dateYMD) ? "Giorno bloccato - Clicca per dettagli" : "Trascina per spostare o duplicare, oppure clicca per dettagli"}
-                                >
-                                  {/* Shift Header & Trash Hover Button */}
-                                  <div className="flex items-center justify-between gap-1">
-                                    <div className="flex items-center gap-1 flex-wrap">
-                                      {!isStaffRole && !isEffectivelyLocked && <GripVertical className={`w-3 h-3 ${isInvalid ? 'text-red-500' : 'text-slate-400 group-hover/shift:text-indigo-600'} transition-colors`} />}
-                                      <span className="uppercase tracking-wider font-extrabold">{s.tipoTurno}</span>
-                                      {!s.id.startsWith("auto-") && !isReferenceDay && s.tipoTurno !== "Ferie" && s.tipoTurno !== "Riposo" && !lockedDays.includes(dateYMD) && (
-                                        <span className="text-[8px] font-black text-amber-800 bg-amber-100/90 border border-amber-300/80 px-1 py-0.2 rounded-xs flex items-center gap-0.5 shrink-0" title="Vincolo Manuale Fisso: Non verrà mai sovrascritto dalla generazione automatica">
-                                          📌 Fisso
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                      {isInvalid && (
-                                        <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
-                                      )}
-                                      {s.tipoTurno === "Mattina" && <GenovaLandscapeIcon isMorning={true} />}
-                                      {s.tipoTurno === "Pomeriggio" && <GenovaLandscapeIcon isMorning={false} />}
-                                      {s.tipoTurno === "Notte" && <Moon className="w-5.5 h-5.5 text-slate-400" />}
-                                      {s.tipoTurno === "Pulizie" && <span className="text-base leading-none" title="Pulizie / Supporto Alzate V1">🪣🧹</span>}
-                                      {s.tipoTurno === "Cucina" && <span className="text-base leading-none">🍲</span>}
-                                      {s.note && s.note.trim().length > 0 && s.note !== "Programmazione automatica" && (
-                                        <span className="relative flex h-2.5 w-2.5 ml-0.5" title={`Nota: ${s.note}`}>
-                                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-600"></span>
-                                        </span>
-                                      )}
-
-                                      {!isStaffRole && (
-                                        <>
-                                          {/* HOVER TRASH ICON FOR SINGLE SHIFT (SHOW LOCK IF DAY IS LOCKED) */}
-                                          {lockedDays.includes(dateYMD) ? (
-                                            <span className="p-1 rounded bg-slate-100 text-slate-500 opacity-0 group-hover/shift:opacity-100 transition-all duration-150" title="Questo giorno è completato e bloccato">
-                                              <Lock className="w-3.5 h-3.5 text-emerald-600" />
-                                            </span>
-                                          ) : (
-                                            <button
-                                              type="button"
-                                              onClick={(e) => handleDeleteSingleShift(s.id, e)}
-                                              className="p-1 rounded bg-rose-600 hover:bg-rose-700 text-white opacity-0 group-hover/shift:opacity-100 transition-all duration-150 shadow-xs z-10 cursor-pointer transform hover:scale-110"
-                                              title="Elimina questo singolo turno"
-                                            >
-                                              <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
-                                          )}
-                                        </>
-                                      )}
-                                    </div>
-                                  </div>
-
-                                  {/* Shift Hours & Structure Badge */}
-                                  {s.tipoTurno !== "Ferie" && s.tipoTurno !== "Riposo" ? (
-                                    <div className="flex items-center justify-between text-xs font-mono font-bold opacity-90 mt-0.5 border-t border-black/5 pt-1">
-                                      <span>{s.orarioInizio} - {s.orarioFine}</span>
-                                      {s.struttura && s.tipoTurno !== "Notte" && s.tipoTurno !== "Cucina" && s.tipoTurno !== "Pulizie" && (
-                                        <span className="bg-white/95 text-slate-800 px-2 py-1 rounded-md text-[9px] font-extrabold border border-black/10 uppercase tracking-tight flex items-center gap-1 shadow-3xs">
-                                          {(s.struttura === "Vannucci 1" || s.struttura === "Struttura 1") ? (
-                                            <span>Vannucci <strong className="text-[15px] sm:text-[17px] font-black text-orange-600 leading-none">1</strong></span>
-                                          ) : (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2") ? (
-                                            <span>Vannucci <strong className="text-[15px] sm:text-[17px] font-black text-yellow-600 leading-none">2</strong></span>
-                                          ) : (
-                                            <span>Vannucci <strong className="text-[15px] sm:text-[17px] font-black text-emerald-600 leading-none">4</strong></span>
-                                          )}
-                                        </span>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <div className="text-[10px] font-medium opacity-80 mt-0.5 border-t border-black/5 pt-0.5 italic">
-                                      {s.tipoTurno === "Ferie" ? "🏖️ Tutto il giorno" : "Giorno libero"}
-                                    </div>
-                                  )}
+                              {dayShifts.length === 0 ? (
+                                 <div className="h-[72px] min-h-[72px] rounded-lg border border-dashed border-slate-200/80 hover:border-slate-300 flex items-center justify-center transition-colors">
+                                  <span className="text-[10px] text-slate-300 font-semibold italic group-hover/cell:text-slate-400 select-none">
+                                    -
+                                  </span>
                                 </div>
-                              );
-                            })}
+                              ) : dayShifts.length === 1 ? (
+                                (() => {
+                                  const s = dayShifts[0];
+                                  const validity = checkShiftValidity(s);
+                                  const isInvalid = !validity.valid && !isReferenceDay;
+                                  const isHovered = hoveredShiftId === s.id;
+                                  const isStaffHovered = hoveredStaffId === s.staffId;
+
+                                  return (
+                                    <div
+                                      key={s.id}
+                                      draggable={!isStaffRole && !isEffectivelyLocked}
+                                      onDragStart={(e) => {
+                                        if (!isStaffRole && !isEffectivelyLocked) handleDragStartSingleShift(e, s);
+                                      }}
+                                      onMouseEnter={() => {
+                                        setHoveredShiftId(s.id);
+                                        setHoveredStaffId(s.staffId);
+                                      }}
+                                      onMouseLeave={() => {
+                                        setHoveredShiftId(null);
+                                        setHoveredStaffId(null);
+                                      }}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleOpenDetailModal(s);
+                                      }}
+                                      className={`group/shift p-2 rounded-lg border text-[11px] font-bold transition-all shadow-2xs relative flex flex-col justify-between h-[72px] min-h-[72px] max-h-[72px] ${
+                                        isStaffRole || isEffectivelyLocked ? "cursor-pointer hover:shadow-md" : "cursor-grab active:cursor-grabbing"
+                                      } ${getShiftBadgeStyle(s.tipoTurno, s.orarioInizio, s.orarioFine, s.struttura)} ${
+                                        s.tipoTurno === "Ferie" ? "animate-pulse ring-2 ring-amber-500 ring-offset-1 border-amber-500 border-2" : ""
+                                      } ${
+                                        isInvalid ? "animate-pulse ring-4 ring-red-600 ring-offset-1 !border-red-600 !bg-red-100 !text-red-900" : ""
+                                      } ${
+                                        isHovered ? "ring-2 ring-indigo-600 shadow-lg scale-[1.02] z-30" : isStaffHovered ? "ring-1 ring-indigo-400 shadow-xs" : ""
+                                      }`}
+                                      title={isInvalid ? `⚠️ ERRORE: ${validity.reason}` : isStaffRole ? `${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine}) - Clicca per dettagli` : s.tipoTurno === "Ferie" ? "🏖️ Ferie — Clicca per dettagli" : isReferenceDay ? "Turno di riferimento - Clicca per dettagli" : lockedDays.includes(dateYMD) ? "Giorno bloccato - Clicca per dettagli" : "Trascina per spostare o duplicare, oppure clicca per dettagli"}
+                                    >
+                                       {/* Shift Header & Trash Hover Button */}
+                                      <div className="flex items-center justify-between gap-1">
+                                        <div className="flex items-center gap-1 flex-nowrap truncate min-w-0">
+                                          <span className="uppercase tracking-wider font-black truncate text-[10px] leading-tight shrink-0">{s.tipoTurno}</span>
+                                          {!s.id.startsWith("auto-") && !isReferenceDay && s.tipoTurno !== "Ferie" && s.tipoTurno !== "Riposo" && !lockedDays.includes(dateYMD) && (
+                                            <span className="text-[7px] font-black text-amber-800 bg-amber-100 border border-amber-300 px-0.5 rounded-xs shrink-0">📌</span>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                          {isInvalid && (
+                                            <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
+                                          )}
+                                          {s.tipoTurno === "Mattina" && <GenovaLandscapeIcon isMorning={true} />}
+                                          {s.tipoTurno === "Pomeriggio" && <GenovaLandscapeIcon isMorning={false} />}
+                                          {s.tipoTurno === "Notte" && <Moon className="w-4 h-4 text-slate-400" />}
+                                          {s.tipoTurno === "Pulizie" && <span className="text-sm leading-none" title="Pulizie / Supporto Alzate V1">🪣🧹</span>}
+                                          {s.tipoTurno === "Cucina" && <span className="text-sm leading-none">🍲</span>}
+                                          {s.note && s.note.trim().length > 0 && s.note !== "Programmazione automatica" && (
+                                            <span className="relative flex h-2 w-2 ml-0.5" title={`Nota: ${s.note}`}>
+                                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                                              <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-600"></span>
+                                            </span>
+                                          )}
+
+                                          {!isStaffRole && (
+                                            <>
+                                              {lockedDays.includes(dateYMD) ? (
+                                                <span className="p-0.5 rounded bg-slate-100 text-slate-500 opacity-0 group-hover/shift:opacity-100 transition-all duration-150" title="Questo giorno è completato e bloccato">
+                                                  <Lock className="w-3 h-3 text-emerald-600" />
+                                                </span>
+                                              ) : (
+                                                <button
+                                                  type="button"
+                                                  onClick={(e) => handleDeleteSingleShift(s.id, e)}
+                                                  className="p-0.5 rounded bg-rose-600 hover:bg-rose-700 text-white opacity-0 group-hover/shift:opacity-100 transition-all duration-150 shadow-xs z-10 cursor-pointer transform hover:scale-110"
+                                                  title="Elimina questo singolo turno"
+                                                >
+                                                  <Trash2 className="w-3 h-3" />
+                                                </button>
+                                              )}
+                                            </>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      {/* Shift Hours & Structure Badge */}
+                                      {s.tipoTurno !== "Ferie" && s.tipoTurno !== "Riposo" ? (
+                                        <div className="flex items-center justify-between text-xs font-mono font-bold opacity-90 border-t border-black/5 pt-0.5">
+                                          <span className="text-[10px]">{s.orarioInizio} - {s.orarioFine}</span>
+                                          {s.struttura && s.tipoTurno !== "Notte" && s.tipoTurno !== "Cucina" && s.tipoTurno !== "Pulizie" && (
+                                            <span className="bg-white/95 text-slate-800 px-1.5 py-0.5 rounded text-[8.5px] font-extrabold border border-black/10 uppercase tracking-tight flex items-center gap-0.5 shadow-3xs">
+                                              {(s.struttura === "Vannucci 1" || s.struttura === "Struttura 1") ? (
+                                                <span>Vannucci <strong className="text-[11px] font-black text-orange-600 leading-none">1</strong></span>
+                                              ) : (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2") ? (
+                                                <span>Vannucci <strong className="text-[11px] font-black text-yellow-600 leading-none">2</strong></span>
+                                              ) : (
+                                                <span>Vannucci <strong className="text-[11px] font-black text-emerald-600 leading-none">4</strong></span>
+                                              )}
+                                            </span>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <div className="text-[9.5px] font-medium opacity-80 border-t border-black/5 pt-0.5 italic">
+                                          {s.tipoTurno === "Ferie" ? "🏖️ Tutto il giorno" : "Giorno libero"}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()
+                              ) : (
+                                dayShifts.map(s => {
+                                  const validity = checkShiftValidity(s);
+                                  const isInvalid = !validity.valid && !isReferenceDay;
+                                  const isHovered = hoveredShiftId === s.id;
+                                  const isStaffHovered = hoveredStaffId === s.staffId;
+
+                                  return (
+                                    <div
+                                      key={s.id}
+                                      draggable={!isStaffRole && !isEffectivelyLocked}
+                                      onDragStart={(e) => {
+                                        if (!isStaffRole && !isEffectivelyLocked) handleDragStartSingleShift(e, s);
+                                      }}
+                                      onMouseEnter={() => {
+                                        setHoveredShiftId(s.id);
+                                        setHoveredStaffId(s.staffId);
+                                      }}
+                                      onMouseLeave={() => {
+                                        setHoveredShiftId(null);
+                                        setHoveredStaffId(null);
+                                      }}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleOpenDetailModal(s);
+                                      }}
+                                      className={`group/shift px-1.5 py-0.5 rounded-md border text-[10px] font-bold transition-all shadow-2xs relative flex items-center justify-between h-[29px] min-h-[29px] max-h-[29px] ${
+                                        isStaffRole || isEffectivelyLocked ? "cursor-pointer hover:shadow-md" : "cursor-grab active:cursor-grabbing"
+                                      } ${getShiftBadgeStyle(s.tipoTurno, s.orarioInizio, s.orarioFine, s.struttura)} ${
+                                        isInvalid ? "animate-pulse ring-2 ring-red-600 !border-red-600 !bg-red-100 !text-red-900" : ""
+                                      } ${
+                                        isHovered ? "ring-2 ring-indigo-600 shadow-md scale-[1.02] z-30" : isStaffHovered ? "ring-1 ring-indigo-400 shadow-xs" : ""
+                                      }`}
+                                      title={isInvalid ? `⚠️ ERRORE: ${validity.reason}` : `${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine})`}
+                                    >
+                                      <div className="flex items-center gap-1 flex-nowrap truncate min-w-0">
+                                        {s.tipoTurno === "Pulizie" ? <span>🪣</span> : s.tipoTurno === "Notte" ? <span>🌙</span> : s.tipoTurno === "Cucina" ? <span>🍲</span> : null}
+                                        <span className="uppercase font-black truncate text-[9px] leading-tight shrink-0">{s.tipoTurno}</span>
+                                        {s.struttura && !["Notte", "Riposo", "Ferie", "Cucina", "Pulizie"].includes(s.tipoTurno) && (
+                                          <span className="text-[7.5px] bg-white/95 px-1 rounded font-black text-slate-800 border border-slate-200">
+                                            V{s.struttura.replace(/\D/g, '')}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-1 shrink-0 font-mono text-[8.5px] font-bold">
+                                        <span>{s.orarioInizio}-{s.orarioFine}</span>
+                                        {!isStaffRole && !lockedDays.includes(dateYMD) && (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => handleDeleteSingleShift(s.id, e)}
+                                            className="p-0.5 rounded bg-rose-600 hover:bg-rose-700 text-white opacity-0 group-hover/shift:opacity-100 transition-all shadow-xs cursor-pointer"
+                                            title="Elimina turno"
+                                          >
+                                            <Trash2 className="w-2.5 h-2.5" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })
+                              )}
                             </div>
 
                             {/* SUBTLE HOVER ADD ICON FOR CELL (DOUBLE-CLICK PRIMARY) */}
@@ -4240,10 +4441,10 @@ function importaTurniResidenzaVannucci() {
                                   e.stopPropagation();
                                   handleOpenAddModal(member.id, dateYMD);
                                 }}
-                                className="absolute bottom-1.5 right-1.5 p-1 rounded-full bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-400 opacity-40 sm:opacity-0 group-hover/cell:opacity-100 transition-all cursor-pointer z-20 shadow-3xs flex items-center justify-center border border-slate-200"
+                                className="absolute bottom-1 right-1 p-0.5 rounded-full bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-400 opacity-0 group-hover/cell:opacity-100 transition-all cursor-pointer z-20 shadow-3xs flex items-center justify-center border border-slate-200"
                                 title="Aggiungi Turno"
                               >
-                                <Plus className="w-3.5 h-3.5" />
+                                <Plus className="w-3 h-3 stroke-[2.5]" />
                               </button>
                             )}
                           </div>
@@ -4291,14 +4492,10 @@ function importaTurniResidenzaVannucci() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setViewMode("roster")}
-                    className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                      viewMode === "roster"
-                        ? "bg-indigo-600 text-white shadow-xs font-black"
-                        : "text-indigo-200 hover:text-white hover:bg-indigo-800/60"
-                    }`}
+                    onClick={handleDeleteWeekShifts}
+                    className={`px-3 py-1 rounded-md text-xs font-black bg-rose-600 text-white shadow-xs hover:bg-rose-500 transition-all cursor-pointer whitespace-nowrap`}
                   >
-                    👤 {isStaffRole ? "Scheda Personale" : "Schede"}
+                    🗑️ Cancella Settimana
                   </button>
                 </div>
 
@@ -4469,10 +4666,10 @@ function importaTurniResidenzaVannucci() {
                             : isHolding
                             ? "bg-amber-200 text-amber-950 animate-pulse"
                             : isToday
-                            ? "bg-indigo-100 text-indigo-900 border-indigo-300"
+                            ? "bg-white text-indigo-950 border-indigo-400 border-b-4 opacity-100"
                             : isWeekend
-                            ? "bg-amber-50/80 text-amber-950"
-                            : "bg-slate-50 hover:bg-slate-100/80"
+                            ? "bg-amber-50 text-amber-950 opacity-100"
+                            : "bg-slate-50 hover:bg-slate-100 opacity-100"
                         }`}
                         title={`Giorno ${day.getDate()} ${getFullMonthName(day)} (${dayShiftsCount} turni).\n\n${isDayComplete(dateYMD) ? "✅ Giornata completa" : "❌ Mancanti:\n- " + getMissingShiftsForDay(dateYMD).join("\n- ")}\n\nTrascina per spostare o duplicare l'intero giorno.`}
                       >
@@ -4740,7 +4937,7 @@ function importaTurniResidenzaVannucci() {
       {viewMode === "roster" && (
         <div className={isFullScreen ? "fixed inset-0 z-45 bg-slate-50 p-4 sm:p-6 overflow-auto flex flex-col h-screen space-y-4" : "space-y-5"}>
           {isFullScreen && (
-            <div className="flex flex-wrap items-center justify-between bg-indigo-900 text-white p-2.5 rounded-xl mb-3 shadow-md shrink-0 gap-2 border border-indigo-800 text-xs">
+            <div className="flex flex-wrap items-center justify-between bg-indigo-900 text-white p-2.5 rounded-xl mb-1 shadow-md shrink-0 gap-2 border border-indigo-800 text-xs">
               {/* Left: View Mode Toggle & Direct Month Selector */}
               <div className="flex items-center gap-2 overflow-x-auto max-w-full">
                 <div className="flex items-center gap-1 bg-indigo-950 p-1 rounded-lg border border-indigo-700 shrink-0">
@@ -4768,14 +4965,10 @@ function importaTurniResidenzaVannucci() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setViewMode("roster")}
-                    className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                      viewMode === "roster"
-                        ? "bg-indigo-600 text-white shadow-xs font-black"
-                        : "text-indigo-200 hover:text-white hover:bg-indigo-800/60"
-                    }`}
+                    onClick={handleDeleteWeekShifts}
+                    className={`px-3 py-1 rounded-md text-xs font-black bg-rose-600 text-white shadow-xs hover:bg-rose-500 transition-all cursor-pointer whitespace-nowrap`}
                   >
-                    👤 {isStaffRole ? "Scheda Personale" : "Schede"}
+                    🗑️ Cancella Settimana
                   </button>
                 </div>
 
@@ -4981,9 +5174,9 @@ function importaTurniResidenzaVannucci() {
 
       {/* MODAL: ADD SHIFT */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl max-w-5xl w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b pb-3">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-6xl w-full p-5 shadow-2xl space-y-4 max-h-[95vh] flex flex-col">
+            <div className="flex items-center justify-between border-b pb-2 shrink-0">
               <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
                 <CalendarIcon className="w-5 h-5 text-indigo-600" />
                 <span>Aggiungi Turno nel Calendario</span>
@@ -4993,23 +5186,20 @@ function importaTurniResidenzaVannucci() {
               </button>
             </div>
 
-            <form onSubmit={handleFormSubmit} className="flex flex-col text-xs">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <form onSubmit={handleFormSubmit} className="flex flex-col text-xs overflow-hidden">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5 overflow-hidden">
                 
-                {/* LEFT COLUMN: Context Info */}
-                <div className="space-y-4">
+                {/* LEFT COLUMN: Context Info & Graphical Situation */}
+                <div className="space-y-3 flex flex-col">
                   {/* Informazione Operatore - locked/evidenziato */}
-                  <div className="bg-indigo-600/10 border-2 border-indigo-500/30 p-4 rounded-2xl flex items-center justify-between shadow-xs">
+                  <div className="bg-indigo-600/5 border border-indigo-500/20 p-3 rounded-2xl flex items-center justify-between shadow-3xs shrink-0">
                     <div>
-                      <span className="text-[10px] font-black uppercase tracking-widest text-indigo-700 block mb-1">Collaboratore Individuato</span>
-                      <span className="text-xl font-extrabold text-indigo-950 block leading-none">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-indigo-700 block mb-0.5">Operatore Selezionato</span>
+                      <span className="text-lg font-extrabold text-indigo-950 block leading-none">
                         {staff.find(st => st.id === newStaffId) ? `${staff.find(st => st.id === newStaffId)?.nome} ${staff.find(st => st.id === newStaffId)?.cognome}` : "Operatore"}
                       </span>
-                      <span className="text-xs font-semibold text-slate-500 block mt-1 uppercase tracking-wide">
-                        💼 {staff.find(st => st.id === newStaffId)?.ruolo || "Staff"}
-                      </span>
                     </div>
-                    <div className="w-12 h-12 rounded-full bg-indigo-600 text-white font-black flex items-center justify-center text-base border-2 border-white shadow-md uppercase shrink-0 ml-2">
+                    <div className="w-10 h-10 rounded-full bg-indigo-600 text-white font-black flex items-center justify-center text-sm border-2 border-white shadow-sm uppercase shrink-0 ml-2">
                       {(() => {
                         const activeStaff = staff.find(st => st.id === newStaffId);
                         return activeStaff ? `${activeStaff.nome.charAt(0)}${activeStaff.cognome.charAt(0)}` : "OP";
@@ -5017,16 +5207,71 @@ function importaTurniResidenzaVannucci() {
                     </div>
                   </div>
 
-                  {/* Data del Turno - Grande e per esteso */}
-                  <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-2xl text-center shadow-3xs">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-amber-800 block mb-1">Data Turno</span>
-                    <span className="text-base font-extrabold text-slate-800 block capitalize">
-                      📅 {formatItalianVerbalDate(newDate)}
-                    </span>
+                  {/* Situazione Grafica del Giorno (Richiesta Utente: Identica al hover) */}
+                  <div className="bg-slate-900 text-white p-3 rounded-2xl shadow-md border border-slate-700 flex flex-col gap-2 shrink-0">
+                    <div className="flex items-center justify-between border-b border-slate-700/50 pb-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400">Situazione Copertura</span>
+                        <span className="text-xs font-black text-slate-100 tracking-wide bg-slate-800 px-2 py-0.5 rounded-lg border border-slate-700">{formatItalianVerbalDate(newDate).toUpperCase()}</span>
+                      </div>
+                      {(() => {
+                        const cov = getDayCoverageDetails(newDate);
+                        return cov.isComplete ? (
+                          <span className="bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded-full text-[9px] font-black flex items-center gap-0.5">
+                            <CheckCircle2 className="w-2.5 h-2.5" /> OK
+                          </span>
+                        ) : (
+                          <span className="bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded-full text-[9px] font-black flex items-center gap-0.5">
+                            <AlertCircle className="w-2.5 h-2.5" /> {cov.totalCovered}/{cov.totalRequired}
+                          </span>
+                        );
+                      })()}
+                    </div>
+
+                    {(() => {
+                      const cov = getDayCoverageDetails(newDate);
+                      const renderMiniChip = (slotId: string, icon: string) => {
+                        const slot = cov.mandatorySlots.find(s => s.id === slotId) || cov.extraSlots.find(s => s.id === slotId);
+                        if (!slot) return null;
+                        const isCovered = slot.isCovered;
+                        return (
+                          <div key={slotId} className={`flex items-center gap-1 px-1.5 py-0.5 rounded-lg border text-[9px] font-bold truncate ${
+                            isCovered ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300" : "bg-rose-500/10 border-rose-500/40 text-rose-300"
+                          }`}>
+                            <span>{icon}</span>
+                            <span className={isCovered ? "text-white truncate" : "opacity-50"}>
+                              {isCovered ? slot.assignedStaff[0]?.nome : "-"}
+                            </span>
+                          </div>
+                        );
+                      };
+
+                      return (
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1 font-black text-[8px] text-indigo-400 uppercase tracking-tighter opacity-70">🏠 Strutture</div>
+                            <div className="grid grid-cols-1 gap-1">
+                              <div className="flex gap-1">{renderMiniChip("v1_m", "🌅")} {renderMiniChip("v1_p", "🌆")}</div>
+                              <div className="flex gap-1">{renderMiniChip("v2_m", "🌅")} {renderMiniChip("v2_p", "🌆")}</div>
+                              <div className="flex gap-1">{renderMiniChip("v4_m", "🌅")} {renderMiniChip("v4_p", "🌆")}</div>
+                            </div>
+                          </div>
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1 font-black text-[8px] text-indigo-400 uppercase tracking-tighter opacity-70">⚙️ Servizi</div>
+                            <div className="grid grid-cols-1 gap-1">
+                              {renderMiniChip("notte", "🌙")}
+                              {renderMiniChip("cucina", "🍲")}
+                              {renderMiniChip("alzate", "🪣")}
+                              {renderMiniChip("pulizie", "🧹")}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
 
-                  {/* Scelta Struttura - tre pulsanti indipendenti con colori specifici */}
-                  <div className="space-y-1.5">
+                  {/* Scelta Struttura */}
+                  <div className="space-y-1.5 shrink-0">
                     <label className="block font-black text-slate-700 tracking-wide uppercase text-[10px]">Struttura di Assegnazione *</label>
                     <div className="grid grid-cols-3 gap-2">
                   {(() => {
@@ -5093,14 +5338,14 @@ function importaTurniResidenzaVannucci() {
               </div>
             </div>
 
-            {/* MIDDLE COLUMN: Presets */}
-            <div className="space-y-4">
-              {/* Shift Presets */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="block font-black text-slate-700 tracking-wide uppercase text-[10px]">
-                    Preset Orari & Turni ({savedPresets.length}) *
-                  </label>
+                {/* MIDDLE COLUMN: Presets */}
+                <div className="space-y-3 overflow-hidden flex flex-col">
+                  {/* Shift Presets */}
+                  <div className="space-y-2 flex flex-col overflow-hidden">
+                    <div className="flex items-center justify-between shrink-0">
+                      <label className="block font-black text-slate-700 tracking-wide uppercase text-[10px]">
+                        Preset Orari & Turni ({savedPresets.length})
+                      </label>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
@@ -5128,99 +5373,6 @@ function importaTurniResidenzaVannucci() {
                   </div>
                 </div>
 
-                {/* SPECIAL RULE SMART BANNERS FOR PULIZIE + NOTTE */}
-                {(() => {
-                  const memberDayShifts = shifts.filter(s => s.staffId === newStaffId && s.data === newDate && s.tipoTurno !== "Riposo");
-                  const hasPulizieOnDay = memberDayShifts.some(s => s.tipoTurno === "Pulizie" || (s.orarioInizio === "07:00" && s.orarioFine === "11:00"));
-                  const hasNotteOnDay = memberDayShifts.some(s => s.tipoTurno === "Notte" || (s.orarioInizio === "23:00" && s.orarioFine === "07:00"));
-                  const isComboAlreadyActive = hasPulizieOnDay && hasNotteOnDay;
-
-                  if (isComboAlreadyActive) {
-                    return (
-                      <div className="bg-gradient-to-r from-teal-800 via-indigo-900 to-blue-900 text-white rounded-xl p-2.5 shadow-md space-y-1 animate-in fade-in duration-200 border border-teal-400/40">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5 font-black text-xs text-amber-300">
-                            <span>⚡</span>
-                            <span>Combo Speciale Già Assegnata</span>
-                          </div>
-                          <span className="text-[9px] font-bold bg-white/20 text-white px-2 py-0.5 rounded-full">5h Oggi (4h+1h)</span>
-                        </div>
-                        <p className="text-[10px] text-teal-100 leading-tight">
-                          Questo giorno ha già sia <strong>🪣 Pulizie (07-11)</strong> che <strong>🌙 Notte (23-07)</strong> con 12h di riposo garantite.
-                        </p>
-                      </div>
-                    );
-                  }
-
-                  if (hasPulizieOnDay && !hasNotteOnDay) {
-                    return (
-                      <div className="bg-gradient-to-r from-teal-500/15 via-indigo-500/15 to-blue-500/15 border-2 border-teal-500/60 rounded-xl p-3 space-y-2 shadow-xs animate-in fade-in duration-200">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5 font-black text-teal-950 text-xs">
-                            <span className="text-base leading-none">⚡</span>
-                            <span>Regola Speciale Disponibile!</span>
-                          </div>
-                          <span className="text-[9px] font-bold bg-teal-600 text-white px-2 py-0.5 rounded-full">12h Riposo OK</span>
-                        </div>
-                        <p className="text-[10px] text-slate-700 leading-tight">
-                          L'operatore ha già il turno <strong>🪣 Pulizie (07:00-11:00)</strong>. In base alla regola speciale, puoi caricare anche il turno di <strong>🌙 Notte (23:00-07:00)</strong> nello stesso giorno (1h conteggiata oggi).
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => handleFastSubmit({ tipoTurno: "Notte", orarioInizio: "23:00", orarioFine: "07:00" })}
-                          className="w-full py-2 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-extrabold rounded-lg text-xs shadow flex items-center justify-center gap-2 cursor-pointer transition-transform active:scale-95"
-                        >
-                          <Moon className="w-3.5 h-3.5 text-blue-200" />
-                          <span>+ Aggiungi Turno Notte (23:00 - 07:00)</span>
-                        </button>
-                      </div>
-                    );
-                  }
-
-                  if (hasNotteOnDay && !hasPulizieOnDay) {
-                    return (
-                      <div className="bg-gradient-to-r from-blue-500/15 via-indigo-500/15 to-teal-500/15 border-2 border-blue-500/60 rounded-xl p-3 space-y-2 shadow-xs animate-in fade-in duration-200">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5 font-black text-blue-950 text-xs">
-                            <span className="text-base leading-none">⚡</span>
-                            <span>Regola Speciale Disponibile!</span>
-                          </div>
-                          <span className="text-[9px] font-bold bg-blue-600 text-white px-2 py-0.5 rounded-full">12h Riposo OK</span>
-                        </div>
-                        <p className="text-[10px] text-slate-700 leading-tight">
-                          L'operatore ha già il turno <strong>🌙 Notte (23:00-07:00)</strong>. In base alla regola speciale, puoi caricare anche il turno di <strong>🪣 Pulizie (07:00-11:00)</strong> nello stesso giorno.
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => handleFastSubmit({ tipoTurno: "Pulizie", orarioInizio: "07:00", orarioFine: "11:00" })}
-                          className="w-full py-2 bg-gradient-to-r from-teal-600 to-emerald-700 hover:from-teal-700 hover:to-emerald-800 text-white font-extrabold rounded-lg text-xs shadow flex items-center justify-center gap-2 cursor-pointer transition-transform active:scale-95"
-                        >
-                          <span>🪣🧹</span>
-                          <span>+ Aggiungi Turno Pulizie (07:00 - 11:00)</span>
-                        </button>
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <div className="bg-gradient-to-r from-teal-50 via-indigo-50 to-blue-50 border-2 border-indigo-300/80 rounded-xl p-2.5 space-y-1.5 shadow-2xs">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-indigo-950 flex items-center gap-1">
-                          <span>⚡ Regola Speciale Turni</span>
-                          <span className="text-[9px] bg-indigo-600 text-white font-bold px-1.5 py-0.2 rounded-full">1-Click Combo</span>
-                        </span>
-                        <span className="text-[9px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.2 rounded">5h oggi (4h+1h)</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleAddComboPulizieNotte(newStaffId, newDate)}
-                        className="w-full py-2 bg-gradient-to-r from-teal-600 via-indigo-600 to-blue-700 hover:from-teal-700 hover:via-indigo-700 hover:to-blue-800 text-white font-black rounded-lg text-xs shadow flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95"
-                      >
-                        <span>✨ Carica Insieme: Pulizie (07-11) + Notte (23-07)</span>
-                      </button>
-                    </div>
-                  );
-                })()}
 
                 {/* Inline form to create and save a new preset */}
                 {showAddPresetForm && (
@@ -5296,7 +5448,7 @@ function importaTurniResidenzaVannucci() {
                 )}
 
                 {/* Preset Buttons Grid */}
-                <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
+                <div className="grid grid-cols-2 gap-2">
                   {savedPresets
                     .filter((preset) => {
                       if (!preset.struttura || preset.tipoTurno === "Cucina" || preset.tipoTurno === "Notte" || preset.tipoTurno === "Pulizie") {
@@ -5377,71 +5529,98 @@ function importaTurniResidenzaVannucci() {
                   {/* Turno Notturno Generale */}
                   <button
                     type="button"
+                    disabled={hasNotteOnSelectedDay}
                     onDoubleClick={() => {
+                      if (hasNotteOnSelectedDay) return;
                       setNewNote("Turno di Notte");
                       handleFastSubmit({ tipoTurno: "Notte", orarioInizio: "23:00", orarioFine: "07:00" });
                     }}
                     onClick={() => {
+                      if (hasNotteOnSelectedDay) return;
                       setNewTipoTurno("Notte");
                       setNewOrarioInizio("23:00");
                       setNewOrarioFine("07:00");
                       if (!newNote) setNewNote("Turno di Notte");
                     }}
-                    className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
-                      newTipoTurno === "Notte" && newOrarioInizio === "23:00" && newOrarioFine === "07:00" ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30" : "bg-blue-50/80 border-blue-200 hover:bg-blue-100 text-blue-900"
+                    className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                      hasNotteOnSelectedDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
+                      "cursor-pointer " + (newTipoTurno === "Notte" && newOrarioInizio === "23:00" && newOrarioFine === "07:00" ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30" : "bg-blue-50/80 border-blue-200 hover:bg-blue-100 text-blue-900")
                     }`}
+                    title={hasNotteOnSelectedDay ? "Turno Notte già assegnato per questo giorno" : "Clicca per selezionare il turno Notte"}
                   >
                     <span className="font-extrabold text-[12px]">🌙 Notte</span>
-                    <span className="text-[9px] opacity-75 font-normal">23:00 - 07:00</span>
+                    <span className="text-[9px] opacity-75 font-normal">{hasNotteOnSelectedDay ? "Già assegnato" : "23:00 - 07:00"}</span>
                   </button>
 
                   {/* Servizi Comuni: Cucina */}
                   <button
                     type="button"
+                    disabled={hasCucinaOnSelectedDay}
                     onDoubleClick={() => {
+                      if (hasCucinaOnSelectedDay) return;
                       setNewNote("Servizio Cucina e Mensa");
                       handleFastSubmit({ tipoTurno: "Cucina", orarioInizio: "10:30", orarioFine: "15:00" });
                     }}
                     onClick={() => {
+                      if (hasCucinaOnSelectedDay) return;
                       setNewTipoTurno("Cucina");
                       setNewOrarioInizio("10:30");
                       setNewOrarioFine("15:00");
                       if (!newNote) setNewNote("Servizio Cucina e Mensa");
                     }}
-                    className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
-                      newTipoTurno === "Cucina" && newOrarioInizio === "10:30" && newOrarioFine === "15:00" ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30" : "bg-sky-50/80 border-sky-200 hover:bg-sky-100 text-sky-900"
+                    className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                      hasCucinaOnSelectedDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
+                      "cursor-pointer " + (newTipoTurno === "Cucina" && newOrarioInizio === "10:30" && newOrarioFine === "15:00" ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30" : "bg-sky-50/80 border-sky-300 hover:bg-sky-100 text-sky-950")
                     }`}
+                    title={hasCucinaOnSelectedDay ? "Turno Cucina già assegnato per questo giorno" : "Clicca per selezionare il turno Cucina"}
                   >
                     <span className="font-extrabold text-[12px]">🍲 Cucina</span>
-                    <span className="text-[9px] opacity-75 font-normal">10:30 - 15:00</span>
+                    <span className="text-[9px] opacity-75 font-normal">{hasCucinaOnSelectedDay ? "Già assegnato" : "10:30 - 15:00"}</span>
                   </button>
 
                   {/* Servizi Comuni: Pulizie */}
                   <button
                     type="button"
+                    disabled={hasPulizieOnSelectedDay}
                     onDoubleClick={() => {
+                      if (hasPulizieOnSelectedDay) return;
                       setNewNote("Servizio Pulizie & Supporto Alzate");
                       handleFastSubmit({ tipoTurno: "Pulizie", orarioInizio: "07:00", orarioFine: "11:00" });
                     }}
                     onClick={() => {
+                      if (hasPulizieOnSelectedDay) return;
                       setNewTipoTurno("Pulizie");
                       setNewOrarioInizio("07:00");
                       setNewOrarioFine("11:00");
                       if (!newNote) setNewNote("Servizio Pulizie & Supporto Alzate");
                     }}
-                    className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
-                      newTipoTurno === "Pulizie" && newOrarioInizio === "07:00" && newOrarioFine === "11:00" ? "bg-teal-600 border-teal-700 text-white ring-4 ring-teal-600/30" : "bg-teal-50/80 border-teal-200 hover:bg-teal-100 text-teal-950"
+                    className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                      hasPulizieOnSelectedDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
+                      "cursor-pointer " + (newTipoTurno === "Pulizie" && newOrarioInizio === "07:00" && newOrarioFine === "11:00" ? "bg-teal-600 border-teal-700 text-white ring-4 ring-teal-600/30" : "bg-teal-50/80 border-teal-200 hover:bg-teal-100 text-teal-950")
                     }`}
+                    title={hasPulizieOnSelectedDay ? "Turno Pulizie già assegnato per questo giorno" : "Clicca per selezionare il turno Pulizie"}
                   >
                     <span className="font-extrabold text-[12px] flex items-center gap-1">🪣🧹 Pulizie</span>
-                    <span className="text-[9px] opacity-75 font-normal">07:00 - 11:00 (Aiuto Alzate V1)</span>
+                    <span className="text-[9px] opacity-75 font-normal">{hasPulizieOnSelectedDay ? "Già assegnato" : "07:00 - 11:00 (Aiuto Alzate V1)"}</span>
                   </button>
 
                   {/* COMBO SPECIALE 2-COL BUTTON */}
                   <button
                     type="button"
-                    onClick={() => handleAddComboPulizieNotte(newStaffId, newDate)}
-                    className="col-span-2 p-2.5 rounded-xl border-2 border-teal-500/60 bg-gradient-to-r from-teal-500/15 via-indigo-500/15 to-blue-500/15 hover:from-teal-500/25 hover:to-blue-500/25 text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer shadow-xs"
+                    disabled={hasPulizieOnSelectedDay || hasNotteOnSelectedDay}
+                    onDoubleClick={() => {
+                      if (hasPulizieOnSelectedDay || hasNotteOnSelectedDay) return;
+                      handleAddComboPulizieNotte(newStaffId, newDate, newStruttura);
+                    }}
+                    onClick={() => {
+                      if (hasPulizieOnSelectedDay || hasNotteOnSelectedDay) return;
+                      handleAddComboPulizieNotte(newStaffId, newDate, newStruttura);
+                    }}
+                    className={`col-span-2 p-2.5 rounded-xl border-2 font-bold transition-all text-xs flex flex-col justify-center shadow-xs ${
+                      (hasPulizieOnSelectedDay || hasNotteOnSelectedDay)
+                        ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400"
+                        : "cursor-pointer border-teal-500/60 bg-gradient-to-r from-teal-500/15 via-indigo-500/15 to-blue-500/15 hover:from-teal-500/25 hover:to-blue-500/25"
+                    }`}
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-black text-xs text-indigo-950 flex items-center gap-1">
@@ -5451,7 +5630,9 @@ function importaTurniResidenzaVannucci() {
                       <span className="text-[9px] font-extrabold text-amber-800 bg-amber-100 px-1.5 py-0.2 rounded">5h oggi (4h+1h)</span>
                     </div>
                     <span className="text-[10px] text-slate-700 font-semibold mt-0.5">
-                      ✨ Carica: 🪣 Pulizie (07:00-11:00) + 🌙 Notte (23:00-07:00)
+                      {hasPulizieOnSelectedDay || hasNotteOnSelectedDay 
+                        ? "⚠️ Pulizie o Notte già presenti in questo giorno" 
+                        : "✨ Carica: 🪣 Pulizie (07:00-11:00) + 🌙 Notte (23:00-07:00)"}
                     </span>
                   </button>
 
@@ -5475,24 +5656,25 @@ function importaTurniResidenzaVannucci() {
                   {/* Ferie */}
                   <button
                     type="button"
+                    onDoubleClick={() => handleFastSubmit({ tipoTurno: "Ferie", orarioInizio: "00:00", orarioFine: "00:00" })}
                     onClick={() => {
                       handleOpenVacationModal(newStaffId, newDate);
                     }}
                     className="p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer bg-gradient-to-tr from-amber-500 to-orange-500 text-white shadow-xs hover:from-amber-600 hover:to-orange-600 ring-2 ring-amber-400/30"
                   >
                     <span className="font-extrabold text-[12px] flex items-center gap-1">🏖️ Ferie</span>
-                    <span className="text-[9px] opacity-90 font-normal">Apri calendario ferie</span>
+                    <span className="text-[9px] opacity-90 font-normal">Doppio clic: carica ferie / Clic: apri calendario</span>
                   </button>
                 </div>
               </div>
             </div>
 
             {/* RIGHT COLUMN: Custom Time & Notes */}
-            <div className="space-y-4 flex flex-col">
+            <div className="space-y-3 flex flex-col overflow-hidden">
               {/* Custom Time Picker & Quick Save */}
-              <div className="bg-indigo-50/70 p-3 rounded-xl border border-indigo-100 space-y-2">
+              <div className="bg-indigo-50/70 p-3 rounded-xl border border-indigo-100 space-y-2 shrink-0">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black uppercase text-indigo-900 block">Modifica / Personalizza Orario Effettivo</span>
+                    <span className="text-[9px] font-black uppercase text-indigo-900 block tracking-tight">Personalizzazione Orario</span>
                     <button
                       type="button"
                       onClick={(e) => {
@@ -6231,52 +6413,64 @@ function importaTurniResidenzaVannucci() {
                           {/* Turno Notturno Generale */}
                           <button
                             type="button"
+                            disabled={hasNotteOnEditDay}
                             onClick={() => {
+                              if (hasNotteOnEditDay) return;
                               setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Notte" } : prev);
                               setEditShiftInizio("23:00");
                               setEditShiftFine("07:00");
                               if (!editShiftNote) setEditShiftNote("Turno di Notte");
                             }}
-                            className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
-                              selectedShiftForDetail?.tipoTurno === "Notte" && editShiftInizio === "23:00" && editShiftFine === "07:00" ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30" : "bg-blue-50/80 border-blue-200 hover:bg-blue-100 text-blue-900"
+                            className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                              hasNotteOnEditDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
+                              "cursor-pointer " + (selectedShiftForDetail?.tipoTurno === "Notte" && editShiftInizio === "23:00" && editShiftFine === "07:00" ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30" : "bg-blue-50/80 border-blue-200 hover:bg-blue-100 text-blue-900")
                             }`}
+                            title={hasNotteOnEditDay ? "Turno Notte già assegnato per questo giorno" : "Clicca per selezionare il turno Notte"}
                           >
                             <span className="font-extrabold text-[12px]">🌙 Notte</span>
-                            <span className="text-[9px] opacity-75 font-normal">23:00 - 07:00</span>
+                            <span className="text-[9px] opacity-75 font-normal">{hasNotteOnEditDay ? "Già assegnato" : "23:00 - 07:00"}</span>
                           </button>
 
                           {/* Servizi Comuni: Cucina */}
                           <button
                             type="button"
+                            disabled={hasCucinaOnEditDay}
                             onClick={() => {
+                              if (hasCucinaOnEditDay) return;
                               setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Cucina" } : prev);
                               setEditShiftInizio("10:30");
                               setEditShiftFine("15:00");
                               if (!editShiftNote) setEditShiftNote("Servizio Cucina e Mensa");
                             }}
-                            className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
-                              selectedShiftForDetail?.tipoTurno === "Cucina" && editShiftInizio === "10:30" && editShiftFine === "15:00" ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30" : "bg-sky-50/80 border-sky-200 hover:bg-sky-100 text-sky-900"
+                            className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                              hasCucinaOnEditDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
+                              "cursor-pointer " + (selectedShiftForDetail?.tipoTurno === "Cucina" && editShiftInizio === "10:30" && editShiftFine === "15:00" ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30" : "bg-sky-50/80 border-sky-200 hover:bg-sky-100 text-sky-900")
                             }`}
+                            title={hasCucinaOnEditDay ? "Turno Cucina già assegnato per questo giorno" : "Clicca per selezionare il turno Cucina"}
                           >
                             <span className="font-extrabold text-[12px]">🍲 Cucina</span>
-                            <span className="text-[9px] opacity-75 font-normal">10:30 - 15:00</span>
+                            <span className="text-[9px] opacity-75 font-normal">{hasCucinaOnEditDay ? "Già assegnato" : "10:30 - 15:00"}</span>
                           </button>
 
                           {/* Servizi Comuni: Pulizie */}
                           <button
                             type="button"
+                            disabled={hasPulizieOnEditDay}
                             onClick={() => {
-                              setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Mattina" } : prev);
+                              if (hasPulizieOnEditDay) return;
+                              setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Pulizie" } : prev);
                               setEditShiftInizio("07:00");
                               setEditShiftFine("11:00");
-                              if (!editShiftNote) setEditShiftNote("Pulizie");
+                              if (!editShiftNote) setEditShiftNote("Servizio Pulizie & Supporto Alzate");
                             }}
-                            className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
-                              selectedShiftForDetail?.tipoTurno === "Mattina" && editShiftInizio === "07:00" && editShiftFine === "11:00" ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/30" : "bg-orange-50/80 border-orange-200 hover:bg-orange-100 text-orange-900"
+                            className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                              hasPulizieOnEditDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
+                              "cursor-pointer " + (selectedShiftForDetail?.tipoTurno === "Pulizie" && editShiftInizio === "07:00" && editShiftFine === "11:00" ? "bg-teal-600 border-teal-700 text-white ring-4 ring-teal-600/30" : "bg-teal-50/80 border-teal-200 hover:bg-teal-100 text-teal-950")
                             }`}
+                            title={hasPulizieOnEditDay ? "Turno Pulizie già assegnato per questo giorno" : "Clicca per selezionare il turno Pulizie"}
                           >
-                            <span className="font-extrabold text-[12px]">🧹 Pulizie</span>
-                            <span className="text-[9px] opacity-75 font-normal">07:00 - 11:00 (Aiuto Alzate V1)</span>
+                            <span className="font-extrabold text-[12px] flex items-center gap-1">🪣🧹 Pulizie</span>
+                            <span className="text-[9px] opacity-75 font-normal">{hasPulizieOnEditDay ? "Già assegnato" : "07:00 - 11:00"}</span>
                           </button>
 
                           {/* Riposo */}
@@ -6918,204 +7112,273 @@ function importaTurniResidenzaVannucci() {
         </div>
       )}
 
-      {/* Floating Day Coverage Tooltip / Inspector on Hover - Ultra Visual & Graphic */}
+      {/* Floating Day Coverage Tooltip / Inspector on Hover - Ultra Streamlined 2-Row Symbolic Graphic Layout */}
       {hoveredDayCoverageDate && (() => {
         const cov = getDayCoverageDetails(hoveredDayCoverageDate);
         const formatItalianCoverageDate = (dateStr: string) => {
           const parts = dateStr.split("-");
           if (parts.length !== 3) return dateStr;
           const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-          const weekday = d.toLocaleDateString("it-IT", { weekday: "long" });
+          const weekday = d.toLocaleDateString("it-IT", { weekday: "short" });
           const dayNum = d.getDate();
-          const monthName = d.toLocaleDateString("it-IT", { month: "long" });
+          const monthName = d.toLocaleDateString("it-IT", { month: "short" });
           const year = d.getFullYear();
-          return `${weekday.charAt(0).toUpperCase() + weekday.slice(1)} ${dayNum} ${monthName} ${year}`;
+          return `${weekday.toUpperCase()} ${dayNum} ${monthName.toUpperCase()} ${year}`;
         };
 
-        // Group into structures for immediate visual comprehension
-        const v1Morning = cov.mandatorySlots.find(s => s.id === "v1_m");
-        const v1Afternoon = cov.mandatorySlots.find(s => s.id === "v1_p");
-        const v2Morning = cov.mandatorySlots.find(s => s.id === "v2_m");
-        const v2Afternoon = cov.mandatorySlots.find(s => s.id === "v2_p");
-        const v4Morning = cov.mandatorySlots.find(s => s.id === "v4_m");
-        const v4Afternoon = cov.mandatorySlots.find(s => s.id === "v4_p");
+        const v1_m = cov.mandatorySlots.find(s => s.id === "v1_m");
+        const v1_p = cov.mandatorySlots.find(s => s.id === "v1_p");
+        const v2_m = cov.mandatorySlots.find(s => s.id === "v2_m");
+        const v2_p = cov.mandatorySlots.find(s => s.id === "v2_p");
+        const v4_m = cov.mandatorySlots.find(s => s.id === "v4_m");
+        const v4_p = cov.mandatorySlots.find(s => s.id === "v4_p");
         const notteSlot = cov.mandatorySlots.find(s => s.id === "notte");
         const cucinaSlot = cov.mandatorySlots.find(s => s.id === "cucina");
+        const alzateSlot = cov.mandatorySlots.find(s => s.id === "alzate");
         const pulizieSlot = cov.extraSlots.find(s => s.id === "pulizie");
 
-        const renderShiftBadge = (slot: typeof v1Morning, shortLabel: string, icon: string) => {
+        const renderShiftSymbolChip = (slot: typeof v1_m, icon: string, shortName: string) => {
           if (!slot) return null;
           if (slot.isCovered) {
-            const staffNames = slot.assignedStaff.map(s => `${s.nome} ${s.cognome?.charAt(0) || ""}.`).join(", ");
+            const firstName = slot.assignedStaff[0]?.nome || "✓";
             return (
-              <div className="flex-1 bg-emerald-500/15 border border-emerald-500/40 rounded-lg px-2 py-1.5 flex items-center justify-between gap-1.5 shadow-xs">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="text-xs shrink-0">{icon}</span>
-                  <div className="min-w-0">
-                    <div className="text-[10px] font-black text-emerald-400 uppercase tracking-tight">{shortLabel}</div>
-                    <div className="text-[11px] font-bold text-slate-100 truncate">{staffNames}</div>
-                  </div>
-                </div>
-                <span className="w-4 h-4 rounded-full bg-emerald-500 text-slate-950 font-black text-[10px] flex items-center justify-center shrink-0">✓</span>
-              </div>
+              <span
+                key={slot.id}
+                title={`${shortName}: ${slot.assignedStaff.map(s => `${s.nome} ${s.cognome}`).join(", ")}`}
+                className="flex items-center gap-1 bg-emerald-500/15 border border-emerald-500/50 text-emerald-300 px-1.5 py-0.5 rounded-md text-[11px] font-bold shadow-2xs truncate max-w-[105px]"
+              >
+                <span>{icon}</span>
+                <span className="text-white truncate">{firstName}</span>
+                <span className="text-emerald-400 text-[10px] font-black">✓</span>
+              </span>
             );
           }
           return (
-            <div className="flex-1 bg-rose-500/20 border border-rose-500/60 rounded-lg px-2 py-1.5 flex items-center justify-between gap-1.5 shadow-xs animate-pulse">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <span className="text-xs shrink-0">{icon}</span>
-                <div className="min-w-0">
-                  <div className="text-[10px] font-black text-rose-400 uppercase tracking-tight">{shortLabel}</div>
-                  <div className="text-[11px] font-black text-rose-300">MANCA ⚠️</div>
-                </div>
-              </div>
-              <span className="w-4 h-4 rounded-full bg-rose-500 text-white font-black text-[10px] flex items-center justify-center shrink-0">✗</span>
-            </div>
+            <span
+              key={slot.id}
+              title={`${shortName}: Non assegnato`}
+              className="flex items-center gap-1 bg-rose-500/20 border border-rose-500/60 text-rose-300 px-1.5 py-0.5 rounded-md text-[11px] font-bold shadow-2xs"
+            >
+              <span>{icon}</span>
+              <span className="text-rose-400 text-[11px] font-black">❌</span>
+            </span>
           );
         };
 
-        const percentCovered = Math.round((cov.totalCovered / cov.totalRequired) * 100);
-
         return (
           <div
-            className="fixed z-50 pointer-events-none transition-all duration-100 ease-out"
+            className="fixed z-50 pointer-events-none transition-all duration-70 ease-out"
             style={{
               left: hoveredDayCoveragePos
-                ? Math.min(Math.max(16, hoveredDayCoveragePos.x - 170), window.innerWidth - 370)
+                ? Math.min(Math.max(16, hoveredDayCoveragePos.x - 240), window.innerWidth - 500)
                 : "50%",
               top: hoveredDayCoveragePos
-                ? hoveredDayCoveragePos.y + 24 + 420 > window.innerHeight
-                  ? Math.max(16, hoveredDayCoveragePos.y - 430)
+                ? hoveredDayCoveragePos.y + 24 + 180 > window.innerHeight
+                  ? Math.max(16, hoveredDayCoveragePos.y - 190)
                   : hoveredDayCoveragePos.y + 16
                 : "20%",
-              width: "350px"
+              width: "480px"
             }}
           >
-            <div className="bg-slate-950/95 backdrop-blur-xl text-white border-2 border-slate-700/80 rounded-2xl shadow-2xl p-3.5 space-y-2.5 text-xs ring-2 ring-black/40">
+            <div className={`bg-slate-950/95 backdrop-blur-xl text-white border-2 ${
+              cov.isComplete ? "border-emerald-500/70 ring-2 ring-emerald-500/30" : "border-slate-700/80 ring-2 ring-slate-900/60"
+            } rounded-2xl shadow-2xl p-2.5 space-y-2 text-xs`}>
               
-              {/* Header: Date + Visual Badge */}
-              <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
-                <div className="min-w-0">
-                  <div className="font-black text-sm text-slate-100 capitalize truncate flex items-center gap-1.5">
-                    <CalendarDays className="w-4 h-4 text-indigo-400 shrink-0" />
-                    <span>{formatItalianCoverageDate(hoveredDayCoverageDate)}</span>
-                  </div>
+              {/* Header: Date + Status Badge */}
+              <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-1.5 px-0.5">
+                <div className="flex items-center gap-1.5">
+                  <CalendarDays className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                  <span className="font-extrabold text-xs text-slate-100 tracking-wide">
+                    {formatItalianCoverageDate(hoveredDayCoverageDate)}
+                  </span>
                 </div>
-
                 {cov.isComplete ? (
-                  <div className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 px-2.5 py-0.5 rounded-full text-[10px] font-black flex items-center gap-1 shrink-0 shadow-xs">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                    COMPLETO
-                  </div>
+                  <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 px-2 py-0.5 rounded-full text-[10px] font-black flex items-center gap-1 shrink-0">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    TUTTO COPERTO ✨
+                  </span>
                 ) : (
-                  <div className="bg-rose-500/25 text-rose-300 border border-rose-500/60 px-2.5 py-0.5 rounded-full text-[10px] font-black flex items-center gap-1 shrink-0 shadow-xs">
-                    <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
-                    {cov.missingMandatory.length} DA ASSEGNARE
-                  </div>
+                  <span className="bg-amber-500/20 text-amber-300 border border-amber-500/50 px-2 py-0.5 rounded-full text-[10px] font-black flex items-center gap-1 shrink-0">
+                    <AlertCircle className="w-3 h-3 text-amber-400" />
+                    {cov.totalCovered}/{cov.totalRequired}
+                  </span>
                 )}
               </div>
 
-              {/* Graphical Progress Bar */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-[10px] font-bold text-slate-400">
-                  <span>Copertura Turni Obbligatori</span>
-                  <span className={cov.isComplete ? "text-emerald-400 font-extrabold" : "text-amber-400 font-extrabold"}>
-                    {cov.totalCovered} di {cov.totalRequired} ({percentCovered}%)
-                  </span>
+              {/* RIGA 1: SITUAZIONE STRUTTURE (V1, V2, V4) */}
+              <div className="flex items-center gap-1.5">
+                {/* V1 */}
+                <div className="flex-1 bg-slate-900/90 border border-slate-800 rounded-xl p-1.5 flex flex-col gap-1 min-w-0">
+                  <div className="flex items-center justify-between text-[10px] font-black text-indigo-300 uppercase tracking-tight px-0.5">
+                    <span>🏠 V1</span>
+                    {v1_m?.isCovered && v1_p?.isCovered ? (
+                      <span className="text-emerald-400 text-[10px]">✓</span>
+                    ) : (
+                      <span className="text-rose-400 text-[10px]">⚠️</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {renderShiftSymbolChip(v1_m, "🌅", "V1 Mattina")}
+                    {renderShiftSymbolChip(v1_p, "🌆", "V1 Pomeriggio")}
+                  </div>
                 </div>
-                <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden flex">
-                  <div
-                    className={`h-full transition-all duration-300 ${
-                      cov.isComplete ? "bg-emerald-500" : percentCovered >= 75 ? "bg-amber-500" : "bg-rose-500"
-                    }`}
-                    style={{ width: `${percentCovered}%` }}
-                  />
+
+                {/* V2 */}
+                <div className="flex-1 bg-slate-900/90 border border-slate-800 rounded-xl p-1.5 flex flex-col gap-1 min-w-0">
+                  <div className="flex items-center justify-between text-[10px] font-black text-teal-300 uppercase tracking-tight px-0.5">
+                    <span>🏠 V2</span>
+                    {v2_m?.isCovered && v2_p?.isCovered ? (
+                      <span className="text-emerald-400 text-[10px]">✓</span>
+                    ) : (
+                      <span className="text-rose-400 text-[10px]">⚠️</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {renderShiftSymbolChip(v2_m, "🌅", "V2 Mattina")}
+                    {renderShiftSymbolChip(v2_p, "🌆", "V2 Pomeriggio")}
+                  </div>
+                </div>
+
+                {/* V4 */}
+                <div className="flex-1 bg-slate-900/90 border border-slate-800 rounded-xl p-1.5 flex flex-col gap-1 min-w-0">
+                  <div className="flex items-center justify-between text-[10px] font-black text-purple-300 uppercase tracking-tight px-0.5">
+                    <span>🏠 V4</span>
+                    {v4_m?.isCovered && v4_p?.isCovered ? (
+                      <span className="text-emerald-400 text-[10px]">✓</span>
+                    ) : (
+                      <span className="text-rose-400 text-[10px]">⚠️</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {renderShiftSymbolChip(v4_m, "🌅", "V4 Mattina")}
+                    {renderShiftSymbolChip(v4_p, "🌆", "V4 Pomeriggio")}
+                  </div>
                 </div>
               </div>
 
-              {/* Graphic Structure Matrix */}
-              <div className="space-y-1.5 pt-1">
-                {/* Vannucci 1 */}
-                <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-1.5 space-y-1">
-                  <div className="text-[10px] font-black uppercase text-indigo-300 tracking-wider px-1">
-                    🏠 Vannucci 1
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {renderShiftBadge(v1Morning, "Mattina", "🌅")}
-                    {renderShiftBadge(v1Afternoon, "Pomeriggio", "🌆")}
-                  </div>
-                </div>
-
-                {/* Vannucci 2 */}
-                <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-1.5 space-y-1">
-                  <div className="text-[10px] font-black uppercase text-teal-300 tracking-wider px-1">
-                    🏠 Vannucci 2
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {renderShiftBadge(v2Morning, "Mattina", "🌅")}
-                    {renderShiftBadge(v2Afternoon, "Pomeriggio", "🌆")}
-                  </div>
-                </div>
-
-                {/* Vannucci 4 */}
-                <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-1.5 space-y-1">
-                  <div className="text-[10px] font-black uppercase text-purple-300 tracking-wider px-1">
-                    🏠 Vannucci 4
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {renderShiftBadge(v4Morning, "Mattina", "🌅")}
-                    {renderShiftBadge(v4Afternoon, "Pomeriggio", "🌆")}
-                  </div>
-                </div>
-
-                {/* Notte & Cucina */}
-                <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-1.5 space-y-1">
-                  <div className="text-[10px] font-black uppercase text-amber-300 tracking-wider px-1">
-                    ⭐ Servizi Obbligatori
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {renderShiftBadge(notteSlot, "Notte (23-07)", "🌙")}
-                    {renderShiftBadge(cucinaSlot, "Cucina (10:30)", "🍲")}
-                  </div>
-                </div>
-
-                {/* Extra: Pulizie */}
-                <div className="bg-slate-900/40 border border-slate-800/80 rounded-xl p-1.5 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 min-w-0 px-1">
-                    <span className="text-sm">🪣🧹</span>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1">
-                        <span className="text-[10px] font-bold text-slate-300">Pulizie (07:00 - 11:00)</span>
-                        <span className="text-[8px] bg-slate-800 text-slate-400 font-bold px-1 rounded">EXTRA</span>
+              {/* RIGA 2: SITUAZIONE SERVIZI COMPLEMENTARI / GENERALI */}
+              <div className="flex items-center gap-1.5">
+                {/* Notte */}
+                <div className="flex-1 min-w-0">
+                  {notteSlot?.isCovered ? (
+                    <div
+                      title={`Notte: ${notteSlot.assignedStaff.map(s => `${s.nome} ${s.cognome}`).join(", ")}`}
+                      className="bg-indigo-950/60 border border-indigo-500/50 text-indigo-200 p-1.5 rounded-xl flex items-center justify-between gap-1 shadow-2xs"
+                    >
+                      <div className="flex items-center gap-1 min-w-0 truncate">
+                        <span className="text-xs">🌙</span>
+                        <span className="text-[10px] font-extrabold text-white truncate">
+                          {notteSlot.assignedStaff[0]?.nome || "Notte"}
+                        </span>
                       </div>
-                      <div className="text-[10px] text-slate-400 truncate">
-                        {pulizieSlot?.isCovered
-                          ? `✨ ${pulizieSlot.assignedStaff.map(s => `${s.nome} ${s.cognome?.charAt(0) || ""}.`).join(", ")}`
-                          : "⚪ Non assegnato (opzionale)"}
-                      </div>
+                      <span className="text-emerald-400 font-black text-[10px]">✓</span>
                     </div>
-                  </div>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                    pulizieSlot?.isCovered
-                      ? "bg-teal-500/20 text-teal-300 border border-teal-500/40"
-                      : "bg-slate-800 text-slate-500"
-                  }`}>
-                    {pulizieSlot?.isCovered ? "Coperto" : "Opzionale"}
-                  </span>
+                  ) : (
+                    <div
+                      title="Notte: Non assegnato"
+                      className="bg-rose-500/20 border border-rose-500/60 text-rose-300 p-1.5 rounded-xl flex items-center justify-between gap-1 shadow-2xs"
+                    >
+                      <span className="text-xs">🌙</span>
+                      <span className="text-rose-400 font-black text-[10px]">❌</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Cucina */}
+                <div className="flex-1 min-w-0">
+                  {cucinaSlot?.isCovered ? (
+                    <div
+                      title={`Cucina: ${cucinaSlot.assignedStaff.map(s => `${s.nome} ${s.cognome}`).join(", ")}`}
+                      className="bg-amber-950/60 border border-amber-500/50 text-amber-200 p-1.5 rounded-xl flex items-center justify-between gap-1 shadow-2xs"
+                    >
+                      <div className="flex items-center gap-1 min-w-0 truncate">
+                        <span className="text-xs">🍲</span>
+                        <span className="text-[10px] font-extrabold text-white truncate">
+                          {cucinaSlot.assignedStaff[0]?.nome || "Cucina"}
+                        </span>
+                      </div>
+                      <span className="text-emerald-400 font-black text-[10px]">✓</span>
+                    </div>
+                  ) : (
+                    <div
+                      title="Cucina: Non assegnato"
+                      className="bg-rose-500/20 border border-rose-500/60 text-rose-300 p-1.5 rounded-xl flex items-center justify-between gap-1 shadow-2xs"
+                    >
+                      <span className="text-xs">🍲</span>
+                      <span className="text-rose-400 font-black text-[10px]">❌</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Alzate ore 07:00 */}
+                <div className="flex-1 min-w-0">
+                  {alzateSlot?.isCovered ? (
+                    <div
+                      title={`Alzate ore 07:00: ${cov.shiftsAt7Count} turni attivi`}
+                      className="bg-emerald-950/60 border border-emerald-500/50 text-emerald-200 p-1.5 rounded-xl flex items-center justify-between gap-1 shadow-2xs"
+                    >
+                      <div className="flex items-center gap-1 min-w-0 truncate">
+                        <span className="text-xs">⏰</span>
+                        <span className="text-[10px] font-black text-emerald-300">
+                          {cov.shiftsAt7Count}/2
+                        </span>
+                      </div>
+                      <span className="text-emerald-400 font-black text-[10px]">✓</span>
+                    </div>
+                  ) : (
+                    <div
+                      title={`Alzate ore 07:00: Mancano operatori (${cov.shiftsAt7Count}/2 presenti)`}
+                      className="bg-rose-500/20 border border-rose-500/60 text-rose-300 p-1.5 rounded-xl flex items-center justify-between gap-1 shadow-2xs"
+                    >
+                      <div className="flex items-center gap-1 min-w-0 truncate">
+                        <span className="text-xs">⏰</span>
+                        <span className="text-[10px] font-black text-rose-300">
+                          {cov.shiftsAt7Count}/2
+                        </span>
+                      </div>
+                      <span className="text-rose-400 font-black text-[10px]">❌</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Pulizie (Extra) */}
+                <div className="flex-1 min-w-0">
+                  {pulizieSlot?.isCovered ? (
+                    <div
+                      title={`Pulizie (07-11): ${pulizieSlot.assignedStaff.map(s => `${s.nome} ${s.cognome}`).join(", ")}`}
+                      className="bg-teal-950/60 border border-teal-500/50 text-teal-200 p-1.5 rounded-xl flex items-center justify-between gap-1 shadow-2xs"
+                    >
+                      <div className="flex items-center gap-1 min-w-0 truncate">
+                        <span className="text-xs">🪣</span>
+                        <span className="text-[10px] font-extrabold text-white truncate">
+                          {pulizieSlot.assignedStaff[0]?.nome || "Pulizie"}
+                        </span>
+                      </div>
+                      <span className="text-teal-400 font-black text-[10px]">✓</span>
+                    </div>
+                  ) : (
+                    <div
+                      title="Pulizie (07-11): Opzionale / Non assegnato"
+                      className="bg-slate-900/60 border border-slate-800 text-slate-400 p-1.5 rounded-xl flex items-center justify-between gap-1 shadow-2xs opacity-70"
+                    >
+                      <span className="text-xs">🪣</span>
+                      <span className="text-slate-500 text-[10px] font-bold">—</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Ferie & Riposi Footer (Mini Pills) */}
+              {/* Mini Ferie & Riposi Footer */}
               {(cov.ferieStaff.length > 0 || cov.riposoStaff.length > 0) && (
-                <div className="pt-1.5 border-t border-slate-800 flex items-center gap-1.5 text-[9px] flex-wrap">
+                <div className="pt-1 border-t border-slate-800/80 flex items-center gap-2 text-[9px] text-slate-400 overflow-x-auto truncate">
                   {cov.ferieStaff.length > 0 && (
-                    <span className="bg-amber-950/60 text-amber-300 border border-amber-800/60 px-1.5 py-0.5 rounded font-bold">
-                      🏖️ Ferie: {cov.ferieStaff.join(", ")}
+                    <span className="truncate text-amber-300 font-medium">
+                      🏖️ <span className="font-bold">{cov.ferieStaff.join(", ")}</span>
                     </span>
                   )}
                   {cov.riposoStaff.length > 0 && (
-                    <span className="bg-slate-800 text-slate-300 border border-slate-700 px-1.5 py-0.5 rounded font-medium">
-                      🛋️ Riposo: {cov.riposoStaff.join(", ")}
+                    <span className="truncate text-slate-300 font-medium">
+                      🛋️ {cov.riposoStaff.join(", ")}
                     </span>
                   )}
                 </div>
