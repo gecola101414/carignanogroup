@@ -1075,7 +1075,17 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     else if (!hasNotte) proposedType = "Notte";
     else proposedType = "Riposo";
 
-    // 2. Read staff member's PREVIOUS shift to respect 11-hour rule
+    // 2. Count operators starting at 07:00 today (alzate support: Pulizie, V1, V2)
+    const staffStartingAt07Today = shifts.filter(s =>
+      s.data === targetDateStr &&
+      s.staffId !== targetStaffId &&
+      s.tipoTurno !== "Riposo" &&
+      s.tipoTurno !== "Ferie" &&
+      s.tipoTurno !== "Notte" &&
+      s.orarioInizio === "07:00"
+    ).length;
+
+    // 3. Read staff member's PREVIOUS shift to respect 11-hour rule
     const targetDateObj = new Date(targetDateStr);
     targetDateObj.setDate(targetDateObj.getDate() - 1);
     const prevDateStr = formatDateYMD(targetDateObj);
@@ -1098,13 +1108,22 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
        }
     });
 
-    const staffProfile = staff.find(s => s.id === targetStaffId);
     let startProposed = "07:00";
     let endProposed = "14:00";
     
     if (proposedType === "Mattina") {
+      if (staffStartingAt07Today >= 2 || currentStruttura === "Vannucci 2" || currentStruttura === "Vannucci 4") {
+        if (staffStartingAt07Today >= 2 || currentStruttura === "Vannucci 4") {
+          startProposed = "08:00";
+          endProposed = "15:00";
+        }
+      }
     } else if (proposedType === "Pomeriggio") {
+      startProposed = "15:00";
+      endProposed = "22:00";
     } else if (proposedType === "Notte") {
+      startProposed = "23:00";
+      endProposed = "07:00";
     }
 
     // Convert startProposed to minutes from 00:00 of targetDateStr
@@ -1124,6 +1143,8 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
         } else if (proposedType === "Mattina" || proposedType === "Notte") {
             // If we can't do Mattina, push to Pomeriggio
             proposedType = "Pomeriggio";
+            startProposed = "15:00";
+            endProposed = "22:00";
         }
     }
     
@@ -2071,6 +2092,71 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       return !s.id.startsWith("auto-");
     });
 
+    // 1. REGOLE NOTTE AUTOMATICA (5 notti consecutive dopo la prima notte manuale + riposo post 5 notti)
+    // Se un operatore ha una notte manuale (o combo Pulizie + Notte), genera le successive notti per completare il blocco di 5 notti, poi assegna il riposo.
+    activeStaff.forEach(m => {
+      // Find manual night shifts in the target week
+      const manualNights = updatedShifts.filter(s =>
+        s.staffId === m.id &&
+        (s.tipoTurno === "Notte" || (s.orarioInizio === "23:00" && s.orarioFine === "07:00")) &&
+        !s.id.startsWith("auto-") &&
+        targetDays.some(d => formatDateYMD(d) === s.data)
+      );
+
+      if (manualNights.length > 0) {
+        // Sort by date to find the first night
+        manualNights.sort((a, b) => a.data.localeCompare(b.data));
+        const firstNight = manualNights[0];
+        const firstNightDate = new Date(firstNight.data);
+
+        // Generate next 4 nights (days 1 to 4 after first night)
+        for (let i = 1; i <= 4; i++) {
+          const nextNightDate = new Date(firstNightDate);
+          nextNightDate.setDate(nextNightDate.getDate() + i);
+          const nextNightDateStr = formatDateYMD(nextNightDate);
+
+          const isTarget = targetDays.some(d => formatDateYMD(d) === nextNightDateStr);
+          if (isTarget && !lockedDays.includes(nextNightDateStr)) {
+            const hasExisting = updatedShifts.some(s => s.staffId === m.id && s.data === nextNightDateStr);
+            if (!hasExisting) {
+              updatedShifts.push({
+                id: `auto-night-${Date.now()}-${m.id}-${i}-${Math.random().toString(36).substr(2, 4)}`,
+                staffId: m.id,
+                data: nextNightDateStr,
+                tipoTurno: "Notte",
+                orarioInizio: "23:00",
+                orarioFine: "07:00",
+                note: `Programmazione automatica (Notte ${i + 1}/5)`
+              });
+            }
+          }
+        }
+
+        // Generate 2 rest days after 5 nights (days 5 and 6 after first night)
+        for (let r = 5; r <= 6; r++) {
+          const restDate = new Date(firstNightDate);
+          restDate.setDate(restDate.getDate() + r);
+          const restDateStr = formatDateYMD(restDate);
+
+          const isTarget = targetDays.some(d => formatDateYMD(d) === restDateStr);
+          if (isTarget && !lockedDays.includes(restDateStr)) {
+            const hasExisting = updatedShifts.some(s => s.staffId === m.id && s.data === restDateStr);
+            if (!hasExisting) {
+              updatedShifts.push({
+                id: `auto-rip-${Date.now()}-${m.id}-${r}-${Math.random().toString(36).substr(2, 4)}`,
+                staffId: m.id,
+                data: restDateStr,
+                tipoTurno: "Riposo",
+                orarioInizio: "00:00",
+                orarioFine: "00:00",
+                note: "Riposo programmatico post 5 notti"
+              });
+            }
+          }
+        }
+      }
+    });
+
     // Required structure slots per day
     const structureSlots: { struttura: string; tipoTurno: "Mattina" | "Pomeriggio"; defaultStart: string; defaultEnd: string }[] = [
       { struttura: "Vannucci 1", tipoTurno: "Mattina", defaultStart: "07:00", defaultEnd: "14:00" },
@@ -2205,7 +2291,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     });
 
     applyShiftsUpdate(updatedShifts);
-    showToast("✨ Turni generati senza errori! Rispettato il riposo di 11 ore tra i turni.");
+    showToast("✨ Turni generati! Blocco di 5 notti e riposi rispettati secondo le regole.");
   };
 
   const checkPotentialShiftValidity = (
@@ -2218,6 +2304,26 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     shiftIdToIgnore?: string
   ): { valid: boolean; reason?: string } => {
     if (tipoTurno === "Riposo" || tipoTurno === "Ferie") return { valid: true };
+
+    // 0. Check max 2 operators starting at 07:00 on the same day (Alzate support: Vannucci 1 + Pulizie o V2)
+    if (inizio === "07:00" && tipoTurno !== "Pulizie") {
+      const staffStartingAt07 = shifts.filter(s =>
+        s.data === dateStr &&
+        s.id !== shiftIdToIgnore &&
+        s.staffId !== staffId &&
+        s.tipoTurno !== "Riposo" &&
+        s.tipoTurno !== "Ferie" &&
+        s.tipoTurno !== "Notte" &&
+        s.orarioInizio === "07:00"
+      ).length;
+
+      if (staffStartingAt07 >= 2) {
+        return {
+          valid: false,
+          reason: "Massimo 2 operatori alle 07:00 già assegnati (Alzate). Questo turno deve iniziare alle 08:00 (es. 08:00 - 15:00)."
+        };
+      }
+    }
 
     // 1. Structure Coverage & Duplicate Rules
     const isV1 = (struttura === "Vannucci 1" || struttura === "Struttura 1");
@@ -3805,9 +3911,7 @@ function importaTurniResidenzaVannucci() {
                           className={`p-2 transition-all relative group/cell h-24 align-top ${
                             isStaffRole || isReferenceDay ? "" : "cursor-pointer"
                           } ${
-                            isComboDayInCell
-                              ? "bg-gradient-to-b from-teal-50/40 via-indigo-50/20 to-transparent border-2 border-teal-400/70 shadow-xs"
-                              : isDayComplete(dateYMD) && !isReferenceDay
+                            isDayComplete(dateYMD) && !isReferenceDay
                               ? "border-x-2 border-emerald-500 shadow-2xs"
                               : "border-r border-slate-200 last:border-r-0"
                           } ${
@@ -3819,21 +3923,10 @@ function importaTurniResidenzaVannucci() {
                               ? "bg-indigo-50/20"
                               : ""
                           }`}
-                          title={isStaffRole ? `${member.nome} — Turni del giorno` : isReferenceDay ? "Giorno di riferimento (sola lettura)" : lockedDays.includes(dateYMD) ? "🔒 Questo giorno è bloccato!" : isComboDayInCell ? "⚡ Combo Speciale: Pulizie (07-11) + Notte (23-07)" : "Doppio clic per aggiungere un turno in questo giorno"}
+                          title={isStaffRole ? `${member.nome} — Turni del giorno` : isReferenceDay ? "Giorno di riferimento (sola lettura)" : lockedDays.includes(dateYMD) ? "🔒 Questo giorno è bloccato!" : `${member.nome}: ${dayShifts.length ? dayShifts.map(s => `${s.tipoTurno} (${s.orarioInizio}-${s.orarioFine})`).join(", ") : "Nessun turno"}. Doppio clic per aggiungere/modificare.`}
                         >
                           <div className="flex flex-col h-full justify-between space-y-1">
                             <div className={`space-y-1.5 ${isReferenceDay ? 'grayscale-[30%]' : ''}`}>
-                              {isComboDayInCell && (
-                                <div className="bg-gradient-to-r from-teal-800 via-indigo-900 to-blue-900 text-white px-2 py-1 rounded-lg text-[9px] font-black shadow-xs flex items-center justify-between border border-teal-400/50 ring-1 ring-teal-400/30">
-                                  <div className="flex items-center gap-1">
-                                    <span className="text-[11px] leading-none">⚡</span>
-                                    <span className="tracking-wide uppercase">Combo Speciale</span>
-                                  </div>
-                                  <span className="bg-amber-300 text-amber-950 font-black px-1.5 py-0.2 rounded text-[8px]">
-                                    5h oggi
-                                  </span>
-                                </div>
-                              )}
                               {dayShifts.map(s => {
                                 const validity = checkShiftValidity(s);
                                 const isInvalid = !validity.valid && !isReferenceDay;
@@ -3868,24 +3961,14 @@ function importaTurniResidenzaVannucci() {
                                   } ${
                                     isHovered ? "ring-2 ring-indigo-600 shadow-lg scale-[1.03] z-30" : isStaffHovered ? "ring-1 ring-indigo-400 shadow-xs" : ""
                                   }`}
-                                  title={isInvalid ? `⚠️ ERRORE: ${validity.reason}` : isStaffRole ? `${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine}) - Clicca per dettagli` : s.tipoTurno === "Ferie" ? "🏖️ Ferie — Trascina per spostare/duplicare o clicca per dettagli" : isReferenceDay ? "Turno di riferimento - Clicca per dettagli" : lockedDays.includes(dateYMD) ? "Giorno bloccato - Clicca per dettagli" : "Trascina per spostare o duplicare, oppure clicca per dettagli"}
+                                  title={isInvalid ? `⚠️ ERRORE: ${validity.reason}` : isStaffRole ? `${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine}) - Clicca per dettagli` : s.tipoTurno === "Ferie" ? "🏖️ Ferie — Clicca per dettagli" : isReferenceDay ? "Turno di riferimento - Clicca per dettagli" : lockedDays.includes(dateYMD) ? "Giorno bloccato - Clicca per dettagli" : "Trascina per spostare o duplicare, oppure clicca per dettagli"}
                                 >
                                   {/* Shift Header & Trash Hover Button */}
                                   <div className="flex items-center justify-between gap-1">
                                     <div className="flex items-center gap-1 flex-wrap">
                                       {!isStaffRole && !isEffectivelyLocked && <GripVertical className={`w-3 h-3 ${isInvalid ? 'text-red-500' : 'text-slate-400 group-hover/shift:text-indigo-600'} transition-colors`} />}
                                       <span className="uppercase tracking-wider font-extrabold">{s.tipoTurno}</span>
-                                      {isComboDayInCell && s.tipoTurno === "Pulizie" && (
-                                        <span className="text-[8px] font-black text-teal-950 bg-teal-100/90 border border-teal-400 px-1 py-0.2 rounded-xs flex items-center gap-0.5">
-                                          ⚡ +Notte
-                                        </span>
-                                      )}
-                                      {isComboDayInCell && s.tipoTurno === "Notte" && (
-                                        <span className="text-[8px] font-black text-blue-950 bg-blue-100/90 border border-blue-400 px-1 py-0.2 rounded-xs flex items-center gap-0.5">
-                                          ⚡ +Pulizie (1h oggi)
-                                        </span>
-                                      )}
-                                      {!s.id.startsWith("auto-") && !isReferenceDay && s.tipoTurno !== "Ferie" && !lockedDays.includes(dateYMD) && (
+                                      {!s.id.startsWith("auto-") && !isReferenceDay && s.tipoTurno !== "Ferie" && s.tipoTurno !== "Riposo" && !lockedDays.includes(dateYMD) && (
                                         <span className="text-[8px] font-black text-amber-800 bg-amber-100/90 border border-amber-300/80 px-1 py-0.2 rounded-xs flex items-center gap-0.5 shrink-0" title="Vincolo Manuale Fisso: Non verrà mai sovrascritto dalla generazione automatica">
                                           📌 Fisso
                                         </span>
@@ -3929,20 +4012,27 @@ function importaTurniResidenzaVannucci() {
                                     </div>
                                   </div>
 
-                                  <div className="flex items-center justify-between text-xs font-mono font-bold opacity-90 mt-0.5 border-t border-black/5 pt-1">
-                                    <span>{s.orarioInizio} - {s.orarioFine}</span>
-                                    {s.struttura && s.tipoTurno !== "Notte" && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie" && s.tipoTurno !== "Cucina" && s.tipoTurno !== "Pulizie" && (
-                                      <span className="bg-white/95 text-slate-800 px-2 py-1 rounded-md text-[9px] font-extrabold border border-black/10 uppercase tracking-tight flex items-center gap-1 shadow-3xs">
-                                        {(s.struttura === "Vannucci 1" || s.struttura === "Struttura 1") ? (
-                                          <span>Vannucci <strong className="text-[15px] sm:text-[17px] font-black text-orange-600 leading-none">1</strong></span>
-                                        ) : (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2") ? (
-                                          <span>Vannucci <strong className="text-[15px] sm:text-[17px] font-black text-yellow-600 leading-none">2</strong></span>
-                                        ) : (
-                                          <span>Vannucci <strong className="text-[15px] sm:text-[17px] font-black text-emerald-600 leading-none">4</strong></span>
-                                        )}
-                                      </span>
-                                    )}
-                                  </div>
+                                  {/* Shift Hours & Structure Badge */}
+                                  {s.tipoTurno !== "Ferie" && s.tipoTurno !== "Riposo" ? (
+                                    <div className="flex items-center justify-between text-xs font-mono font-bold opacity-90 mt-0.5 border-t border-black/5 pt-1">
+                                      <span>{s.orarioInizio} - {s.orarioFine}</span>
+                                      {s.struttura && s.tipoTurno !== "Notte" && s.tipoTurno !== "Cucina" && s.tipoTurno !== "Pulizie" && (
+                                        <span className="bg-white/95 text-slate-800 px-2 py-1 rounded-md text-[9px] font-extrabold border border-black/10 uppercase tracking-tight flex items-center gap-1 shadow-3xs">
+                                          {(s.struttura === "Vannucci 1" || s.struttura === "Struttura 1") ? (
+                                            <span>Vannucci <strong className="text-[15px] sm:text-[17px] font-black text-orange-600 leading-none">1</strong></span>
+                                          ) : (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2") ? (
+                                            <span>Vannucci <strong className="text-[15px] sm:text-[17px] font-black text-yellow-600 leading-none">2</strong></span>
+                                          ) : (
+                                            <span>Vannucci <strong className="text-[15px] sm:text-[17px] font-black text-emerald-600 leading-none">4</strong></span>
+                                          )}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <div className="text-[10px] font-medium opacity-80 mt-0.5 border-t border-black/5 pt-0.5 italic">
+                                      {s.tipoTurno === "Ferie" ? "🏖️ Tutto il giorno" : "Giorno libero"}
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })}
@@ -4344,9 +4434,7 @@ function importaTurniResidenzaVannucci() {
                           className={`p-0.5 transition-all relative group/cell text-center align-middle h-10 ${
                             isPublicView ? "" : "cursor-pointer"
                           } ${
-                            isComboDayInCell
-                              ? "bg-gradient-to-br from-teal-50/90 via-indigo-50/60 to-blue-50/90 border-2 border-teal-400/90 shadow-2xs"
-                              : isDayComplete(dateYMD)
+                            isDayComplete(dateYMD)
                               ? "border-x-2 border-emerald-500 shadow-2xs"
                               : "border-r border-slate-200 last:border-r-0"
                           } ${
@@ -4360,14 +4448,9 @@ function importaTurniResidenzaVannucci() {
                               ? "bg-amber-50/20"
                               : ""
                           }`}
-                          title={lockedDays.includes(dateYMD) ? `🔒 ${member.nome}: Giorno Bloccato` : isComboDayInCell ? `⚡ ${member.nome}: Combo Speciale Pulizie (07-11) + Notte (23-07)` : `${member.nome}: ${dayShifts.length ? dayShifts.map(s => `${s.tipoTurno} (${s.orarioInizio}-${s.orarioFine})`).join(", ") : "Nessun turno"}.`}
+                          title={lockedDays.includes(dateYMD) ? `🔒 ${member.nome}: Giorno Bloccato` : `${member.nome}: ${dayShifts.length ? dayShifts.map(s => `${s.tipoTurno} (${s.orarioInizio}-${s.orarioFine})`).join(", ") : "Nessun turno"}.`}
                         >
                           <div className="flex flex-wrap items-center justify-center gap-0.5 h-full">
-                            {isComboDayInCell && (
-                              <span className="absolute -top-1 -right-1 text-[8px] bg-teal-600 text-white rounded-full px-1 font-black shadow-xs z-20" title="Combo Pulizie + Notte">
-                                ⚡
-                              </span>
-                            )}
                             {dayShifts.length > 0 ? (
                               dayShifts.map(s => {
                                 let badgeText = s.tipoTurno.substring(0, 1).toUpperCase();
@@ -5187,18 +5270,13 @@ function importaTurniResidenzaVannucci() {
                   {/* Ferie */}
                   <button
                     type="button"
-                    onDoubleClick={() => handleFastSubmit({ tipoTurno: "Ferie", orarioInizio: "00:00", orarioFine: "00:00" })}
                     onClick={() => {
-                      setNewTipoTurno("Ferie");
-                      setNewOrarioInizio("00:00");
-                      setNewOrarioFine("00:00");
+                      handleOpenVacationModal(newStaffId, newDate);
                     }}
-                    className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
-                      newTipoTurno === "Ferie" ? "bg-amber-800 border-amber-900 text-white ring-4 ring-amber-800/40" : "bg-slate-50 border-slate-200 hover:bg-slate-100"
-                    }`}
+                    className="p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer bg-gradient-to-tr from-amber-500 to-orange-500 text-white shadow-xs hover:from-amber-600 hover:to-orange-600 ring-2 ring-amber-400/30"
                   >
-                    <span className="font-extrabold text-[12px]">🏖️ Ferie</span>
-                    <span className="text-[9px] opacity-75 font-normal">Pianificate / Desiderate</span>
+                    <span className="font-extrabold text-[12px] flex items-center gap-1">🏖️ Ferie</span>
+                    <span className="text-[9px] opacity-90 font-normal">Apri calendario ferie</span>
                   </button>
                 </div>
               </div>
@@ -6383,35 +6461,34 @@ function importaTurniResidenzaVannucci() {
                 </select>
               </div>
 
-              {/* Mode Switcher: Singolo Giorno vs Intervallo Dal-Al */}
-              <div className="bg-slate-100 p-1 rounded-2xl flex gap-1 border border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setVacationMode('single');
-                    setVacationEndDate(vacationStartDate);
-                  }}
-                  className={`flex-1 py-2 px-3 rounded-xl font-extrabold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                    vacationMode === 'single'
-                      ? 'bg-white text-slate-950 shadow-xs border border-slate-200/80 ring-1 ring-black/5'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-                  }`}
-                >
-                  <span>📅</span>
-                  <span>Singolo Giorno</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setVacationMode('range')}
-                  className={`flex-1 py-2 px-3 rounded-xl font-extrabold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                    vacationMode === 'range'
-                      ? 'bg-amber-500 text-white shadow-xs ring-1 ring-amber-600'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-                  }`}
-                >
-                  <span>📆</span>
-                  <span>Intervallo Date (Dal - Al)</span>
-                </button>
+              {/* Date Selection Info Banner */}
+              <div className="bg-amber-50/90 border border-amber-300/80 rounded-2xl p-3 flex items-center justify-between shadow-3xs">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">📅</span>
+                  <div>
+                    <div className="text-[11px] font-extrabold text-amber-950 flex items-center gap-1.5">
+                      <span>Data Inizio (giorno selezionato):</span>
+                      <span className="bg-amber-200/90 text-amber-950 px-2 py-0.5 rounded-md font-black">
+                        {new Date(vacationStartDate).toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-amber-800 font-medium mt-0.5">
+                      {vacationStartDate === vacationEndDate
+                        ? "👉 Clicca su un giorno successivo nel calendario per selezionare la data di fine, oppure conferma per 1 solo giorno."
+                        : `📅 Fino a: ${new Date(vacationEndDate).toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}`}
+                    </div>
+                  </div>
+                </div>
+
+                {vacationStartDate !== vacationEndDate && (
+                  <button
+                    type="button"
+                    onClick={() => setVacationEndDate(vacationStartDate)}
+                    className="text-[10px] font-bold bg-white text-slate-700 hover:bg-slate-100 border border-slate-300 px-2.5 py-1 rounded-xl shadow-3xs cursor-pointer transition-colors"
+                  >
+                    Resetta a 1 Giorno
+                  </button>
+                )}
               </div>
 
               {/* Interactive Calendar Month Picker */}
@@ -6528,23 +6605,12 @@ function importaTurniResidenzaVannucci() {
                           key={dateStr}
                           type="button"
                           onClick={() => {
-                            if (vacationMode === 'single') {
-                              setVacationStartDate(dateStr);
+                            if (dateStr >= vacationStartDate) {
                               setVacationEndDate(dateStr);
                             } else {
-                              // Range mode
-                              if (vacationStartDate === vacationEndDate) {
-                                if (dateStr >= vacationStartDate) {
-                                  setVacationEndDate(dateStr);
-                                } else {
-                                  setVacationEndDate(vacationStartDate);
-                                  setVacationStartDate(dateStr);
-                                }
-                              } else {
-                                // Reset range to clicked date
-                                setVacationStartDate(dateStr);
-                                setVacationEndDate(dateStr);
-                              }
+                              // If clicked date is before start date, update start date to clicked date
+                              setVacationStartDate(dateStr);
+                              setVacationEndDate(dateStr);
                             }
                           }}
                           className={buttonClasses}
@@ -6594,53 +6660,8 @@ function importaTurniResidenzaVannucci() {
                   </div>
 
                   <span className="text-[10px] text-slate-500 font-medium">
-                    {vacationMode === 'single' ? 'Clicca un giorno' : 'Clicca 2 date per definire Dal / Al'}
+                    Clicca un giorno per estendere o cambiare il periodo
                   </span>
-                </div>
-              </div>
-
-              {/* Start & End Dates (Text inputs synchronized with calendar) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-800 text-xs mb-1">
-                    Data Inizio *
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={vacationStartDate}
-                    onChange={e => {
-                      setVacationStartDate(e.target.value);
-                      if (vacationMode === 'single' || e.target.value > vacationEndDate) {
-                        setVacationEndDate(e.target.value);
-                      }
-                      const d = new Date(e.target.value);
-                      if (!isNaN(d.getTime())) {
-                        setVacationCalendarMonth(new Date(d.getFullYear(), d.getMonth(), 1));
-                      }
-                    }}
-                    className="w-full border border-slate-300 p-2.5 rounded-2xl font-bold bg-slate-50 focus:bg-white focus:ring-2 focus:ring-amber-500 text-xs text-slate-900 shadow-3xs"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-800 text-xs mb-1">
-                    Data Fine (Inclusa) *
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={vacationEndDate}
-                    disabled={vacationMode === 'single'}
-                    onChange={e => {
-                      setVacationEndDate(e.target.value);
-                      const d = new Date(e.target.value);
-                      if (!isNaN(d.getTime())) {
-                        setVacationCalendarMonth(new Date(d.getFullYear(), d.getMonth(), 1));
-                      }
-                    }}
-                    className="w-full border border-slate-300 p-2.5 rounded-2xl font-bold bg-slate-50 focus:bg-white focus:ring-2 focus:ring-amber-500 text-xs text-slate-900 disabled:opacity-60 disabled:cursor-not-allowed shadow-3xs"
-                  />
                 </div>
               </div>
 
@@ -6661,7 +6682,7 @@ function importaTurniResidenzaVannucci() {
               <div className="bg-amber-50 border border-amber-200/80 rounded-2xl p-3 text-amber-950 text-[11px] leading-relaxed flex items-start gap-2">
                 <span className="text-base shrink-0">🌴</span>
                 <span>
-                  L'inserimento assegnerà il turno <strong>"Ferie"</strong> per ogni data del periodo selezionato, evidenziandolo e materializzandolo all'istante sia sul tabellone settimanale che mensile.
+                  L'inserimento assegnerà il turno <strong>"Ferie"</strong> per ogni data del periodo selezionato, evidenziandolo sia sul tabellone settimanale che mensile.
                 </span>
               </div>
 
@@ -6679,7 +6700,11 @@ function importaTurniResidenzaVannucci() {
                   className="px-6 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black rounded-2xl text-xs shadow-lg shadow-amber-500/20 transition-all cursor-pointer flex items-center gap-2"
                 >
                   <Palmtree className="w-4 h-4" />
-                  <span>Conferma & Materializza Ferie</span>
+                  <span>
+                    {vacationStartDate === vacationEndDate
+                      ? `Conferma Ferie (1 Giorno: ${new Date(vacationStartDate).toLocaleDateString("it-IT", { day: "numeric", month: "short" })})`
+                      : `Conferma Ferie Periodo (${Math.ceil(Math.abs(new Date(vacationEndDate).getTime() - new Date(vacationStartDate).getTime()) / (1000 * 60 * 60 * 24)) + 1} Giorni)`}
+                  </span>
                 </button>
               </div>
 
