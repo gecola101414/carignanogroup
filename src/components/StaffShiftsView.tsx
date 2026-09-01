@@ -46,6 +46,7 @@ import {
   Unlock,
   Save,
   AlertTriangle,
+  AlertCircle,
   PanelLeft,
   PanelLeftClose
 } from "lucide-react";
@@ -675,7 +676,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     });
   };
 
-  // Helper to check if a day is complete: Mattina + Pomeriggio for each structure + at least 1 Notte
+  // Helper to check if a day is complete: Mattina + Pomeriggio for each structure + at least 1 Notte + Cucina (Pulizie is extra)
   const getMissingShiftsForDay = (dateStr: string): string[] => {
     const dayShifts = shifts.filter(s => s.data === dateStr && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie");
     const missing: string[] = [];
@@ -703,32 +704,32 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
 
     if (v1MorningShifts.length < requiredV1Morning) {
       if (v1MorningShifts.length === 0) {
-        missing.push(requiredV1Morning === 2 ? "Vannucci 1: 2x Mattina (Alzate ore 07:00)" : "Vannucci 1: Mattina (07:00)");
+        missing.push(requiredV1Morning === 2 ? "Vannucci 1: 2x Mattina (Alzate ore 07:00)" : "Vannucci 1: Mattina (07:00 / 08:00)");
       } else if (v1MorningShifts.length === 1 && requiredV1Morning === 2) {
         missing.push("Vannucci 1: 2° operatore Mattina (Alzate 07:00 o Pulizie 🪣🧹 / V2 ore 07:00)");
       }
     }
 
     const hasPomeriggio1 = dayShifts.some(s => s.tipoTurno === "Pomeriggio" && (s.struttura === "Vannucci 1" || s.struttura === "Struttura 1"));
-    if (!hasPomeriggio1) missing.push("Vannucci 1: Pomeriggio");
+    if (!hasPomeriggio1) missing.push("Vannucci 1: Pomeriggio (14:00 / 15:00)");
 
     // Vannucci 2
     const hasMattina2 = dayShifts.some(s => s.tipoTurno === "Mattina" && (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2"));
     const hasPomeriggio2 = dayShifts.some(s => s.tipoTurno === "Pomeriggio" && (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2"));
-    if (!hasMattina2) missing.push("Vannucci 2: Mattina");
-    if (!hasPomeriggio2) missing.push("Vannucci 2: Pomeriggio");
+    if (!hasMattina2) missing.push("Vannucci 2: Mattina (07:00 / 08:00)");
+    if (!hasPomeriggio2) missing.push("Vannucci 2: Pomeriggio (14:00 / 15:00)");
 
     // Vannucci 4
     const hasMattina3 = dayShifts.some(s => s.tipoTurno === "Mattina" && (s.struttura === "Vannucci 4" || s.struttura === "Struttura 4"));
     const hasPomeriggio3 = dayShifts.some(s => s.tipoTurno === "Pomeriggio" && (s.struttura === "Vannucci 4" || s.struttura === "Struttura 4"));
-    if (!hasMattina3) missing.push("Vannucci 4: Mattina");
-    if (!hasPomeriggio3) missing.push("Vannucci 4: Pomeriggio");
+    if (!hasMattina3) missing.push("Vannucci 4: Mattina (08:00 - 15:00)");
+    if (!hasPomeriggio3) missing.push("Vannucci 4: Pomeriggio (15:00 - 22:00)");
 
     // Notte (Generale)
     const hasNotte = dayShifts.some(s => s.tipoTurno === "Notte");
     if (!hasNotte) missing.push("Notte (23:00 - 07:00)");
 
-    // Cucina (Generale)
+    // Cucina (Generale - Obbligatoria per completare la giornata)
     const hasCucina = dayShifts.some(s => s.tipoTurno === "Cucina");
     if (!hasCucina) missing.push("Cucina (10:30 - 15:00)");
 
@@ -738,6 +739,181 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   const isDayComplete = (dateStr: string): boolean => {
     return getMissingShiftsForDay(dateStr).length === 0;
   };
+
+  // Structured breakdown for Day Hover Tooltip/Window
+  const getDayCoverageDetails = (dateStr: string) => {
+    const dayShifts = shifts.filter(s => s.data === dateStr && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie");
+
+    const findAssigned = (tipo: string, struct?: string) => {
+      return dayShifts
+        .filter(s => {
+          if (s.tipoTurno !== tipo) return false;
+          if (struct) {
+            if (struct === "Vannucci 1") return s.struttura === "Vannucci 1" || s.struttura === "Struttura 1";
+            if (struct === "Vannucci 2") return s.struttura === "Vannucci 2" || s.struttura === "Struttura 2";
+            if (struct === "Vannucci 4") return s.struttura === "Vannucci 4" || s.struttura === "Struttura 4";
+            return s.struttura === struct;
+          }
+          return true;
+        })
+        .map(s => {
+          const st = staff.find(m => m.id === s.staffId);
+          return {
+            id: s.staffId,
+            nome: st ? st.nome : "Operatore",
+            cognome: st ? st.cognome : "",
+            orarioInizio: s.orarioInizio,
+            orarioFine: s.orarioFine,
+            note: s.note
+          };
+        });
+    };
+
+    const hasPulizie = dayShifts.some(s => 
+      s.tipoTurno === "Pulizie" ||
+      ((s.orarioInizio === "07:00" && s.orarioFine === "11:00") || (s.note && s.note.toLowerCase().includes("puliz")))
+    );
+    const hasV2MorningAt7 = dayShifts.some(s =>
+      (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2") &&
+      s.tipoTurno === "Mattina" &&
+      s.orarioInizio === "07:00"
+    );
+    const hasV1MorningSupport = hasPulizie || hasV2MorningAt7;
+    const v1MorningStaff = findAssigned("Mattina", "Vannucci 1");
+    const requiredV1Morning = hasV1MorningSupport ? 1 : 2;
+    const isV1MorningCovered = v1MorningStaff.length >= requiredV1Morning;
+
+    const mandatorySlots = [
+      {
+        id: "v1_m",
+        label: "Vannucci 1 — Mattina",
+        struttura: "Vannucci 1",
+        tipoTurno: "Mattina",
+        orarioStandard: requiredV1Morning === 2 ? "2x Operatori (07:00)" : "07:00 / 08:00",
+        icon: "🌅",
+        isCovered: isV1MorningCovered,
+        assignedStaff: v1MorningStaff,
+        requirementNote: hasV1MorningSupport 
+          ? (hasPulizie ? "1 op. richiesto (Supporto Pulizie 🪣 attivo per alzate)" : "1 op. richiesto (Supporto V2 07:00 attivo)")
+          : "2 op. richiesti per alzate ore 07:00"
+      },
+      {
+        id: "v1_p",
+        label: "Vannucci 1 — Pomeriggio",
+        struttura: "Vannucci 1",
+        tipoTurno: "Pomeriggio",
+        orarioStandard: "14:00 / 15:00",
+        icon: "🌆",
+        isCovered: findAssigned("Pomeriggio", "Vannucci 1").length > 0,
+        assignedStaff: findAssigned("Pomeriggio", "Vannucci 1")
+      },
+      {
+        id: "v2_m",
+        label: "Vannucci 2 — Mattina",
+        struttura: "Vannucci 2",
+        tipoTurno: "Mattina",
+        orarioStandard: "07:00 / 08:00",
+        icon: "🌅",
+        isCovered: findAssigned("Mattina", "Vannucci 2").length > 0,
+        assignedStaff: findAssigned("Mattina", "Vannucci 2")
+      },
+      {
+        id: "v2_p",
+        label: "Vannucci 2 — Pomeriggio",
+        struttura: "Vannucci 2",
+        tipoTurno: "Pomeriggio",
+        orarioStandard: "14:00 / 15:00",
+        icon: "🌆",
+        isCovered: findAssigned("Pomeriggio", "Vannucci 2").length > 0,
+        assignedStaff: findAssigned("Pomeriggio", "Vannucci 2")
+      },
+      {
+        id: "v4_m",
+        label: "Vannucci 4 — Mattina",
+        struttura: "Vannucci 4",
+        tipoTurno: "Mattina",
+        orarioStandard: "08:00 - 15:00",
+        icon: "🌅",
+        isCovered: findAssigned("Mattina", "Vannucci 4").length > 0,
+        assignedStaff: findAssigned("Mattina", "Vannucci 4")
+      },
+      {
+        id: "v4_p",
+        label: "Vannucci 4 — Pomeriggio",
+        struttura: "Vannucci 4",
+        tipoTurno: "Pomeriggio",
+        orarioStandard: "15:00 - 22:00",
+        icon: "🌆",
+        isCovered: findAssigned("Pomeriggio", "Vannucci 4").length > 0,
+        assignedStaff: findAssigned("Pomeriggio", "Vannucci 4")
+      },
+      {
+        id: "notte",
+        label: "Turno di Notte",
+        struttura: "Casa Famiglia",
+        tipoTurno: "Notte",
+        orarioStandard: "23:00 - 07:00",
+        icon: "🌙",
+        isCovered: findAssigned("Notte").length > 0,
+        assignedStaff: findAssigned("Notte")
+      },
+      {
+        id: "cucina",
+        label: "Servizio Cucina",
+        struttura: "Mensa / Cucina",
+        tipoTurno: "Cucina",
+        orarioStandard: "10:30 - 15:00",
+        icon: "🍲",
+        isCovered: findAssigned("Cucina").length > 0,
+        assignedStaff: findAssigned("Cucina")
+      }
+    ];
+
+    const extraSlots = [
+      {
+        id: "pulizie",
+        label: "Servizio Pulizie",
+        struttura: "Pulizie & Supporto Alzate V1",
+        tipoTurno: "Pulizie",
+        orarioStandard: "07:00 - 11:00",
+        icon: "🪣🧹",
+        isCovered: findAssigned("Pulizie").length > 0,
+        assignedStaff: findAssigned("Pulizie"),
+        note: "Turno extra: non necessario per completare il turno giornaliero."
+      }
+    ];
+
+    const missingMandatory = mandatorySlots.filter(s => !s.isCovered);
+    const coveredMandatory = mandatorySlots.filter(s => s.isCovered);
+    const isComplete = missingMandatory.length === 0;
+
+    const ferieStaff = shifts.filter(s => s.data === dateStr && s.tipoTurno === "Ferie").map(s => {
+      const st = staff.find(m => m.id === s.staffId);
+      return st ? `${st.nome} ${st.cognome}` : "Operatore";
+    });
+
+    const riposoStaff = shifts.filter(s => s.data === dateStr && s.tipoTurno === "Riposo").map(s => {
+      const st = staff.find(m => m.id === s.staffId);
+      return st ? `${st.nome} ${st.cognome}` : "Operatore";
+    });
+
+    return {
+      dateStr,
+      isComplete,
+      missingMandatory,
+      coveredMandatory,
+      mandatorySlots,
+      extraSlots,
+      ferieStaff,
+      riposoStaff,
+      totalRequired: mandatorySlots.length,
+      totalCovered: coveredMandatory.length
+    };
+  };
+
+  // Hovered Day Coverage State for automatic tooltip/popover
+  const [hoveredDayCoverageDate, setHoveredDayCoverageDate] = useState<string | null>(null);
+  const [hoveredDayCoveragePos, setHoveredDayCoveragePos] = useState<{ x: number; y: number } | null>(null);
 
   // Drag & Drop State
   const [holdingDayDate, setHoldingDayDate] = useState<string | null>(null);
@@ -1257,15 +1433,22 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       return;
     }
 
-    const validity = checkPotentialShiftValidity(newStaffId, newDate, preset.tipoTurno, newStruttura, preset.orarioInizio, preset.orarioFine);
+    const structureForCheck = ["Notte", "Cucina", "Pulizie", "Riposo", "Ferie"].includes(preset.tipoTurno) ? "" : newStruttura;
+    const validity = checkPotentialShiftValidity(newStaffId, newDate, preset.tipoTurno, structureForCheck, preset.orarioInizio, preset.orarioFine);
     if (!validity.valid) {
       showToast(validity.reason || "Errore di validazione del turno");
       return;
     }
 
     let constructedNote = newNote.trim();
+    if (preset.tipoTurno === "Pulizie" && !constructedNote) {
+      constructedNote = "Servizio Pulizie & Supporto Alzate";
+    }
     if (preset.tipoTurno === "Cucina" && !constructedNote) {
       constructedNote = "Servizio Cucina e Mensa";
+    }
+    if (preset.tipoTurno === "Notte" && !constructedNote) {
+      constructedNote = "Turno di Notte";
     }
 
     const now = new Date();
@@ -1288,7 +1471,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       orarioInizio: preset.orarioInizio,
       orarioFine: preset.orarioFine,
       note: constructedNote,
-      struttura: preset.tipoTurno === "Notte" || preset.tipoTurno === "Riposo" || preset.tipoTurno === "Ferie" || preset.tipoTurno === "Cucina" || preset.tipoTurno === "Pulizie" ? "" : newStruttura
+      struttura: ["Notte", "Riposo", "Ferie", "Cucina", "Pulizie"].includes(preset.tipoTurno) ? "" : newStruttura
     };
 
     let updatedShiftsList: Shift[];
@@ -1322,7 +1505,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     applyShiftsUpdate(updatedShiftsList);
     setShowAddModal(false);
     setNewNote("");
-    showToast(`Turno ${preset.tipoTurno} inserito per il ${newDate}!`);
+    showToast(`⚡ Turno ${preset.tipoTurno} (${preset.orarioInizio}-${preset.orarioFine}) caricato automaticamente!`);
   };
 
   // Special Rule: Add both Pulizie (07:00-11:00) + Notte (23:00-07:00) on the same day for the staff member
@@ -3685,6 +3868,17 @@ function importaTurniResidenzaVannucci() {
                           if (!isPublicView && !isReferenceDay) handleMouseDownDay(dateYMD, e);
                         }}
                         onTouchEnd={handleMouseUpDay}
+                        onMouseEnter={(e) => {
+                          setHoveredDayCoverageDate(dateYMD);
+                          setHoveredDayCoveragePos({ x: e.clientX, y: e.clientY });
+                        }}
+                        onMouseMove={(e) => {
+                          setHoveredDayCoveragePos({ x: e.clientX, y: e.clientY });
+                        }}
+                        onMouseLeave={() => {
+                          setHoveredDayCoverageDate(null);
+                          setHoveredDayCoveragePos(null);
+                        }}
                         className={`p-3 text-center transition-all select-none relative group min-w-[135px] sm:min-w-[155px] sticky top-0 z-30 ${
                           isPublicView ? "" : "cursor-grab active:cursor-grabbing"
                         } ${
@@ -4254,6 +4448,17 @@ function importaTurniResidenzaVannucci() {
                         onMouseUp={handleMouseUpDay}
                         onTouchStart={(e) => handleMouseDownDay(dateYMD, e)}
                         onTouchEnd={handleMouseUpDay}
+                        onMouseEnter={(e) => {
+                          setHoveredDayCoverageDate(dateYMD);
+                          setHoveredDayCoveragePos({ x: e.clientX, y: e.clientY });
+                        }}
+                        onMouseMove={(e) => {
+                          setHoveredDayCoveragePos({ x: e.clientX, y: e.clientY });
+                        }}
+                        onMouseLeave={() => {
+                          setHoveredDayCoverageDate(null);
+                          setHoveredDayCoveragePos(null);
+                        }}
                         className={`p-0.5 text-center cursor-grab active:cursor-grabbing transition-all select-none relative group/mhead sticky top-0 z-30 ${
                           isDayComplete(dateYMD)
                             ? "border-x-2 border-t-2 border-emerald-500 z-10 shadow-xs"
@@ -6712,6 +6917,214 @@ function importaTurniResidenzaVannucci() {
           </div>
         </div>
       )}
+
+      {/* Floating Day Coverage Tooltip / Inspector on Hover - Ultra Visual & Graphic */}
+      {hoveredDayCoverageDate && (() => {
+        const cov = getDayCoverageDetails(hoveredDayCoverageDate);
+        const formatItalianCoverageDate = (dateStr: string) => {
+          const parts = dateStr.split("-");
+          if (parts.length !== 3) return dateStr;
+          const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+          const weekday = d.toLocaleDateString("it-IT", { weekday: "long" });
+          const dayNum = d.getDate();
+          const monthName = d.toLocaleDateString("it-IT", { month: "long" });
+          const year = d.getFullYear();
+          return `${weekday.charAt(0).toUpperCase() + weekday.slice(1)} ${dayNum} ${monthName} ${year}`;
+        };
+
+        // Group into structures for immediate visual comprehension
+        const v1Morning = cov.mandatorySlots.find(s => s.id === "v1_m");
+        const v1Afternoon = cov.mandatorySlots.find(s => s.id === "v1_p");
+        const v2Morning = cov.mandatorySlots.find(s => s.id === "v2_m");
+        const v2Afternoon = cov.mandatorySlots.find(s => s.id === "v2_p");
+        const v4Morning = cov.mandatorySlots.find(s => s.id === "v4_m");
+        const v4Afternoon = cov.mandatorySlots.find(s => s.id === "v4_p");
+        const notteSlot = cov.mandatorySlots.find(s => s.id === "notte");
+        const cucinaSlot = cov.mandatorySlots.find(s => s.id === "cucina");
+        const pulizieSlot = cov.extraSlots.find(s => s.id === "pulizie");
+
+        const renderShiftBadge = (slot: typeof v1Morning, shortLabel: string, icon: string) => {
+          if (!slot) return null;
+          if (slot.isCovered) {
+            const staffNames = slot.assignedStaff.map(s => `${s.nome} ${s.cognome?.charAt(0) || ""}.`).join(", ");
+            return (
+              <div className="flex-1 bg-emerald-500/15 border border-emerald-500/40 rounded-lg px-2 py-1.5 flex items-center justify-between gap-1.5 shadow-xs">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-xs shrink-0">{icon}</span>
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-black text-emerald-400 uppercase tracking-tight">{shortLabel}</div>
+                    <div className="text-[11px] font-bold text-slate-100 truncate">{staffNames}</div>
+                  </div>
+                </div>
+                <span className="w-4 h-4 rounded-full bg-emerald-500 text-slate-950 font-black text-[10px] flex items-center justify-center shrink-0">✓</span>
+              </div>
+            );
+          }
+          return (
+            <div className="flex-1 bg-rose-500/20 border border-rose-500/60 rounded-lg px-2 py-1.5 flex items-center justify-between gap-1.5 shadow-xs animate-pulse">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-xs shrink-0">{icon}</span>
+                <div className="min-w-0">
+                  <div className="text-[10px] font-black text-rose-400 uppercase tracking-tight">{shortLabel}</div>
+                  <div className="text-[11px] font-black text-rose-300">MANCA ⚠️</div>
+                </div>
+              </div>
+              <span className="w-4 h-4 rounded-full bg-rose-500 text-white font-black text-[10px] flex items-center justify-center shrink-0">✗</span>
+            </div>
+          );
+        };
+
+        const percentCovered = Math.round((cov.totalCovered / cov.totalRequired) * 100);
+
+        return (
+          <div
+            className="fixed z-50 pointer-events-none transition-all duration-100 ease-out"
+            style={{
+              left: hoveredDayCoveragePos
+                ? Math.min(Math.max(16, hoveredDayCoveragePos.x - 170), window.innerWidth - 370)
+                : "50%",
+              top: hoveredDayCoveragePos
+                ? hoveredDayCoveragePos.y + 24 + 420 > window.innerHeight
+                  ? Math.max(16, hoveredDayCoveragePos.y - 430)
+                  : hoveredDayCoveragePos.y + 16
+                : "20%",
+              width: "350px"
+            }}
+          >
+            <div className="bg-slate-950/95 backdrop-blur-xl text-white border-2 border-slate-700/80 rounded-2xl shadow-2xl p-3.5 space-y-2.5 text-xs ring-2 ring-black/40">
+              
+              {/* Header: Date + Visual Badge */}
+              <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                <div className="min-w-0">
+                  <div className="font-black text-sm text-slate-100 capitalize truncate flex items-center gap-1.5">
+                    <CalendarDays className="w-4 h-4 text-indigo-400 shrink-0" />
+                    <span>{formatItalianCoverageDate(hoveredDayCoverageDate)}</span>
+                  </div>
+                </div>
+
+                {cov.isComplete ? (
+                  <div className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 px-2.5 py-0.5 rounded-full text-[10px] font-black flex items-center gap-1 shrink-0 shadow-xs">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    COMPLETO
+                  </div>
+                ) : (
+                  <div className="bg-rose-500/25 text-rose-300 border border-rose-500/60 px-2.5 py-0.5 rounded-full text-[10px] font-black flex items-center gap-1 shrink-0 shadow-xs">
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
+                    {cov.missingMandatory.length} DA ASSEGNARE
+                  </div>
+                )}
+              </div>
+
+              {/* Graphical Progress Bar */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px] font-bold text-slate-400">
+                  <span>Copertura Turni Obbligatori</span>
+                  <span className={cov.isComplete ? "text-emerald-400 font-extrabold" : "text-amber-400 font-extrabold"}>
+                    {cov.totalCovered} di {cov.totalRequired} ({percentCovered}%)
+                  </span>
+                </div>
+                <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden flex">
+                  <div
+                    className={`h-full transition-all duration-300 ${
+                      cov.isComplete ? "bg-emerald-500" : percentCovered >= 75 ? "bg-amber-500" : "bg-rose-500"
+                    }`}
+                    style={{ width: `${percentCovered}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Graphic Structure Matrix */}
+              <div className="space-y-1.5 pt-1">
+                {/* Vannucci 1 */}
+                <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-1.5 space-y-1">
+                  <div className="text-[10px] font-black uppercase text-indigo-300 tracking-wider px-1">
+                    🏠 Vannucci 1
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {renderShiftBadge(v1Morning, "Mattina", "🌅")}
+                    {renderShiftBadge(v1Afternoon, "Pomeriggio", "🌆")}
+                  </div>
+                </div>
+
+                {/* Vannucci 2 */}
+                <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-1.5 space-y-1">
+                  <div className="text-[10px] font-black uppercase text-teal-300 tracking-wider px-1">
+                    🏠 Vannucci 2
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {renderShiftBadge(v2Morning, "Mattina", "🌅")}
+                    {renderShiftBadge(v2Afternoon, "Pomeriggio", "🌆")}
+                  </div>
+                </div>
+
+                {/* Vannucci 4 */}
+                <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-1.5 space-y-1">
+                  <div className="text-[10px] font-black uppercase text-purple-300 tracking-wider px-1">
+                    🏠 Vannucci 4
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {renderShiftBadge(v4Morning, "Mattina", "🌅")}
+                    {renderShiftBadge(v4Afternoon, "Pomeriggio", "🌆")}
+                  </div>
+                </div>
+
+                {/* Notte & Cucina */}
+                <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-1.5 space-y-1">
+                  <div className="text-[10px] font-black uppercase text-amber-300 tracking-wider px-1">
+                    ⭐ Servizi Obbligatori
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {renderShiftBadge(notteSlot, "Notte (23-07)", "🌙")}
+                    {renderShiftBadge(cucinaSlot, "Cucina (10:30)", "🍲")}
+                  </div>
+                </div>
+
+                {/* Extra: Pulizie */}
+                <div className="bg-slate-900/40 border border-slate-800/80 rounded-xl p-1.5 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0 px-1">
+                    <span className="text-sm">🪣🧹</span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] font-bold text-slate-300">Pulizie (07:00 - 11:00)</span>
+                        <span className="text-[8px] bg-slate-800 text-slate-400 font-bold px-1 rounded">EXTRA</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 truncate">
+                        {pulizieSlot?.isCovered
+                          ? `✨ ${pulizieSlot.assignedStaff.map(s => `${s.nome} ${s.cognome?.charAt(0) || ""}.`).join(", ")}`
+                          : "⚪ Non assegnato (opzionale)"}
+                      </div>
+                    </div>
+                  </div>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    pulizieSlot?.isCovered
+                      ? "bg-teal-500/20 text-teal-300 border border-teal-500/40"
+                      : "bg-slate-800 text-slate-500"
+                  }`}>
+                    {pulizieSlot?.isCovered ? "Coperto" : "Opzionale"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Ferie & Riposi Footer (Mini Pills) */}
+              {(cov.ferieStaff.length > 0 || cov.riposoStaff.length > 0) && (
+                <div className="pt-1.5 border-t border-slate-800 flex items-center gap-1.5 text-[9px] flex-wrap">
+                  {cov.ferieStaff.length > 0 && (
+                    <span className="bg-amber-950/60 text-amber-300 border border-amber-800/60 px-1.5 py-0.5 rounded font-bold">
+                      🏖️ Ferie: {cov.ferieStaff.join(", ")}
+                    </span>
+                  )}
+                  {cov.riposoStaff.length > 0 && (
+                    <span className="bg-slate-800 text-slate-300 border border-slate-700 px-1.5 py-0.5 rounded font-medium">
+                      🛋️ Riposo: {cov.riposoStaff.join(", ")}
+                    </span>
+                  )}
+                </div>
+              )}
+
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );
