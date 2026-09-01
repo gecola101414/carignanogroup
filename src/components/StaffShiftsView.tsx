@@ -226,13 +226,12 @@ export const INITIAL_SHIFT_PRESETS: CustomShiftPreset[] = [
     isDefault: true
   },
   {
-    id: "preset-v1-7-11",
-    label: "🧹 07:00-11:00 (Pulizie)",
-    tipoTurno: "Mattina",
+    id: "preset-pulizie-7-11",
+    label: "🪣🧹 07:00-11:00 (Pulizie)",
+    tipoTurno: "Pulizie",
     orarioInizio: "07:00",
     orarioFine: "11:00",
-    subtitle: "Pulizie",
-    struttura: "Vannucci 1",
+    subtitle: "Pulizie / Aiuto Alzate V1",
     isDefault: true
   },
   {
@@ -262,6 +261,7 @@ export const INITIAL_SHIFT_PRESETS: CustomShiftPreset[] = [
     orarioInizio: "07:00",
     orarioFine: "14:00",
     struttura: "Vannucci 2",
+    subtitle: "07:00 - 14:00 (Aiuto Alzate V1)",
     isDefault: true
   },
   {
@@ -677,31 +677,60 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
 
   // Helper to check if a day is complete: Mattina + Pomeriggio for each structure + at least 1 Notte
   const getMissingShiftsForDay = (dateStr: string): string[] => {
-    const dayShifts = shifts.filter(s => s.data === dateStr);
+    const dayShifts = shifts.filter(s => s.data === dateStr && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie");
     const missing: string[] = [];
 
-    const hasMattina1 = dayShifts.some(s => s.tipoTurno === "Mattina" && (s.struttura === "Vannucci 1" || s.struttura === "Struttura 1"));
-    const hasPomeriggio1 = dayShifts.some(s => s.tipoTurno === "Pomeriggio" && (s.struttura === "Vannucci 1" || s.struttura === "Struttura 1"));
-    const hasNotte1 = dayShifts.some(s => s.tipoTurno === "Notte");
-    
-    if (!hasMattina1) missing.push("Vannucci 1: Mattina");
-    if (!hasPomeriggio1) missing.push("Vannucci 1: Pomeriggio");
-    if (!hasNotte1) missing.push("Vannucci 1: Notte");
+    // Check if support for Vannucci 1 morning wake-ups (07:00-08:00) is present:
+    // 1. Dedicated Pulizie shift (🪣🧹)
+    // 2. Or Vannucci 2 morning shift starting at 07:00 (same floor connecting passage)
+    const hasPulizie = dayShifts.some(s => 
+      s.tipoTurno === "Pulizie" ||
+      ((s.orarioInizio === "07:00" && s.orarioFine === "11:00") || (s.note && s.note.toLowerCase().includes("puliz")))
+    );
+    const hasV2MorningAt7 = dayShifts.some(s =>
+      (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2") &&
+      s.tipoTurno === "Mattina" &&
+      s.orarioInizio === "07:00"
+    );
+    const hasV1MorningSupport = hasPulizie || hasV2MorningAt7;
 
+    // Vannucci 1: Needs 2 morning operators unless Pulizie or V2 (07:00) is present
+    const v1MorningShifts = dayShifts.filter(s => 
+      (s.struttura === "Vannucci 1" || s.struttura === "Struttura 1") && 
+      s.tipoTurno === "Mattina"
+    );
+    const requiredV1Morning = hasV1MorningSupport ? 1 : 2;
+
+    if (v1MorningShifts.length < requiredV1Morning) {
+      if (v1MorningShifts.length === 0) {
+        missing.push(requiredV1Morning === 2 ? "Vannucci 1: 2x Mattina (Alzate ore 07:00)" : "Vannucci 1: Mattina (07:00)");
+      } else if (v1MorningShifts.length === 1 && requiredV1Morning === 2) {
+        missing.push("Vannucci 1: 2° operatore Mattina (Alzate 07:00 o Pulizie 🪣🧹 / V2 ore 07:00)");
+      }
+    }
+
+    const hasPomeriggio1 = dayShifts.some(s => s.tipoTurno === "Pomeriggio" && (s.struttura === "Vannucci 1" || s.struttura === "Struttura 1"));
+    if (!hasPomeriggio1) missing.push("Vannucci 1: Pomeriggio");
+
+    // Vannucci 2
     const hasMattina2 = dayShifts.some(s => s.tipoTurno === "Mattina" && (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2"));
     const hasPomeriggio2 = dayShifts.some(s => s.tipoTurno === "Pomeriggio" && (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2"));
-    
     if (!hasMattina2) missing.push("Vannucci 2: Mattina");
     if (!hasPomeriggio2) missing.push("Vannucci 2: Pomeriggio");
 
+    // Vannucci 4
     const hasMattina3 = dayShifts.some(s => s.tipoTurno === "Mattina" && (s.struttura === "Vannucci 4" || s.struttura === "Struttura 4"));
     const hasPomeriggio3 = dayShifts.some(s => s.tipoTurno === "Pomeriggio" && (s.struttura === "Vannucci 4" || s.struttura === "Struttura 4"));
-    
     if (!hasMattina3) missing.push("Vannucci 4: Mattina");
     if (!hasPomeriggio3) missing.push("Vannucci 4: Pomeriggio");
 
+    // Notte (Generale)
+    const hasNotte = dayShifts.some(s => s.tipoTurno === "Notte");
+    if (!hasNotte) missing.push("Notte (23:00 - 07:00)");
+
+    // Cucina (Generale)
     const hasCucina = dayShifts.some(s => s.tipoTurno === "Cucina");
-    if (!hasCucina) missing.push("Cucina (Generale)");
+    if (!hasCucina) missing.push("Cucina (10:30 - 15:00)");
 
     return missing;
   };
@@ -1145,11 +1174,38 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       orarioInizio: newOrarioInizio,
       orarioFine: newOrarioFine,
       note: constructedNote,
-      struttura: newTipoTurno === "Notte" || newTipoTurno === "Riposo" || newTipoTurno === "Ferie" ? "" : newStruttura
+      struttura: newTipoTurno === "Notte" || newTipoTurno === "Riposo" || newTipoTurno === "Ferie" || newTipoTurno === "Cucina" || newTipoTurno === "Pulizie" ? "" : newStruttura
     };
 
-    const existingFiltered = shifts.filter(s => !(s.staffId === newStaffId && s.data === newDate));
-    applyShiftsUpdate([...existingFiltered, shiftObj]);
+    let updatedShiftsList: Shift[];
+    if (newTipoTurno === "Riposo" || newTipoTurno === "Ferie") {
+      const existingFiltered = shifts.filter(s => !(s.staffId === newStaffId && s.data === newDate));
+      updatedShiftsList = [...existingFiltered, shiftObj];
+    } else {
+      const isPastMidnight = (start: string, end: string) => parseInt(end.split(":")[0], 10) < parseInt(start.split(":")[0], 10) || end === "07:00";
+      const toMin = (t: string, pastMidnight: boolean) => {
+        const parts = t.split(":");
+        let min = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+        if (pastMidnight) min += 24 * 60;
+        return min;
+      };
+
+      const newStartMin = toMin(newOrarioInizio, false);
+      const newEndMin = toMin(newOrarioFine, newTipoTurno === "Notte" || isPastMidnight(newOrarioInizio, newOrarioFine));
+
+      const memberDayShifts = shifts.filter(s => s.staffId === newStaffId && s.data === newDate && s.tipoTurno !== "Riposo");
+      const nonOverlappingMemberDayShifts = memberDayShifts.filter(s => {
+        const sStartMin = toMin(s.orarioInizio, false);
+        const sEndMin = toMin(s.orarioFine, s.tipoTurno === "Notte" || isPastMidnight(s.orarioInizio, s.orarioFine));
+        const overlaps = Math.max(newStartMin, sStartMin) < Math.min(newEndMin, sEndMin);
+        return !overlaps;
+      });
+
+      const otherStaffShifts = shifts.filter(s => !(s.staffId === newStaffId && s.data === newDate));
+      updatedShiftsList = [...otherStaffShifts, ...nonOverlappingMemberDayShifts, shiftObj];
+    }
+
+    applyShiftsUpdate(updatedShiftsList);
     setShowAddModal(false);
     setNewNote("");
     showToast(`Turno ${newTipoTurno} inserito per il ${newDate}!`);
@@ -1194,11 +1250,38 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       orarioInizio: preset.orarioInizio,
       orarioFine: preset.orarioFine,
       note: constructedNote,
-      struttura: preset.tipoTurno === "Notte" || preset.tipoTurno === "Riposo" || preset.tipoTurno === "Ferie" ? "" : newStruttura
+      struttura: preset.tipoTurno === "Notte" || preset.tipoTurno === "Riposo" || preset.tipoTurno === "Ferie" || preset.tipoTurno === "Cucina" || preset.tipoTurno === "Pulizie" ? "" : newStruttura
     };
 
-    const existingFiltered = shifts.filter(s => !(s.staffId === newStaffId && s.data === newDate));
-    applyShiftsUpdate([...existingFiltered, shiftObj]);
+    let updatedShiftsList: Shift[];
+    if (preset.tipoTurno === "Riposo" || preset.tipoTurno === "Ferie") {
+      const existingFiltered = shifts.filter(s => !(s.staffId === newStaffId && s.data === newDate));
+      updatedShiftsList = [...existingFiltered, shiftObj];
+    } else {
+      const isPastMidnight = (start: string, end: string) => parseInt(end.split(":")[0], 10) < parseInt(start.split(":")[0], 10) || end === "07:00";
+      const toMin = (t: string, pastMidnight: boolean) => {
+        const parts = t.split(":");
+        let min = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+        if (pastMidnight) min += 24 * 60;
+        return min;
+      };
+
+      const newStartMin = toMin(preset.orarioInizio, false);
+      const newEndMin = toMin(preset.orarioFine, preset.tipoTurno === "Notte" || isPastMidnight(preset.orarioInizio, preset.orarioFine));
+
+      const memberDayShifts = shifts.filter(s => s.staffId === newStaffId && s.data === newDate && s.tipoTurno !== "Riposo");
+      const nonOverlappingMemberDayShifts = memberDayShifts.filter(s => {
+        const sStartMin = toMin(s.orarioInizio, false);
+        const sEndMin = toMin(s.orarioFine, s.tipoTurno === "Notte" || isPastMidnight(s.orarioInizio, s.orarioFine));
+        const overlaps = Math.max(newStartMin, sStartMin) < Math.min(newEndMin, sEndMin);
+        return !overlaps;
+      });
+
+      const otherStaffShifts = shifts.filter(s => !(s.staffId === newStaffId && s.data === newDate));
+      updatedShiftsList = [...otherStaffShifts, ...nonOverlappingMemberDayShifts, shiftObj];
+    }
+
+    applyShiftsUpdate(updatedShiftsList);
     setShowAddModal(false);
     setNewNote("");
     showToast(`Turno ${preset.tipoTurno} inserito per il ${newDate}!`);
@@ -2052,17 +2135,63 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   ): { valid: boolean; reason?: string } => {
     if (tipoTurno === "Riposo" || tipoTurno === "Ferie") return { valid: true };
 
-    // 1. Check duplicate structure and tipoTurno
-    const sameShifts = shifts.filter(s => 
-      s.data === dateStr && 
-      s.struttura === struttura && 
-      s.tipoTurno === tipoTurno && 
-      s.id !== shiftIdToIgnore &&
-      s.tipoTurno !== "Riposo" &&
-      s.tipoTurno !== "Ferie"
-    );
-    if (sameShifts.length > 0) {
-      return { valid: false, reason: `Turno ${tipoTurno} già coperto in ${struttura}` };
+    // 1. Structure Coverage & Duplicate Rules
+    const isV1 = (struttura === "Vannucci 1" || struttura === "Struttura 1");
+    const isMorning = (tipoTurno === "Mattina");
+
+    if (isV1 && isMorning) {
+      // Check if on this day there is support for Vannucci 1 alzate 07:00-08:00:
+      // 1. Pulizie (🪣🧹)
+      // 2. Vannucci 2 morning shift starting at 07:00 (same floor connecting passage)
+      const hasPulizie = shifts.some(s => 
+        s.data === dateStr && 
+        s.id !== shiftIdToIgnore && 
+        s.tipoTurno !== "Riposo" && 
+        s.tipoTurno !== "Ferie" &&
+        (s.tipoTurno === "Pulizie" || ((s.orarioInizio === "07:00" && s.orarioFine === "11:00") || (s.note && s.note.toLowerCase().includes("puliz"))))
+      );
+      const hasV2MorningAt7 = shifts.some(s =>
+        s.data === dateStr &&
+        s.id !== shiftIdToIgnore &&
+        (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2") &&
+        s.tipoTurno === "Mattina" &&
+        s.orarioInizio === "07:00" &&
+        s.tipoTurno !== "Riposo" &&
+        s.tipoTurno !== "Ferie"
+      );
+      const hasV1Support = hasPulizie || hasV2MorningAt7;
+
+      const existingV1Morning = shifts.filter(s => 
+        s.data === dateStr && 
+        (s.struttura === "Vannucci 1" || s.struttura === "Struttura 1") && 
+        s.tipoTurno === "Mattina" && 
+        s.id !== shiftIdToIgnore &&
+        s.tipoTurno !== "Riposo" &&
+        s.tipoTurno !== "Ferie"
+      );
+
+      const maxAllowed = hasV1Support ? 1 : 2;
+      if (existingV1Morning.length >= maxAllowed) {
+        if (hasPulizie) {
+          return { valid: false, reason: "Vannucci 1: Turno Mattina già coperto (con supporto Pulizie 🪣🧹 per le alzate)" };
+        } else if (hasV2MorningAt7) {
+          return { valid: false, reason: "Vannucci 1: Turno Mattina già coperto (con supporto Vannucci 2 ore 07:00 per le alzate)" };
+        } else {
+          return { valid: false, reason: "Vannucci 1: Turno Mattina (alzate ore 07:00) già completo con 2 operatori" };
+        }
+      }
+    } else if (struttura && !["Notte", "Cucina", "Pulizie", "Riposo", "Ferie"].includes(tipoTurno)) {
+      const sameShifts = shifts.filter(s => 
+        s.data === dateStr && 
+        s.struttura === struttura && 
+        s.tipoTurno === tipoTurno && 
+        s.id !== shiftIdToIgnore &&
+        s.tipoTurno !== "Riposo" &&
+        s.tipoTurno !== "Ferie"
+      );
+      if (sameShifts.length > 0) {
+        return { valid: false, reason: `Turno ${tipoTurno} già coperto in ${struttura}` };
+      }
     }
 
     // 2. Check 11-hour rule with PREVIOUS day's shifts
@@ -2094,9 +2223,11 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       return { valid: false, reason: "Non rispetta le 11 ore di riposo dal turno precedente" };
     }
     
-    // 3. Check rule with SAME day's shifts (allow non-overlapping split shifts on same day)
+    // 3. Check rule with SAME day's shifts (allow 07:00-11:00 + 23:00-07:00 multi-shift with 12h rest)
     const sameDayShifts = shifts.filter(s => s.staffId === staffId && s.data === dateStr && s.id !== shiftIdToIgnore && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie");
     let sameDayOverlap = false;
+    let insufficientSameDayRest = false;
+
     sameDayShifts.forEach(s => {
       const sStartParts = s.orarioInizio.split(":");
       const sStartMin = parseInt(sStartParts[0], 10) * 60 + parseInt(sStartParts[1], 10);
@@ -2119,11 +2250,22 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       // Check interval overlap
       if (Math.max(newStartMin, sStartMin) < Math.min(newEndMin, sEndMin)) {
         sameDayOverlap = true;
+      } else {
+        // If not overlapping, check rest between same-day shifts
+        const firstEnd = Math.min(sEndMin, newEndMin);
+        const secondStart = Math.max(sStartMin, newStartMin);
+        const gap = secondStart - firstEnd;
+        if (gap < 11 * 60) {
+          insufficientSameDayRest = true;
+        }
       }
     });
 
     if (sameDayOverlap) {
-      return { valid: false, reason: "Orari sovrapposti con un altro turno nello stesso giorno" };
+      return { valid: false, reason: "Orari sovrapposti con un altro turno dello stesso operatore" };
+    }
+    if (insufficientSameDayRest) {
+      return { valid: false, reason: "Meno di 11 ore di riposo tra i turni dello stesso giorno" };
     }
 
     // 4. Check 11-hour rule with NEXT day's shifts
@@ -2160,7 +2302,31 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   };
 
   const isStrutturaSatura = (struttura: string, data: string, shiftIdToIgnore?: string) => {
-    const dayShifts = shifts.filter(s => s.data === data && s.struttura === struttura && s.id !== shiftIdToIgnore);
+    const dayShifts = shifts.filter(s => s.data === data && s.struttura === struttura && s.id !== shiftIdToIgnore && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie");
+    
+    if (struttura === "Vannucci 1" || struttura === "Struttura 1") {
+      const hasPulizie = shifts.some(s => 
+        s.data === data && 
+        s.id !== shiftIdToIgnore && 
+        s.tipoTurno !== "Riposo" && 
+        s.tipoTurno !== "Ferie" &&
+        (s.tipoTurno === "Pulizie" || ((s.orarioInizio === "07:00" && s.orarioFine === "11:00") || (s.note && s.note.toLowerCase().includes("puliz"))))
+      );
+      const hasV2MorningAt7 = shifts.some(s =>
+        s.data === data &&
+        s.id !== shiftIdToIgnore &&
+        (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2") &&
+        s.tipoTurno === "Mattina" &&
+        s.orarioInizio === "07:00" &&
+        s.tipoTurno !== "Riposo" &&
+        s.tipoTurno !== "Ferie"
+      );
+      const requiredMorning = (hasPulizie || hasV2MorningAt7) ? 1 : 2;
+      const morningCount = dayShifts.filter(s => s.tipoTurno === "Mattina").length;
+      const hasPomeriggio = dayShifts.some(s => s.tipoTurno === "Pomeriggio");
+      return morningCount >= requiredMorning && hasPomeriggio;
+    }
+
     const hasMattina = dayShifts.some(s => s.tipoTurno === "Mattina");
     const hasPomeriggio = dayShifts.some(s => s.tipoTurno === "Pomeriggio");
     return hasMattina && hasPomeriggio;
@@ -2171,6 +2337,11 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     // 1. TURNO DI NOTTE: Blu come richiesto (ex Nero)
     if (tipo === "Notte") {
       return "bg-blue-600 text-white border-blue-700 hover:bg-blue-700 font-black shadow-xs ring-1 ring-blue-600/80";
+    }
+
+    // 1.3 TURNO PULIZIE: Verde Smeraldo / Teal con mocio e secchio 🪣🧹
+    if (tipo === "Pulizie") {
+      return "bg-teal-600 text-white border-teal-700 hover:bg-teal-700 font-black shadow-xs ring-1 ring-teal-600/80";
     }
 
     // 1.5 TURNO DI CUCINA: Azzurro molto diverso
@@ -3590,6 +3761,8 @@ function importaTurniResidenzaVannucci() {
                                       {s.tipoTurno === "Mattina" && <GenovaLandscapeIcon isMorning={true} />}
                                       {s.tipoTurno === "Pomeriggio" && <GenovaLandscapeIcon isMorning={false} />}
                                       {s.tipoTurno === "Notte" && <Moon className="w-5.5 h-5.5 text-slate-400" />}
+                                      {s.tipoTurno === "Pulizie" && <span className="text-base leading-none" title="Pulizie / Supporto Alzate V1">🪣🧹</span>}
+                                      {s.tipoTurno === "Cucina" && <span className="text-base leading-none">🍲</span>}
                                       {s.note && s.note.trim().length > 0 && s.note !== "Programmazione automatica" && (
                                         <span className="relative flex h-2.5 w-2.5 ml-0.5" title={`Nota: ${s.note}`}>
                                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
@@ -3621,7 +3794,7 @@ function importaTurniResidenzaVannucci() {
 
                                   <div className="flex items-center justify-between text-xs font-mono font-bold opacity-90 mt-0.5 border-t border-black/5 pt-1">
                                     <span>{s.orarioInizio} - {s.orarioFine}</span>
-                                    {s.struttura && s.tipoTurno !== "Notte" && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie" && s.tipoTurno !== "Cucina" && (
+                                    {s.struttura && s.tipoTurno !== "Notte" && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie" && s.tipoTurno !== "Cucina" && s.tipoTurno !== "Pulizie" && (
                                       <span className="bg-white/95 text-slate-800 px-2 py-1 rounded-md text-[9px] font-extrabold border border-black/10 uppercase tracking-tight flex items-center gap-1 shadow-3xs">
                                         {(s.struttura === "Vannucci 1" || s.struttura === "Struttura 1") ? (
                                           <span>Vannucci <strong className="text-[15px] sm:text-[17px] font-black text-orange-600 leading-none">1</strong></span>
@@ -4043,6 +4216,8 @@ function importaTurniResidenzaVannucci() {
                                 else if (s.tipoTurno === "Pomeriggio") badgeText = "P";
                                 else if (s.tipoTurno === "Notte") badgeText = "N";
                                 else if (s.tipoTurno === "Reperibilità") badgeText = "R";
+                                else if (s.tipoTurno === "Cucina") badgeText = "🍲";
+                                else if (s.tipoTurno === "Pulizie") badgeText = "🪣🧹";
                                 else if (s.tipoTurno === "Riposo") badgeText = "💤";
 
                                 const badgeStyle = getShiftBadgeStyle(s.tipoTurno, s.orarioInizio, s.orarioFine, s.struttura);
@@ -4321,7 +4496,7 @@ function importaTurniResidenzaVannucci() {
                         className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center justify-between cursor-pointer ${getShiftBadgeStyle(s.tipoTurno, s.orarioInizio, s.orarioFine, s.struttura)}`}
                       >
                         <div>
-                          <span>{s.tipoTurno} • {formatItalianDateString(s.data)} {(s.struttura && !["Notte", "Riposo", "Ferie", "Cucina"].includes(s.tipoTurno)) ? ` (${s.struttura})` : ""}</span>
+                          <span>{s.tipoTurno} • {formatItalianDateString(s.data)} {(s.struttura && !["Notte", "Riposo", "Ferie", "Cucina", "Pulizie"].includes(s.tipoTurno)) ? ` (${s.struttura})` : ""}</span>
                           <div className="text-[13px] font-mono font-bold opacity-80 mt-0.5">{s.orarioInizio} - {s.orarioFine}</div>
                         </div>
                         {!isStaffRole && (
@@ -4569,7 +4744,7 @@ function importaTurniResidenzaVannucci() {
                 <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
                   {savedPresets
                     .filter((preset) => {
-                      if (!preset.struttura || preset.tipoTurno === "Cucina" || preset.tipoTurno === "Notte") {
+                      if (!preset.struttura || preset.tipoTurno === "Cucina" || preset.tipoTurno === "Notte" || preset.tipoTurno === "Pulizie") {
                         return true;
                       }
                       const currentS = newStruttura.toLowerCase();
@@ -4605,19 +4780,23 @@ function importaTurniResidenzaVannucci() {
                           className={`w-full p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center relative ${
                             !validity.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
                             "cursor-pointer " + (isSelected
-                              ? preset.tipoTurno === "Cucina"
+                              ? preset.tipoTurno === "Pulizie"
+                                ? "bg-teal-600 border-teal-700 text-white ring-4 ring-teal-600/30"
+                                : preset.tipoTurno === "Cucina"
                                 ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30"
                                 : preset.tipoTurno === "Notte"
-                                ? "bg-slate-900 border-slate-950 text-white ring-4 ring-slate-800/80"
-                                : newStruttura === "Vannucci 1"
-                                ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
-                                : newStruttura === "Vannucci 2"
+                                ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30"
+                                : newStruttura === "Vannucci 1" || newStruttura === "Struttura 1"
                                 ? "bg-yellow-400 border-yellow-500 text-yellow-950 ring-4 ring-yellow-400/25"
-                                : "bg-emerald-600 border-emerald-700 text-white ring-4 ring-emerald-600/20"
+                                : newStruttura === "Vannucci 2" || newStruttura === "Struttura 2"
+                                ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
+                                : "bg-lime-400 border-lime-500 text-lime-950 ring-4 ring-lime-400/25"
+                              : preset.tipoTurno === "Pulizie"
+                              ? "bg-teal-50/80 border-teal-200 hover:bg-teal-100 text-teal-950"
                               : preset.tipoTurno === "Cucina"
                               ? "bg-sky-50/80 border-sky-300 hover:bg-sky-100 text-sky-950"
                               : preset.tipoTurno === "Notte"
-                              ? "bg-slate-900 border-slate-950 text-slate-100 hover:bg-slate-950"
+                              ? "bg-blue-50 border-blue-200 hover:bg-blue-100 text-blue-900"
                               : "bg-slate-50 border-slate-200 hover:bg-slate-100")
                           }`}
                         >
@@ -4686,21 +4865,21 @@ function importaTurniResidenzaVannucci() {
                   <button
                     type="button"
                     onDoubleClick={() => {
-                      setNewNote("Pulizie");
-                      handleFastSubmit({ tipoTurno: "Mattina", orarioInizio: "07:00", orarioFine: "11:00" });
+                      setNewNote("Servizio Pulizie & Supporto Alzate");
+                      handleFastSubmit({ tipoTurno: "Pulizie", orarioInizio: "07:00", orarioFine: "11:00" });
                     }}
                     onClick={() => {
-                      setNewTipoTurno("Mattina");
+                      setNewTipoTurno("Pulizie");
                       setNewOrarioInizio("07:00");
                       setNewOrarioFine("11:00");
-                      if (!newNote) setNewNote("Pulizie");
+                      if (!newNote) setNewNote("Servizio Pulizie & Supporto Alzate");
                     }}
                     className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
-                      newTipoTurno === "Mattina" && newOrarioInizio === "07:00" && newOrarioFine === "11:00" ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/30" : "bg-orange-50/80 border-orange-200 hover:bg-orange-100 text-orange-900"
+                      newTipoTurno === "Pulizie" && newOrarioInizio === "07:00" && newOrarioFine === "11:00" ? "bg-teal-600 border-teal-700 text-white ring-4 ring-teal-600/30" : "bg-teal-50/80 border-teal-200 hover:bg-teal-100 text-teal-950"
                     }`}
                   >
-                    <span className="font-extrabold text-[12px]">🧹 Pulizie</span>
-                    <span className="text-[9px] opacity-75 font-normal">07:00 - 11:00</span>
+                    <span className="font-extrabold text-[12px] flex items-center gap-1">🪣🧹 Pulizie</span>
+                    <span className="text-[9px] opacity-75 font-normal">07:00 - 11:00 (Aiuto Alzate V1)</span>
                   </button>
 
                   {/* Riposo */}
@@ -5276,7 +5455,7 @@ function importaTurniResidenzaVannucci() {
                         </span>
                       </div>
 
-                      {selectedShiftForDetail.struttura && selectedShiftForDetail.tipoTurno !== "Notte" && selectedShiftForDetail.tipoTurno !== "Riposo" && selectedShiftForDetail.tipoTurno !== "Ferie" && selectedShiftForDetail.tipoTurno !== "Cucina" && (
+                      {selectedShiftForDetail.struttura && selectedShiftForDetail.tipoTurno !== "Notte" && selectedShiftForDetail.tipoTurno !== "Riposo" && selectedShiftForDetail.tipoTurno !== "Ferie" && selectedShiftForDetail.tipoTurno !== "Cucina" && selectedShiftForDetail.tipoTurno !== "Pulizie" && (
                         <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                           <span className="text-slate-500 font-semibold">Struttura:</span>
                           <span className="font-extrabold text-slate-900 bg-white px-2.5 py-1 rounded-lg border border-slate-200 text-[11px] shadow-2xs">
@@ -5420,7 +5599,7 @@ function importaTurniResidenzaVannucci() {
                         <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
                           {savedPresets
                             .filter((preset) => {
-                              if (!preset.struttura || preset.tipoTurno === "Cucina" || preset.tipoTurno === "Notte") {
+                              if (!preset.struttura || preset.tipoTurno === "Cucina" || preset.tipoTurno === "Notte" || preset.tipoTurno === "Pulizie") {
                                 return true;
                               }
                               const currentS = editShiftStruttura.toLowerCase();
@@ -5452,7 +5631,9 @@ function importaTurniResidenzaVannucci() {
                                   className={`w-full p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center relative ${
                                     !validity.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
                                     "cursor-pointer " + (isSelected
-                                      ? preset.tipoTurno === "Cucina"
+                                      ? preset.tipoTurno === "Pulizie"
+                                        ? "bg-teal-600 border-teal-700 text-white ring-4 ring-teal-600/30"
+                                        : preset.tipoTurno === "Cucina"
                                         ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30"
                                         : preset.tipoTurno === "Notte"
                                         ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30"
@@ -5461,6 +5642,8 @@ function importaTurniResidenzaVannucci() {
                                         : editShiftStruttura === "Vannucci 2" || editShiftStruttura === "Struttura 2"
                                         ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
                                         : "bg-lime-400 border-lime-500 text-lime-950 ring-4 ring-lime-400/25"
+                                      : preset.tipoTurno === "Pulizie"
+                                      ? "bg-teal-50/80 border-teal-200 hover:bg-teal-100 text-teal-950"
                                       : preset.tipoTurno === "Cucina"
                                       ? "bg-sky-50/80 border-sky-300 hover:bg-sky-100 text-sky-950"
                                       : preset.tipoTurno === "Notte"
@@ -5525,7 +5708,7 @@ function importaTurniResidenzaVannucci() {
                             }`}
                           >
                             <span className="font-extrabold text-[12px]">🧹 Pulizie</span>
-                            <span className="text-[9px] opacity-75 font-normal">07:00 - 11:00</span>
+                            <span className="text-[9px] opacity-75 font-normal">07:00 - 11:00 (Aiuto Alzate V1)</span>
                           </button>
 
                           {/* Riposo */}
