@@ -226,11 +226,6 @@ export default function App() {
 
     const unsubscribeCredentials = firestoreSync.subscribeCredentials((remoteCreds, remoteUpdatedAt) => {
       if (remoteCreds && Array.isArray(remoteCreds)) {
-        const hasProgrammatore = remoteCreds.some(c => c.username === "programmatore");
-        if (!hasProgrammatore) {
-          remoteCreds.push({ username: "programmatore", role: "admin", passwordHash: "1234", mustChange: true });
-          firestoreSync.saveCredentials(remoteCreds);
-        }
         if (remoteUpdatedAt && remoteUpdatedAt <= credentialsUpdatedAtRef.current) {
           return;
         }
@@ -313,8 +308,8 @@ export default function App() {
     // Initial update
     updateMyPresence();
     
-    // Heartbeat every 1 minute
-    const intervalId = setInterval(updateMyPresence, 60000);
+    // Heartbeat every 5 minutes
+    const intervalId = setInterval(updateMyPresence, 300000);
     
     // Set offline on unload
     const handleUnload = () => {
@@ -382,7 +377,7 @@ export default function App() {
 
     const intervalId = setInterval(() => {
       syncWithServer();
-    }, 6000);
+    }, 120000);
 
     return () => {
       window.removeEventListener("focus", handleFocus);

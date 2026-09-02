@@ -42,8 +42,14 @@ export interface FirestoreErrorInfo {
 }
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  if (errorMessage.includes('resource-exhausted') || errorMessage.includes('quota')) {
+    console.warn("⚠️ Firestore Quota Exceeded: Daily write limit reached. Running locally without cloud persistence until reset.");
+    return;
+  }
+  
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errorMessage,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
@@ -59,7 +65,6 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     path
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
 }
 
 export async function testConnection() {
@@ -88,8 +93,6 @@ export const firestoreSync = {
       (snapshot) => {
         if (snapshot.exists()) {
           onUpdate(snapshot.data() as Record<string, string>);
-        } else {
-          setDoc(PRESENCE_DOC, {}).catch(err => console.error("Error seeding initial presence:", err));
         }
       },
       (error) => {
@@ -119,11 +122,6 @@ export const firestoreSync = {
           if (data && Array.isArray(data.items)) {
             onUpdate(data.items as UserCredential[], data.updatedAt as string | undefined);
           }
-        } else if (initialFallback && initialFallback.length > 0) {
-          setDoc(CREDENTIALS_DOC, {
-            items: initialFallback,
-            updatedAt: new Date().toISOString()
-          }).catch(err => console.error("Error seeding initial credentials:", err));
         }
       },
       (error) => {
@@ -155,12 +153,6 @@ export const firestoreSync = {
           if (data && Array.isArray(data.items)) {
             onUpdate(data.items as Shift[], data.updatedAt as string | undefined);
           }
-        } else if (initialFallback && initialFallback.length > 0) {
-          // Seed Firestore if document doesn't exist yet
-          setDoc(SHIFTS_DOC, {
-            items: initialFallback,
-            updatedAt: new Date().toISOString()
-          }).catch(err => console.error("Error seeding initial shifts:", err));
         }
       },
       (error) => {
@@ -193,11 +185,6 @@ export const firestoreSync = {
           if (data && Array.isArray(data.items)) {
             onUpdate(data.items as StaffMember[], data.updatedAt as string | undefined);
           }
-        } else if (initialFallback && initialFallback.length > 0) {
-          setDoc(STAFF_DOC, {
-            items: initialFallback,
-            updatedAt: new Date().toISOString()
-          }).catch(err => console.error("Error seeding initial staff:", err));
         }
       },
       (error) => {

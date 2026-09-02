@@ -367,7 +367,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   // Calendar Navigation State
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [viewMode, setViewMode] = useState<"week" | "month" | "roster">("week");
-  const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
+  const [isFullScreen, setIsFullScreen] = useState<boolean>(true);
   const [turniSidebarCollapsed, setTurniSidebarCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem("turni_sidebar_collapsed") === "true";
@@ -418,6 +418,35 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     return "ALL";
   });
 
+  // -------------------------------------------------------------------------
+  // HELPERS & DATE LOGIC (Moved up for availability in early memos)
+  // -------------------------------------------------------------------------
+  const getStartOfWeek = (d: Date) => {
+    const date = new Date(d);
+    const day = date.getDay();
+    const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+    return new Date(date.setDate(diff));
+  };
+
+  const formatDateYMD = React.useCallback((d: Date) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }, []);
+
+  const startOfWeek = getStartOfWeek(currentDate);
+
+  const weekDays = React.useMemo(() => {
+    return Array.from({ length: 8 }, (_, i) => {
+      const d = new Date(startOfWeek);
+      d.setDate(d.getDate() + (i - 1));
+      return d;
+    });
+  }, [startOfWeek]);
+
+  const todayStr = formatDateYMD(new Date());
+
   // Keep selectedStaffFilterId in sync when loggedInStaffMember resolves
   React.useEffect(() => {
     if (isStaffRole && loggedInStaffMember) {
@@ -425,23 +454,80 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     }
   }, [isStaffRole, loggedInStaffMember]);
 
+  // Global weekly filters (Multi-structure and independent time slot support)
+  const [activeStrutturaFilters, setActiveStrutturaFilters] = useState<('v1' | 'v2' | 'v4')[]>([]);
+  const [activeTimeFilter, setActiveTimeFilter] = useState<'alzate' | 'notte' | 'mattino' | 'pomeriggio' | null>(null);
+
   // Compute displayedStaff (strictly filtered to personal staff member when staff role or filter active)
   const displayedStaff = React.useMemo(() => {
+    let baseList = staff;
     if (isStaffRole) {
       if (loggedInStaffMember) {
-        return staff.filter(s => s.id === loggedInStaffMember.id);
+        baseList = staff.filter(s => s.id === loggedInStaffMember.id);
+      } else if (selectedStaffFilterId !== "ALL") {
+        baseList = staff.filter(s => s.id === selectedStaffFilterId);
+      } else {
+        baseList = staff.length > 0 ? [staff[0]] : staff;
       }
-      if (selectedStaffFilterId !== "ALL") {
-        return staff.filter(s => s.id === selectedStaffFilterId);
-      }
-      return staff.length > 0 ? [staff[0]] : staff;
+    } else if (selectedStaffFilterId !== "ALL") {
+      baseList = staff.filter(s => s.id === selectedStaffFilterId);
     }
-    // Admin role
-    if (selectedStaffFilterId === "ALL") {
-      return staff;
+
+    // Apply interactive global week filters (Location + Time)
+    if (activeStrutturaFilters.length > 0 || activeTimeFilter) {
+      const weekDates = weekDays.map(d => formatDateYMD(d));
+      const weekShifts = shifts.filter(s => weekDates.includes(s.data));
+      
+      // Staff with at least one matching shift in the week for ACTIVE filters
+      const matchingStaffIds = new Set(weekShifts.filter(s => {
+        let matchesStruttura = true;
+        let matchesTime = true;
+        const isNightShift = s.tipoTurno === "Notte" || s.orarioInizio === "23:00";
+
+        if (activeStrutturaFilters.length > 0) {
+          const targetStructures = activeStrutturaFilters.map(f => 
+            f === "v1" ? "Vannucci 1" : f === "v2" ? "Vannucci 2" : "Vannucci 4"
+          );
+          if (activeTimeFilter === "notte" && isNightShift) {
+            matchesStruttura = true;
+          } else {
+            matchesStruttura = targetStructures.includes(s.struttura || "");
+          }
+        }
+
+        if (activeTimeFilter) {
+          const type = activeTimeFilter;
+          if (type === "alzate") matchesTime = s.orarioInizio === "07:00";
+          else if (type === "notte") {
+            matchesTime = isNightShift;
+            if (activeStrutturaFilters.length === 0) {
+              matchesStruttura = true;
+            }
+          }
+          else if (type === "mattino") {
+            const hour = parseInt(s.orarioInizio?.split(":")[0] || "99");
+            matchesTime = hour >= 5 && hour < 12;
+          }
+          else if (type === "pomeriggio") {
+            const hour = parseInt(s.orarioInizio?.split(":")[0] || "99");
+            matchesTime = hour >= 12 && hour < 22;
+          }
+        }
+
+        return matchesStruttura && matchesTime;
+      }).map(s => s.staffId));
+
+      // Staff that are "free" (have at least one day without any shift in the week)
+      const freeStaffIds = new Set(baseList.filter(m => {
+        const memberShiftsInWeek = weekShifts.filter(s => s.staffId === m.id);
+        return memberShiftsInWeek.length < weekDates.length;
+      }).map(m => m.id));
+
+      return baseList.filter(m => matchingStaffIds.has(m.id) || freeStaffIds.has(m.id));
     }
-    return staff.filter(s => s.id === selectedStaffFilterId);
-  }, [staff, isStaffRole, loggedInStaffMember, selectedStaffFilterId]);
+
+    return baseList;
+  }, [staff, isStaffRole, loggedInStaffMember, selectedStaffFilterId, activeStrutturaFilters, activeTimeFilter, shifts, weekDays]);
 
   // Modal States
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
@@ -934,6 +1020,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   const holdTimerRef = useRef<NodeJS.Timeout | null>(null);
   const autoWeekTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastAutoWeekTurnTimeRef = useRef<number>(0);
+  const coverageHoverTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // New Shift Form State
   const [newStaffId, setNewStaffId] = useState<string>(staff[0]?.id || "");
@@ -1140,37 +1227,11 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   const [editShiftStruttura, setEditShiftStruttura] = useState<string>("Vannucci 1");
   const [editShiftNote, setEditShiftNote] = useState<string>("");
 
-  // Helper: Get start of current week (Monday)
-  const getStartOfWeek = (d: Date) => {
-    const date = new Date(d);
-    const day = date.getDay();
-    const diff = date.getDate() - day + (day === 0 ? -6 : 1);
-    return new Date(date.setDate(diff));
-  };
-
-  const startOfWeek = getStartOfWeek(currentDate);
-
-  // Get array of 8 dates for the week (Starting from Previous Sunday)
-  const weekDays = Array.from({ length: 8 }, (_, i) => {
-    const d = new Date(startOfWeek);
-    d.setDate(d.getDate() + (i - 1));
-    return d;
-  });
-
-  const formatDateYMD = (d: Date) => {
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  };
-
   const formatDateIT = (d: Date) => {
     return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
   };
 
   const STRUTTURE = [{ nome: "Vannucci 1" }, { nome: "Vannucci 2" }, { nome: "Vannucci 4" }];
-
-  const todayStr = formatDateYMD(new Date());
 
   const handleNextWeek = () => {
     const next = new Date(currentDate);
@@ -1217,6 +1278,47 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // Right-click hold to show day coverage details popup anywhere in the day column
+  useEffect(() => {
+    const handleMouseDown = (e: MouseEvent) => {
+      if (e.button === 2) {
+        const target = (e.target as HTMLElement).closest("[data-date]");
+        if (target) {
+          const dateYMD = target.getAttribute("data-date");
+          if (dateYMD) {
+            e.preventDefault();
+            setHoveredDayCoverageDate(dateYMD);
+            setHoveredDayCoveragePos({ x: e.clientX, y: e.clientY });
+          }
+        }
+      }
+    };
+
+    const handleMouseUp = (e: MouseEvent) => {
+      if (e.button === 2) {
+        setHoveredDayCoverageDate(null);
+        setHoveredDayCoveragePos(null);
+      }
+    };
+
+    const handleContextMenu = (e: MouseEvent) => {
+      const target = (e.target as HTMLElement).closest("[data-date]");
+      if (target) {
+        e.preventDefault();
+      }
+    };
+
+    window.addEventListener("mousedown", handleMouseDown);
+    window.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener("contextmenu", handleContextMenu);
+
+    return () => {
+      window.removeEventListener("mousedown", handleMouseDown);
+      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("contextmenu", handleContextMenu);
+    };
   }, []);
   const currentYear = currentDate.getFullYear();
   const currentMonth = currentDate.getMonth();
@@ -1594,6 +1696,45 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     applyShiftsUpdate(updatedShifts);
     setSelectedShiftForDetail(null);
     showToast(`🗑️ Turno ${targetShift.tipoTurno} cancellato.`, true);
+  };
+
+
+    const handleDateContextMenu = (e: React.MouseEvent, dateYMD: string) => {
+    e.preventDefault();
+    if (hoveredDayCoverageDate === dateYMD) {
+      setHoveredDayCoverageDate(null);
+      setHoveredDayCoveragePos(null);
+    } else {
+      setHoveredDayCoverageDate(dateYMD);
+      setHoveredDayCoveragePos({ x: e.clientX, y: e.clientY });
+    }
+  };
+
+  const handleStrutturaFilterClick = (type: 'v1' | 'v2' | 'v4') => {
+    setActiveStrutturaFilters(prev => {
+      const exists = prev.includes(type);
+      if (exists) {
+        return prev.filter(t => t !== type);
+      } else {
+        return [...prev, type];
+      }
+    });
+    // Clicking V1/V2/V4 clears Alzate (exclusive)
+    if (activeTimeFilter === 'alzate') {
+      setActiveTimeFilter(null);
+    }
+  };
+
+  const handleTimeFilterClick = (type: 'alzate' | 'notte' | 'mattino' | 'pomeriggio') => {
+    if (activeTimeFilter === type) {
+      setActiveTimeFilter(null);
+    } else {
+      if (type === 'alzate') {
+        setActiveStrutturaFilters([]);
+      }
+      // Notte is independent: does NOT clear structure filters
+      setActiveTimeFilter(type);
+    }
   };
 
   const handleDeleteWeekShifts = () => {
@@ -3805,6 +3946,112 @@ function importaTurniResidenzaVannucci() {
                   </button>
                 </div>
 
+                {/* Interactive Weekly Filters */}
+                <div className="flex items-center gap-1.5 bg-indigo-950 p-1.5 rounded-xl border border-indigo-700/50 shadow-2xl shrink-0">
+                  <span className="text-[10px] font-bold text-indigo-400 px-1.5 uppercase tracking-tighter">Filtra:</span>
+                  
+                  {/* Primary Filters (Alzate, V1, V2, V4, Notte) - EXCLUSIVE Group */}
+                  <div className="flex items-center gap-1.5 border-r border-indigo-800 pr-3 mr-1.5">
+                    {/* Alzate */}
+                    <button
+                      type="button"
+                      onClick={() => handleTimeFilterClick("alzate")}
+                      className={`px-2.5 py-1.5 rounded-lg flex items-center justify-center text-[10px] font-black transition-all duration-200 cursor-pointer ${
+                        activeTimeFilter === "alzate" 
+                          ? "bg-amber-500 text-white shadow-lg ring-2 ring-amber-300 scale-105" 
+                          : "bg-indigo-900/40 text-indigo-300 hover:bg-indigo-800/60 hover:text-white"
+                      }`}
+                      title="Filtra per Alzate (07:00)"
+                    >
+                      ⏰ Alzate
+                    </button>
+
+                    {/* V1 */}
+                    <button
+                      type="button"
+                      onClick={() => handleStrutturaFilterClick("v1")}
+                      className={`px-3 py-1.5 rounded-lg flex items-center justify-center text-[10px] font-black transition-all duration-200 cursor-pointer ${
+                        activeStrutturaFilters.includes("v1") 
+                          ? "bg-yellow-400 text-yellow-950 shadow-lg ring-2 ring-yellow-500 scale-105" 
+                          : "bg-indigo-900/40 text-indigo-300 hover:bg-indigo-800/60 hover:text-white"
+                      }`}
+                      title="Filtra per VANNUCCI 1"
+                    >
+                      V1
+                    </button>
+
+                    {/* V2 */}
+                    <button
+                      type="button"
+                      onClick={() => handleStrutturaFilterClick("v2")}
+                      className={`px-3 py-1.5 rounded-lg flex items-center justify-center text-[10px] font-black transition-all duration-200 cursor-pointer ${
+                        activeStrutturaFilters.includes("v2") 
+                          ? "bg-orange-500 text-white shadow-lg ring-2 ring-orange-400 scale-105" 
+                          : "bg-indigo-900/40 text-indigo-300 hover:bg-indigo-800/60 hover:text-white"
+                      }`}
+                      title="Filtra per VANNUCCI 2"
+                    >
+                      V2
+                    </button>
+
+                    {/* V4 */}
+                    <button
+                      type="button"
+                      onClick={() => handleStrutturaFilterClick("v4")}
+                      className={`px-3 py-1.5 rounded-lg flex items-center justify-center text-[10px] font-black transition-all duration-200 cursor-pointer ${
+                        activeStrutturaFilters.includes("v4") 
+                          ? "bg-lime-300 text-lime-950 shadow-lg ring-2 ring-lime-400 scale-105" 
+                          : "bg-indigo-900/40 text-indigo-300 hover:bg-indigo-800/60 hover:text-white"
+                      }`}
+                      title="Filtra per VANNUCCI 4"
+                    >
+                      V4
+                    </button>
+
+                    {/* Notte */}
+                    <button
+                      type="button"
+                      onClick={() => handleTimeFilterClick("notte")}
+                      className={`px-2.5 py-1.5 rounded-lg flex items-center justify-center text-[10px] font-black transition-all duration-200 cursor-pointer ${
+                        activeTimeFilter === "notte" 
+                          ? "bg-blue-600 text-white shadow-lg ring-2 ring-blue-400 scale-105" 
+                          : "bg-indigo-900/40 text-indigo-300 hover:bg-indigo-800/60 hover:text-white"
+                      }`}
+                      title="Filtra per turni di Notte"
+                    >
+                      🌙 Notte
+                    </button>
+                  </div>
+
+                  {/* Range Filters (Mattina, Pomeriggio) - SECONDARY Group */}
+                  <div className="flex items-center gap-3 pl-2">
+                    {(["mattino", "pomeriggio"] as const).map((type) => {
+                      const isActive = activeTimeFilter === type;
+                      const config = {
+                        mattino: { label: "☀️ Mattina", activeClass: "bg-sky-500 ring-sky-300", title: "Filtra per turni di Mattina" },
+                        pomeriggio: { label: "🌤️ Pom.", activeClass: "bg-emerald-600 ring-emerald-300", title: "Filtra per turni di Pomeriggio" }
+                      };
+                      const { label, activeClass, title } = config[type];
+                      
+                      return (
+                        <button
+                          key={type}
+                          type="button"
+                          onClick={() => handleTimeFilterClick(type)}
+                          className={`px-3 py-1.5 rounded-lg flex items-center justify-center text-[10px] font-black transition-all duration-200 cursor-pointer ${
+                            isActive 
+                              ? `${activeClass} text-white shadow-lg ring-2 scale-105` 
+                              : "bg-indigo-900/40 text-indigo-300 hover:bg-indigo-800/60 hover:text-white"
+                          }`}
+                          title={title}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 {/* Direct Month Selector Input */}
                 <div className="flex items-center gap-1.5 bg-indigo-950 px-2.5 py-1 rounded-lg border border-indigo-700 shrink-0" title="Seleziona Mese e Anno">
                   <CalendarIcon className="w-3.5 h-3.5 text-amber-400 shrink-0" />
@@ -3980,6 +4227,7 @@ function importaTurniResidenzaVannucci() {
                     return (
                       <th
                         key={idx}
+                        data-date={dateYMD}
                         draggable={!isPublicView}
                         onDragStart={(e) => {
                           if (!isPublicView) handleDragStartDay(e, dateYMD);
@@ -4002,19 +4250,9 @@ function importaTurniResidenzaVannucci() {
                           if (!isPublicView && !isReferenceDay) handleMouseDownDay(dateYMD, e);
                         }}
                         onTouchEnd={handleMouseUpDay}
-                        onMouseEnter={(e) => {
-                          setHoveredDayCoverageDate(dateYMD);
-                          setHoveredDayCoveragePos({ x: e.clientX, y: e.clientY });
-                        }}
-                        onMouseMove={(e) => {
-                          setHoveredDayCoveragePos({ x: e.clientX, y: e.clientY });
-                        }}
-                        onMouseLeave={() => {
-                          setHoveredDayCoverageDate(null);
-                          setHoveredDayCoveragePos(null);
-                        }}
-                         className={`text-center transition-all select-none relative group sticky top-0 z-30 ${
-                          isFullScreen ? "w-[10.625%] min-w-0 p-1.5" : "min-w-[135px] sm:min-w-[155px] p-3"
+                        
+                         className={`text-center transition-all select-none relative group sticky top-0 z-30 whitespace-nowrap overflow-hidden ${
+                          isFullScreen ? "w-[12.5%] min-w-0 p-1.5" : "w-[155px] min-w-[155px] p-3"
                         } ${
                           isPublicView ? "" : "cursor-grab active:cursor-grabbing"
                         } ${
@@ -4059,7 +4297,7 @@ function importaTurniResidenzaVannucci() {
                                 <span className={`uppercase text-[11px] font-black tracking-widest flex items-center gap-1 justify-center ${weekdayColor}`} title={festivo.isFestivo ? festivo.label : prefestivo.isPrefestivo ? prefestivo.label : undefined}>
                                   {getFullWeekdayName(day)}
                                 </span>
-                                <div className={`text-sm sm:text-base font-extrabold tracking-tight ${isToday ? `bg-indigo-50 px-2.5 py-1 rounded-xl border border-indigo-200 ${dateColor}` : dateColor} flex items-center justify-center gap-1`} title={festivo.isFestivo ? festivo.label : prefestivo.isPrefestivo ? prefestivo.label : undefined}>
+                                <div onContextMenu={(e) => handleDateContextMenu(e, dateYMD)} className={`text-sm sm:text-[15px] font-extrabold tracking-tight whitespace-nowrap overflow-hidden text-ellipsis ${isToday ? `bg-indigo-50 px-2.5 py-1 rounded-xl border border-indigo-200 ${dateColor}` : dateColor} flex items-center justify-center gap-1 cursor-help`} title={festivo.isFestivo ? festivo.label : prefestivo.isPrefestivo ? prefestivo.label : undefined}>
                                   {day.getDate()} {getFullMonthName(day)} {day.getFullYear()}
                                 </div>
                               </>
@@ -4106,11 +4344,6 @@ function importaTurniResidenzaVannucci() {
                             <Lock className="w-4 h-4 text-slate-400 opacity-60" />
                           </div>
                         )}
-
-                        <div className="text-[10px] text-slate-500 mt-0.5 font-medium flex items-center justify-center gap-1">
-                          <Layers className="w-3 h-3 text-slate-400" />
-                          <span>{dayShiftsCount} turni</span>
-                        </div>
                       </th>
                     );
                   })}
@@ -4204,6 +4437,48 @@ function importaTurniResidenzaVannucci() {
                     {/* 8 Days Cells (weekDays contains Previous Sunday + Mon-Sun) */}
                     {weekDays.map((day, dIdx) => {
                       const dateYMD = formatDateYMD(day);
+                      
+                      // Helper to check if a shift matches the interactive weekly filter
+                      const isShiftMatchingFilter = (s: Shift) => {
+                        if (activeStrutturaFilters.length === 0 && !activeTimeFilter) return true;
+                        
+                        let matchesStruttura = true;
+                        let matchesTime = true;
+                        const isNightShift = s.tipoTurno === "Notte" || s.orarioInizio === "23:00";
+
+                        if (activeStrutturaFilters.length > 0) {
+                          const targetStructures = activeStrutturaFilters.map(f => 
+                            f === "v1" ? "Vannucci 1" : f === "v2" ? "Vannucci 2" : "Vannucci 4"
+                          );
+                          if (activeTimeFilter === "notte" && isNightShift) {
+                            matchesStruttura = true;
+                          } else {
+                            matchesStruttura = targetStructures.includes(s.struttura || "");
+                          }
+                        }
+
+                        if (activeTimeFilter) {
+                          const type = activeTimeFilter;
+                          if (type === "alzate") matchesTime = s.orarioInizio === "07:00";
+                          else if (type === "notte") {
+                            matchesTime = isNightShift;
+                            if (activeStrutturaFilters.length === 0) {
+                              matchesStruttura = true;
+                            }
+                          }
+                          else if (type === "mattino") {
+                            const hour = parseInt(s.orarioInizio?.split(":")[0] || "99");
+                            matchesTime = hour >= 5 && hour < 12;
+                          }
+                          else if (type === "pomeriggio") {
+                            const hour = parseInt(s.orarioInizio?.split(":")[0] || "99");
+                            matchesTime = hour >= 12 && hour < 22;
+                          }
+                        }
+
+                        return matchesStruttura && matchesTime;
+                      };
+
                       const cellKey = `${member.id}_${dateYMD}`;
                       const isToday = dateYMD === todayStr;
                       const isDragOverCell = dragOverCellKey === cellKey;
@@ -4219,6 +4494,7 @@ function importaTurniResidenzaVannucci() {
                       return (
                         <td
                           key={dIdx}
+                          data-date={dateYMD}
                           onDoubleClick={() => {
                             if (isStaffRole) return;
                             if (isReferenceDay) {
@@ -4240,6 +4516,10 @@ function importaTurniResidenzaVannucci() {
                           }}
                           className={`p-2 transition-all relative group/cell h-24 align-top ${
                             isStaffRole || isReferenceDay ? "" : "cursor-pointer"
+                          } ${
+                            activeStrutturaFilters.length > 0 || activeTimeFilter
+                              ? "bg-indigo-50/20"
+                              : ""
                           } ${
                             isDayComplete(dateYMD) && !isReferenceDay
                               ? "border-x-2 border-emerald-500 shadow-2xs"
@@ -4298,6 +4578,8 @@ function importaTurniResidenzaVannucci() {
                                         isInvalid ? "animate-pulse ring-4 ring-red-600 ring-offset-1 !border-red-600 !bg-red-100 !text-red-900" : ""
                                       } ${
                                         isHovered ? "ring-2 ring-indigo-600 shadow-lg scale-[1.02] z-30" : isStaffHovered ? "ring-1 ring-indigo-400 shadow-xs" : ""
+                                      } ${
+                                        (activeStrutturaFilters.length > 0 || activeTimeFilter) && !isShiftMatchingFilter(s) ? "opacity-15 grayscale scale-95 blur-[0.5px] pointer-events-none" : ""
                                       }`}
                                       title={isInvalid ? `⚠️ ERRORE: ${validity.reason}` : isStaffRole ? `${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine}) - Clicca per dettagli` : s.tipoTurno === "Ferie" ? "🏖️ Ferie — Clicca per dettagli" : isReferenceDay ? "Turno di riferimento - Clicca per dettagli" : lockedDays.includes(dateYMD) ? "Giorno bloccato - Clicca per dettagli" : "Trascina per spostare o duplicare, oppure clicca per dettagli"}
                                     >
@@ -4402,6 +4684,8 @@ function importaTurniResidenzaVannucci() {
                                         isInvalid ? "animate-pulse ring-2 ring-red-600 !border-red-600 !bg-red-100 !text-red-900" : ""
                                       } ${
                                         isHovered ? "ring-2 ring-indigo-600 shadow-md scale-[1.02] z-30" : isStaffHovered ? "ring-1 ring-indigo-400 shadow-xs" : ""
+                                      } ${
+                                        (activeStrutturaFilters.length > 0 || activeTimeFilter) && !isShiftMatchingFilter(s) ? "opacity-15 grayscale scale-95 blur-[0.5px] pointer-events-none" : ""
                                       }`}
                                       title={isInvalid ? `⚠️ ERRORE: ${validity.reason}` : `${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine})`}
                                     >
@@ -4633,6 +4917,7 @@ function importaTurniResidenzaVannucci() {
                     return (
                       <th
                         key={idx}
+                        data-date={dateYMD}
                         draggable={!lockedDays.includes(dateYMD)}
                         onDragStart={(e) => handleDragStartDay(e, dateYMD)}
                         onDragOver={(e) => {
@@ -4645,17 +4930,7 @@ function importaTurniResidenzaVannucci() {
                         onMouseUp={handleMouseUpDay}
                         onTouchStart={(e) => handleMouseDownDay(dateYMD, e)}
                         onTouchEnd={handleMouseUpDay}
-                        onMouseEnter={(e) => {
-                          setHoveredDayCoverageDate(dateYMD);
-                          setHoveredDayCoveragePos({ x: e.clientX, y: e.clientY });
-                        }}
-                        onMouseMove={(e) => {
-                          setHoveredDayCoveragePos({ x: e.clientX, y: e.clientY });
-                        }}
-                        onMouseLeave={() => {
-                          setHoveredDayCoverageDate(null);
-                          setHoveredDayCoveragePos(null);
-                        }}
+                        
                         className={`p-0.5 text-center cursor-grab active:cursor-grabbing transition-all select-none relative group/mhead sticky top-0 z-30 ${
                           isDayComplete(dateYMD)
                             ? "border-x-2 border-t-2 border-emerald-500 z-10 shadow-xs"
@@ -4816,6 +5091,7 @@ function importaTurniResidenzaVannucci() {
                       return (
                         <td
                           key={dIdx}
+                          data-date={dateYMD}
                           onMouseEnter={() => setHoveredStaffId(member.id)}
                           onMouseLeave={() => setHoveredStaffId(null)}
                           onDoubleClick={() => {
