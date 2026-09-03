@@ -27,6 +27,7 @@ import { MedicationCartView } from "./components/MedicationCartView";
 import { RoomsView } from "./components/RoomsView";
 import { DailyLogsView } from "./components/DailyLogsView";
 import { StaffShiftsView } from "./components/StaffShiftsView";
+import { StaffDirectoryView } from "./components/StaffDirectoryView";
 import { BachecaView } from "./components/BachecaView";
 import { ChatWhatsAppView } from "./components/ChatWhatsAppView";
 import { VisitsView } from "./components/VisitsView";
@@ -705,6 +706,15 @@ export default function App() {
               onRefreshShifts={syncWithServer}
               isPublicView={currentUser.role === 'staff'}
               currentUser={currentUser}
+            />
+          )}
+
+          {activeTab === "staff_directory" && (
+            <StaffDirectoryView
+              staff={staff}
+              shifts={shifts}
+              onUpdateStaff={handleUpdateStaff}
+              isAdmin={currentUser.role === 'admin'}
             />
           )}
 

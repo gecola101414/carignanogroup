@@ -57,6 +57,7 @@ interface MenuItemConfig {
 const DEFAULT_MENU_CONFIG: MenuItemConfig[] = [
   { id: "dashboard", label: "Panoramica", visible: true },
   { id: "shifts", label: "Turni Personale", visible: true, highlighted: true },
+  { id: "staff_directory", label: "Personale", visible: true },
   { id: "medications", label: "Somministrazione Farmaci", visible: true },
   { id: "logs", label: "Diario & Consegne", visible: true },
   { id: "residents", label: "Ospiti & Cartelle", visible: true },
@@ -75,6 +76,7 @@ const TAB_ICONS: Record<TabType, React.FC<{ className?: string }>> = {
   rooms: Bed,
   logs: BookOpenCheck,
   shifts: CalendarDays,
+  staff_directory: UserCheck,
   bacheca: Pin,
   chat: MessageCircle,
   visits: HeartHandshake,
@@ -181,7 +183,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Filter menu items for current user role and visibility settings
   const activeMenuItems = menuConfig.filter(item => {
     // Role filter
-    if (userRole !== "admin" && !["shifts", "logs", "bacheca", "chat"].includes(item.id)) {
+    if (userRole !== "admin" && !["shifts", "staff_directory", "logs", "bacheca", "chat"].includes(item.id)) {
       return false;
     }
     // Custom visibility filter

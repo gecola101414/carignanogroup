@@ -129,6 +129,16 @@ export interface UserCredential {
   mustChange: boolean;
 }
 
+export interface StaffNote {
+  id: string;
+  data: string; // YYYY-MM-DD
+  titolo: string;
+  testo: string;
+  tipo: "Richiamo" | "Merito" | "Generale" | "Formazione" | string;
+  allegatoNome?: string;
+  allegatoUrl?: string; // base64 or file URL
+}
+
 export interface StaffMember {
   id: string;
   nome: string;
@@ -140,6 +150,7 @@ export interface StaffMember {
   attivo: boolean;
   coloreBadge: string;
   tipoContratto?: string;
+  notePersonali?: StaffNote[];
 }
 
 export interface Shift {

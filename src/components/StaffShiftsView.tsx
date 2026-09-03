@@ -41,6 +41,7 @@ import {
   RefreshCw,
   UserPlus,
   UserX,
+  Archive,
   Palmtree,
   Lock,
   Unlock,
@@ -51,6 +52,7 @@ import {
   PanelLeftClose
 } from "lucide-react";
 import { StaffMember, Shift, UserCredential } from "../types";
+import { StaffProfileModal } from "./StaffProfileModal";
 import { firestoreSync } from "../lib/firebase";
 import { apiSync } from "../utils/storage";
 
@@ -458,9 +460,9 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   const [activeStrutturaFilters, setActiveStrutturaFilters] = useState<('v1' | 'v2' | 'v4')[]>([]);
   const [activeTimeFilter, setActiveTimeFilter] = useState<'alzate' | 'notte' | 'mattino' | 'pomeriggio' | null>(null);
 
-  // Compute displayedStaff (strictly filtered to personal staff member when staff role or filter active)
+  // Compute displayedStaff (strictly filtered to personal staff member when staff role or filter active, excluding archived)
   const displayedStaff = React.useMemo(() => {
-    let baseList = staff;
+    let baseList = staff.filter(s => s.attivo !== false || (loggedInStaffMember && s.id === loggedInStaffMember.id));
     if (isStaffRole) {
       if (loggedInStaffMember) {
         baseList = staff.filter(s => s.id === loggedInStaffMember.id);
@@ -535,8 +537,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   const [showExportModal, setShowExportModal] = useState<boolean>(false);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
   const [selectedShiftForDetail, setSelectedShiftForDetail] = useState<Shift | null>(null);
-  const [editingStaffMember, setEditingStaffMember] = useState<StaffMember | null>(null);
-  const [confirmDeleteStaff, setConfirmDeleteStaff] = useState<StaffMember | null>(null);
+  const [selectedStaffProfile, setSelectedStaffProfile] = useState<StaffMember | null>(null);
   const [confirmDeleteDayDate, setConfirmDeleteDayDate] = useState<string | null>(null);
 
   // New Staff Member Form State
@@ -1267,11 +1268,10 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       if (e.key === "Escape") {
         setShowAddModal(false);
         setShowAddStaffModal(false);
-        setEditingStaffMember(null);
         setShowExportModal(false);
         setSelectedShiftForDetail(null);
         setShowVacationModal(false);
-        setConfirmDeleteStaff(null);
+        setSelectedStaffProfile(null);
         setConfirmDeleteDayDate(null);
         setShowHelpGuide(false);
       }
@@ -2260,20 +2260,19 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     setEditShiftNote(s.note || "");
   };
 
-  // Save Staff Member Custom Profile & Hours
-  const handleSaveStaffMember = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingStaffMember || !onUpdateStaff) return;
-
-    const updatedList = staff.map(st => st.id === editingStaffMember.id ? editingStaffMember : st);
-    onUpdateStaff(updatedList);
+  // Save Staff Member Profile update
+  const handleUpdateSingleStaffFromShifts = (updated: StaffMember) => {
+    const updatedList = staff.map(st => st.id === updated.id ? updated : st);
+    if (onUpdateStaff) {
+      onUpdateStaff(updatedList);
+    }
 
     // Save directly to Firestore and REST API for real-time live sync on public links
     firestoreSync.saveStaff(updatedList);
     apiSync.saveStaff(updatedList);
 
-    setEditingStaffMember(null);
-    showToast(`✅ Scheda di ${editingStaffMember.nome} ${editingStaffMember.cognome} aggiornata live!`);
+    setSelectedStaffProfile(updated);
+    showToast(`✅ Scheda di ${updated.nome} ${updated.cognome} aggiornata live!`);
   };
 
   // Add Brand New Staff Member / Employee
@@ -2316,27 +2315,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     showToast(`✅ Nuovo dipendente ${newMember.nome} ${newMember.cognome} aggiunto all'organico!`);
   };
 
-  // Delete Staff Member from Roster
-  const handleDeleteStaffMember = (staffId: string) => {
-    const memberToDelete = staff.find(s => s.id === staffId);
-    if (!memberToDelete) return;
 
-    const updatedList = staff.filter(s => s.id !== staffId);
-    if (onUpdateStaff) {
-      onUpdateStaff(updatedList);
-    }
-
-    // Save updated staff list directly to Firestore and REST API
-    firestoreSync.saveStaff(updatedList);
-    apiSync.saveStaff(updatedList);
-
-    setConfirmDeleteStaff(null);
-    if (editingStaffMember?.id === staffId) {
-      setEditingStaffMember(null);
-    }
-
-    showToast(`🗑️ Operatore ${memberToDelete.nome} ${memberToDelete.cognome} rimosso dall'organico.`);
-  };
 
   // Helper to validate shift candidate for automatic generation (strictly enforces 11-hour rest and prevents same-day double bookings)
   const checkCandidateShiftValidityForAuto = (
@@ -4368,7 +4347,7 @@ function importaTurniResidenzaVannucci() {
                       onMouseEnter={() => setHoveredStaffId(member.id)}
                       onMouseLeave={() => setHoveredStaffId(null)}
                       onClick={() => {
-                        if (!isStaffRole) setEditingStaffMember(member);
+                        if (!isStaffRole) setSelectedStaffProfile(member);
                       }}
                       title={isStaffRole ? `${member.nome} ${member.cognome} - ${member.ruolo}` : "Clicca per modificare la scheda e gli orari predefiniti"}
                     >
@@ -5036,7 +5015,7 @@ function importaTurniResidenzaVannucci() {
                       onMouseEnter={() => setHoveredStaffId(member.id)}
                       onMouseLeave={() => setHoveredStaffId(null)}
                       onClick={() => {
-                        if (!isPublicView) setEditingStaffMember(member);
+                        if (!isPublicView) setSelectedStaffProfile(member);
                       }}
                       title={isPublicView ? `${member.nome} ${member.cognome}` : "Clicca per modificare scheda e orari"}
                     >
@@ -5364,7 +5343,7 @@ function importaTurniResidenzaVannucci() {
                     {!isPublicView && (
                       <div className="flex items-center gap-1">
                         <button
-                          onClick={() => setEditingStaffMember(member)}
+                          onClick={() => setSelectedStaffProfile(member)}
                           className="p-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl transition-all"
                           title="Modifica anagrafica e orari operatore"
                         >
@@ -5380,11 +5359,17 @@ function importaTurniResidenzaVannucci() {
                         </button>
 
                         <button
-                          onClick={() => setConfirmDeleteStaff(member)}
-                          className="p-2 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl transition-all"
-                          title="Elimina operatore dall'organico"
+                          onClick={() => {
+                            const updatedList = staff.map(st => st.id === member.id ? { ...st, attivo: st.attivo === false ? true : false } : st);
+                            if (onUpdateStaff) onUpdateStaff(updatedList);
+                            firestoreSync.saveStaff(updatedList);
+                            apiSync.saveStaff(updatedList);
+                            showToast(member.attivo === false ? `✅ ${member.nome} riattivato` : `📁 ${member.nome} archiviato`);
+                          }}
+                          className="p-2 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-xl transition-all"
+                          title={member.attivo === false ? "Riattiva operatore" : "Archivia operatore"}
                         >
-                          <UserX className="w-4 h-4" />
+                          <Archive className="w-4 h-4" />
                         </button>
                       </div>
                     )}
@@ -6023,189 +6008,15 @@ function importaTurniResidenzaVannucci() {
       </div>
       )}
 
-      {/* MODAL: EDIT STAFF MEMBER CARD & CUSTOM DEFAULT HOURS */}
-      {editingStaffMember && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b pb-3">
-              <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
-                <Settings className="w-5 h-5 text-indigo-600" />
-                <span>Modifica Scheda Operatore & Orari Salvati</span>
-              </h3>
-              <button onClick={() => setEditingStaffMember(null)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveStaffMember} className="space-y-4 text-xs">
-              
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold mb-1">Nome *</label>
-                  <input
-                    type="text"
-                    required
-                    value={editingStaffMember.nome}
-                    onChange={e => setEditingStaffMember({ ...editingStaffMember, nome: e.target.value })}
-                    className="w-full border p-2 rounded-xl"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-semibold mb-1">Cognome *</label>
-                  <input
-                    type="text"
-                    required
-                    value={editingStaffMember.cognome}
-                    onChange={e => setEditingStaffMember({ ...editingStaffMember, cognome: e.target.value })}
-                    className="w-full border p-2 rounded-xl"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold mb-1">Ruolo / Mansione *</label>
-                  <select
-                    value={editingStaffMember.ruolo}
-                    onChange={e => setEditingStaffMember({ ...editingStaffMember, ruolo: e.target.value as any })}
-                    className="w-full border p-2 rounded-xl font-medium bg-slate-50 focus:bg-white"
-                  >
-                    <option value="OSS (Operatore Socio-Sanitario)">OSS (Operatore Socio-Sanitario)</option>
-                    <option value="Infermiera / Infermiere">Infermiera / Infermiere</option>
-                    <option value="Educatore">Educatore / Animatore</option>
-                    <option value="Fisioterapista">Fisioterapista</option>
-                    <option value="Coordinatore / Direttore">Coordinatore / Direttore</option>
-                    <option value="Cuoco / Addetto Cucina">Cuoco / Addetto Cucina</option>
-                    <option value="ASA">ASA (Ausiliario Socio-Assistenziale)</option>
-                    <option value="Ausiliario">Ausiliario / Pulizie</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-semibold mb-1">Email</label>
-                  <input
-                    type="email"
-                    value={editingStaffMember.email || ""}
-                    onChange={e => setEditingStaffMember({ ...editingStaffMember, email: e.target.value })}
-                    className="w-full border p-2 rounded-xl"
-                    placeholder="es. maria.rossi@villaserena.it"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold mb-1">Telefono</label>
-                  <input
-                    type="text"
-                    value={editingStaffMember.telefono}
-                    onChange={e => setEditingStaffMember({ ...editingStaffMember, telefono: e.target.value })}
-                    className="w-full border p-2 rounded-xl"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-semibold mb-1">Tipo di Contratto</label>
-                  <input
-                    type="text"
-                    value={editingStaffMember.tipoContratto || ""}
-                    onChange={e => setEditingStaffMember({ ...editingStaffMember, tipoContratto: e.target.value })}
-                    className="w-full border p-2 rounded-xl"
-                    placeholder="es. Part-time 24h, P.IVA..."
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold mb-1">Colore Distintivo Badge</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={editingStaffMember.coloreBadge}
-                      onChange={e => setEditingStaffMember({ ...editingStaffMember, coloreBadge: e.target.value })}
-                      className="w-10 h-10 rounded-xl border cursor-pointer p-1"
-                    />
-                    <span className="font-mono text-slate-500">{editingStaffMember.coloreBadge}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* CUSTOM DEFAULT SHIFT HOURS FOR THIS OPERATOR */}
-              <div className="bg-indigo-50/80 p-4 rounded-2xl border border-indigo-200 space-y-3">
-                <h4 className="font-extrabold text-indigo-950 text-xs flex items-center gap-1.5">
-                  <Clock className="w-4 h-4 text-indigo-600" />
-                  <span>Personalizza e Memorizza Orari della Scheda</span>
-                </h4>
-                <p className="text-[11px] text-indigo-800">
-                  Imposta qui gli orari di lavoro personalizzati per questo operatore. Verranno memorizzati e proposti ogni volta che crei un suo turno!
-                </p>
-
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <label className="block font-bold text-slate-700 text-[10px] mb-1">🌅 Mattina</label>
-                    <input
-                      type="text"
-                      placeholder="07:00 - 14:00"
-                      className="w-full border p-2 rounded-xl bg-white font-mono text-center"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-700 text-[10px] mb-1">🌆 Pomeriggio</label>
-                    <input
-                      type="text"
-                      placeholder="14:00 - 21:00"
-                      className="w-full border p-2 rounded-xl bg-white font-mono text-center"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-700 text-[10px] mb-1">🌙 Notte</label>
-                    <input
-                      type="text"
-                      placeholder="21:00 - 07:00"
-                      className="w-full border p-2 rounded-xl bg-white font-mono text-center"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-3 flex items-center justify-between border-t">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const target = editingStaffMember;
-                    setEditingStaffMember(null);
-                    setConfirmDeleteStaff(target);
-                  }}
-                  className="px-3.5 py-2 bg-rose-50 text-rose-600 hover:bg-rose-100 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  <span>Elimina Dipendente</span>
-                </button>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setEditingStaffMember(null)}
-                    className="px-4 py-2 bg-slate-100 text-slate-700 font-semibold rounded-xl text-xs"
-                  >
-                    Annulla
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs shadow"
-                  >
-                    Salva & Memorizza Scheda
-                  </button>
-                </div>
-              </div>
-
-            </form>
-          </div>
-        </div>
+      {/* MODAL: STAFF PROFILE & NOTES & STATS */}
+      {selectedStaffProfile && (
+        <StaffProfileModal
+          staffMember={selectedStaffProfile}
+          allShifts={shifts}
+          onClose={() => setSelectedStaffProfile(null)}
+          onUpdateStaff={handleUpdateSingleStaffFromShifts}
+          isAdmin={!isStaffRole}
+        />
       )}
 
       {/* MODAL: ADD BRAND NEW STAFF MEMBER */}
@@ -6387,46 +6198,7 @@ function importaTurniResidenzaVannucci() {
         </div>
       )}
 
-      {/* MODAL: CONFIRM DELETE STAFF MEMBER */}
-      {confirmDeleteStaff && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-rose-100">
-            <div className="flex items-center gap-3 text-rose-600 border-b pb-3">
-              <div className="p-2.5 bg-rose-100 rounded-full">
-                <Trash2 className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="font-extrabold text-slate-900 text-base">Conferma Rimozione Dipendente</h3>
-                <p className="text-xs text-slate-500">Azione sull'organico della struttura</p>
-              </div>
-            </div>
 
-            <p className="text-xs text-slate-700 leading-relaxed">
-              Sei sicuro di voler rimuovere <strong>{confirmDeleteStaff.nome} {confirmDeleteStaff.cognome}</strong> ({confirmDeleteStaff.ruolo}) dall'organico?
-            </p>
-            <p className="text-[11px] text-slate-500 italic bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-              ⚡ L'organico si aggiornerà in tempo reale anche sul link pubblico per i dipendenti.
-            </p>
-
-            <div className="pt-2 flex justify-end gap-2 border-t">
-              <button
-                type="button"
-                onClick={() => setConfirmDeleteStaff(null)}
-                className="px-4 py-2 bg-slate-100 text-slate-700 font-semibold rounded-xl text-xs hover:bg-slate-200 cursor-pointer"
-              >
-                Annulla
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDeleteStaffMember(confirmDeleteStaff.id)}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs shadow cursor-pointer"
-              >
-                Sì, Rimuovi Operatore
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* MODAL: SHIFT DETAIL / EDIT / DELETE */}
       {selectedShiftForDetail && (
