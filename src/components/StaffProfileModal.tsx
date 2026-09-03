@@ -19,7 +19,12 @@ import {
   Clock,
   CalendarDays,
   FileCheck,
-  AlertTriangle
+  AlertTriangle,
+  Mic,
+  MicOff,
+  Video,
+  Image as ImageIcon,
+  Volume2
 } from "lucide-react";
 import { StaffMember, Shift, StaffNote, StaffRole } from "../types";
 import { isItalianFestivo, isItalianPrefestivo, formatItalianDateString } from "./StaffShiftsView";
@@ -109,6 +114,48 @@ export const StaffProfileModal: React.FC<StaffProfileModalProps> = ({
       }
     }
   });
+
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
+  const audioChunksRef = React.useRef<Blob[]>([]);
+
+  const startVoiceRecording = async () => {
+    try {
+      audioChunksRef.current = [];
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const reader = new FileReader();
+        reader.onload = () => {
+          setNoteFileUrl(reader.result as string);
+          setNoteFileName(`NotaVocale_${new Date().toISOString().slice(0, 10)}.webm`);
+        };
+        reader.readAsDataURL(audioBlob);
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      recorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      alert("Impossibile accedere al microfono. Controlla i permessi del browser.");
+    }
+  };
+
+  const stopVoiceRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -513,12 +560,36 @@ export const StaffProfileModal: React.FC<StaffProfileModalProps> = ({
                 </div>
 
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <label className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 rounded-xl text-xs font-bold text-slate-700 cursor-pointer flex items-center gap-1.5 shadow-2xs">
                       <Upload className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>{noteFileName ? "Cambia PDF/File" : "Allega PDF / Documento"}</span>
-                      <input type="file" accept=".pdf,image/*,.doc,.docx" onChange={handleFileUpload} className="hidden" />
+                      <span>{noteFileName ? "Cambia File" : "Allega Foto, Video o Documento"}</span>
+                      <input type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx" onChange={handleFileUpload} className="hidden" />
                     </label>
+
+                    {/* Voice Recording Button */}
+                    {!isRecording ? (
+                      <button
+                        type="button"
+                        onClick={startVoiceRecording}
+                        className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-300 text-rose-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                        title="Registra nota vocale con il microfono"
+                      >
+                        <Mic className="w-3.5 h-3.5 text-rose-600 animate-pulse" />
+                        <span>🎙️ Registra Vocale</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={stopVoiceRecording}
+                        className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 animate-bounce shadow"
+                        title="Ferma registrazione"
+                      >
+                        <MicOff className="w-3.5 h-3.5" />
+                        <span>⏹️ Ferma Registrazione</span>
+                      </button>
+                    )}
+
                     {noteFileName && (
                       <span className="text-xs font-semibold text-emerald-700 truncate max-w-xs">📎 {noteFileName}</span>
                     )}
@@ -553,6 +624,10 @@ export const StaffProfileModal: React.FC<StaffProfileModalProps> = ({
                 {staffMember.notePersonali.map(note => {
                   const isRichiamo = note.tipo === "Richiamo";
                   const isMerito = note.tipo === "Merito";
+                  const isImage = note.allegatoUrl?.startsWith("data:image/") || note.allegatoNome?.match(/\.(png|jpg|jpeg|gif|webp)$/i);
+                  const isVideo = note.allegatoUrl?.startsWith("data:video/") || note.allegatoNome?.match(/\.(mp4|webm|mov)$/i);
+                  const isAudio = note.allegatoUrl?.startsWith("data:audio/") || note.allegatoNome?.match(/\.(webm|mp3|wav|ogg|m4a)$/i);
+
                   return (
                     <div 
                       key={note.id} 
@@ -565,7 +640,7 @@ export const StaffProfileModal: React.FC<StaffProfileModalProps> = ({
                       }`}
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <div className="space-y-1">
+                        <div className="space-y-2 w-full">
                           <div className="flex items-center gap-2">
                             <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
                               isRichiamo 
@@ -583,15 +658,49 @@ export const StaffProfileModal: React.FC<StaffProfileModalProps> = ({
 
                           {note.allegatoUrl && (
                             <div className="pt-2">
-                              <a
-                                href={note.allegatoUrl}
-                                download={note.allegatoNome || "documento.pdf"}
-                                className="inline-flex items-center gap-1.5 px-3 py-1 bg-white hover:bg-slate-100 border border-slate-300 text-slate-800 font-bold text-xs rounded-xl shadow-2xs transition-all"
-                              >
-                                <FileText className="w-3.5 h-3.5 text-emerald-600" />
-                                <span>Scarica Allegato: {note.allegatoNome || "Documento PDF"}</span>
-                                <Download className="w-3 h-3 text-slate-500 ml-1" />
-                              </a>
+                              {isImage && (
+                                <div className="space-y-1">
+                                  <img 
+                                    src={note.allegatoUrl} 
+                                    alt={note.allegatoNome || "Foto allegata"} 
+                                    className="max-h-60 rounded-xl object-contain border border-slate-300 bg-black/5 shadow-xs" 
+                                  />
+                                  <div className="text-[10px] font-semibold text-slate-500">📷 {note.allegatoNome || "Immagine"}</div>
+                                </div>
+                              )}
+
+                              {isVideo && (
+                                <div className="space-y-1">
+                                  <video 
+                                    src={note.allegatoUrl} 
+                                    controls 
+                                    className="max-h-60 rounded-xl w-full border border-slate-300 bg-black shadow-xs" 
+                                  />
+                                  <div className="text-[10px] font-semibold text-slate-500">🎬 {note.allegatoNome || "Video"}</div>
+                                </div>
+                              )}
+
+                              {isAudio && (
+                                <div className="bg-white/80 p-2.5 rounded-xl border border-slate-200 space-y-1">
+                                  <div className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                                    <Volume2 className="w-4 h-4 text-rose-600" />
+                                    <span>Nota Vocale / Audio: {note.allegatoNome || "Registrazione"}</span>
+                                  </div>
+                                  <audio src={note.allegatoUrl} controls className="w-full h-9" />
+                                </div>
+                              )}
+
+                              {!isImage && !isVideo && !isAudio && (
+                                <a
+                                  href={note.allegatoUrl}
+                                  download={note.allegatoNome || "documento.pdf"}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-300 text-slate-800 font-bold text-xs rounded-xl shadow-2xs transition-all"
+                                >
+                                  <FileText className="w-4 h-4 text-emerald-600" />
+                                  <span>Scarica Documento: {note.allegatoNome || "Allegato PDF"}</span>
+                                  <Download className="w-3.5 h-3.5 text-slate-500 ml-1" />
+                                </a>
+                              )}
                             </div>
                           )}
                         </div>
@@ -599,7 +708,7 @@ export const StaffProfileModal: React.FC<StaffProfileModalProps> = ({
                         {isAdmin && (
                           <button
                             onClick={() => handleDeleteNote(note.id)}
-                            className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-white/80 transition-all cursor-pointer"
+                            className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-white/80 transition-all cursor-pointer shrink-0"
                             title="Elimina nota"
                           >
                             <Trash2 className="w-4 h-4" />

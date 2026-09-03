@@ -1220,6 +1220,107 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     showToast(`🌴 Inserite ${datesToInsert.length} giornate di Ferie per ${staffName}!`);
   };
 
+  // Sick Leave / Malattia / Riposo Medico Form State
+  const [showSickModal, setShowSickModal] = useState<boolean>(false);
+  const [sickStaffId, setSickStaffId] = useState<string>(staff[0]?.id || "");
+  const [sickStartDate, setSickStartDate] = useState<string>(new Date().toISOString().split("T")[0]);
+  const [sickEndDate, setSickEndDate] = useState<string>(new Date().toISOString().split("T")[0]);
+  const [sickNotes, setSickNotes] = useState<string>("Certificato medico / Malattia");
+  const [sickCalendarMonth, setSickCalendarMonth] = useState<Date>(new Date());
+
+  const handleOpenSickModal = (staffId?: string, dateStr?: string) => {
+    if (staffId) {
+      setSickStaffId(staffId);
+    } else if (currentUser?.role === 'staff') {
+      const myStaff = staff.find(s => s.nome.toLowerCase() === currentUser.username.toLowerCase());
+      if (myStaff) {
+        setSickStaffId(myStaff.id);
+      } else if (staff.length > 0) {
+        setSickStaffId(staff[0].id);
+      }
+    } else {
+      if (staff.length > 0 && !sickStaffId) {
+        setSickStaffId(staff[0].id);
+      }
+    }
+
+    const initialDate = dateStr || new Date().toISOString().split("T")[0];
+    setSickStartDate(initialDate);
+    setSickEndDate(initialDate);
+    const d = new Date(initialDate);
+    if (!isNaN(d.getTime())) {
+      setSickCalendarMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+    }
+    setShowAddModal(false);
+    setShowSickModal(true);
+  };
+
+  const handleSickSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sickStaffId || !sickStartDate || !sickEndDate) {
+      alert("Seleziona il dipendente e le date di inizio/fine malattia.");
+      return;
+    }
+
+    if (sickStartDate > sickEndDate) {
+      alert("La data di inizio malattia non può essere successiva alla data di fine.");
+      return;
+    }
+
+    const start = new Date(sickStartDate);
+    const end = new Date(sickEndDate);
+    const selectedStaffObj = staff.find(s => s.id === sickStaffId);
+
+    const datesToInsert: string[] = [];
+    const cur = new Date(start);
+    while (cur <= end) {
+      const year = cur.getFullYear();
+      const month = String(cur.getMonth() + 1).padStart(2, "0");
+      const day = String(cur.getDate()).padStart(2, "0");
+      datesToInsert.push(`${year}-${month}-${day}`);
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    const now = new Date();
+    const dateFormatted = `${String(now.getDate()).padStart(2, "0")}/${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()}`;
+    const timeFormatted = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const timestampNote = `Malattia inserita il ${dateFormatted} alle ${timeFormatted}`;
+    const finalNote = sickNotes && sickNotes.trim() && sickNotes.trim() !== "Certificato medico / Malattia"
+      ? `${timestampNote} - ${sickNotes.trim()}`
+      : timestampNote;
+
+    if (!onUpdateShifts) {
+      datesToInsert.forEach(dStr => {
+        onAddShift({
+          id: `shift-malattia-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          staffId: sickStaffId,
+          data: dStr,
+          tipoTurno: "Malattia",
+          orarioInizio: "00:00",
+          orarioFine: "00:00",
+          note: finalNote
+        });
+      });
+    } else {
+      const existingFiltered = shifts.filter(s => !(s.staffId === sickStaffId && datesToInsert.includes(s.data)));
+      const sickShifts: Shift[] = datesToInsert.map((dStr, idx) => ({
+        id: `shift-malattia-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
+        staffId: sickStaffId,
+        data: dStr,
+        tipoTurno: "Malattia",
+        orarioInizio: "00:00",
+        orarioFine: "00:00",
+        note: finalNote
+      }));
+
+      applyShiftsUpdate([...existingFiltered, ...sickShifts]);
+    }
+
+    setShowSickModal(false);
+    const staffName = selectedStaffObj ? `${selectedStaffObj.nome} ${selectedStaffObj.cognome}` : "Dipendente";
+    showToast(`🤒 Registrate ${datesToInsert.length} giornate di Malattia / Riposo Medico per ${staffName}!`);
+  };
+
   // Edit Shift Modal State (when editing inside detail modal)
   const [editShiftStaffId, setEditShiftStaffId] = useState<string>("");
   const [editShiftDate, setEditShiftDate] = useState<string>("");
@@ -2907,6 +3008,11 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       return "bg-amber-800 text-amber-50 border-amber-900 hover:bg-amber-900 font-black shadow-xs ring-2 ring-amber-800/50";
     }
 
+    // 2.5 MALATTIA / RIPOSO MEDICO: Rosso/Rosa scuro 🤒
+    if (tipo === "Malattia") {
+      return "bg-rose-700 text-rose-50 border-rose-800 hover:bg-rose-800 font-black shadow-xs ring-2 ring-rose-700/50";
+    }
+
     // 3. RIPOSO: Sempre Grigio chiaro
     if (tipo === "Riposo") {
       return "bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200";
@@ -3658,6 +3764,16 @@ function importaTurniResidenzaVannucci() {
           >
             <Palmtree className="w-4 h-4 text-slate-950" />
             <span>Richiedi / Inserisci Ferie</span>
+          </button>
+
+          {/* SICK LEAVE / MALATTIA BUTTON */}
+          <button
+            onClick={() => handleOpenSickModal()}
+            className="px-3.5 py-2 bg-gradient-to-r from-rose-600 to-red-500 hover:from-rose-500 hover:to-red-400 text-white font-black rounded-xl text-xs flex items-center gap-1.5 shadow-md transition-all cursor-pointer shrink-0"
+            title="Registra Malattia o Riposo Medico"
+          >
+            <AlertCircle className="w-4 h-4 text-white" />
+            <span>Inserisci Malattia / Medico</span>
           </button>
 
 
@@ -7151,6 +7267,231 @@ function importaTurniResidenzaVannucci() {
                     {vacationStartDate === vacationEndDate
                       ? `Conferma Ferie (1 Giorno: ${new Date(vacationStartDate).toLocaleDateString("it-IT", { day: "numeric", month: "short" })})`
                       : `Conferma Ferie Periodo (${Math.ceil(Math.abs(new Date(vacationEndDate).getTime() - new Date(vacationStartDate).getTime()) / (1000 * 60 * 60 * 24)) + 1} Giorni)`}
+                  </span>
+                </button>
+              </div>
+
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: SICK LEAVE / MALATTIA / RIPOSO MEDICO */}
+      {showSickModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-7 shadow-2xl space-y-5 animate-in fade-in zoom-in duration-200 border border-rose-200 my-4">
+            <div className="flex items-center justify-between border-b pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-rose-600 to-red-500 flex items-center justify-center shadow-md text-xl shrink-0 text-white font-black">
+                  🤒
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
+                    <span>Registrazione Malattia / Riposo Medico</span>
+                    <span className="text-[10px] font-bold bg-rose-100 text-rose-900 px-2 py-0.5 rounded-full border border-rose-300">
+                      Calendario Interattivo
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Seleziona le giornate di assenza per malattia o visite mediche certificate
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setShowSickModal(false)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSickSubmit} className="space-y-4">
+              {/* Select Staff Member */}
+              <div>
+                <label className="block font-bold text-slate-800 text-xs mb-1">
+                  Collaboratore / Operatore
+                </label>
+                <select
+                  value={sickStaffId}
+                  onChange={e => setSickStaffId(e.target.value)}
+                  className="w-full border border-slate-300 p-2.5 rounded-2xl font-bold bg-slate-50 focus:bg-white focus:ring-2 focus:ring-rose-500 text-xs text-slate-900 shadow-3xs"
+                  required
+                >
+                  {staff.map(m => (
+                    <option key={m.id} value={m.id}>
+                      {m.nome} {m.cognome} ({m.ruolo})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Interactive Calendar for Sick Leave Range Selection */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                    <Calendar className="w-4 h-4 text-rose-600" />
+                    <span>Seleziona Periodo Malattia / Medico</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const prev = new Date(sickCalendarMonth);
+                        prev.setMonth(prev.getMonth() - 1);
+                        setSickCalendarMonth(prev);
+                      }}
+                      className="p-1.5 bg-white hover:bg-slate-200 rounded-lg text-slate-700 border border-slate-200 text-xs font-bold"
+                    >
+                      ◀
+                    </button>
+                    <span className="text-xs font-black text-slate-800 px-2 min-w-[100px] text-center">
+                      {sickCalendarMonth.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = new Date(sickCalendarMonth);
+                        next.setMonth(next.getMonth() + 1);
+                        setSickCalendarMonth(next);
+                      }}
+                      className="p-1.5 bg-white hover:bg-slate-200 rounded-lg text-slate-700 border border-slate-200 text-xs font-bold"
+                    >
+                      ▶
+                    </button>
+                  </div>
+                </div>
+
+                {/* Mini Calendar Grid */}
+                {(() => {
+                  const year = sickCalendarMonth.getFullYear();
+                  const month = sickCalendarMonth.getMonth();
+                  const firstDayIndex = (new Date(year, month, 1).getDay() + 6) % 7; // Monday start
+                  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+                  const dayCells = [];
+                  const weekDaysNames = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
+
+                  for (let i = 0; i < firstDayIndex; i++) {
+                    dayCells.push(<div key={`empty-${i}`} className="h-8" />);
+                  }
+
+                  for (let day = 1; day <= daysInMonth; day++) {
+                    const monthStr = String(month + 1).padStart(2, "0");
+                    const dayStr = String(day).padStart(2, "0");
+                    const dateStr = `${year}-${monthStr}-${dayStr}`;
+
+                    const isStart = sickStartDate === dateStr;
+                    const isEnd = sickEndDate === dateStr;
+                    const isBetween = sickStartDate && sickEndDate && dateStr > sickStartDate && dateStr < sickEndDate;
+                    const isToday = new Date().toISOString().split("T")[0] === dateStr;
+
+                    let buttonClasses = "h-8 rounded-xl text-xs flex items-center justify-center transition-all cursor-pointer font-bold ";
+                    if (isStart && isEnd) {
+                      buttonClasses += "bg-gradient-to-tr from-rose-600 to-red-500 text-white font-black shadow-md ring-2 ring-rose-300 scale-105 z-10 ";
+                    } else if (isStart) {
+                      buttonClasses += "bg-rose-600 text-white font-black shadow-md rounded-r-none z-10 ";
+                    } else if (isEnd) {
+                      buttonClasses += "bg-red-500 text-white font-black shadow-md rounded-l-none z-10 ";
+                    } else if (isBetween) {
+                      buttonClasses += "bg-rose-100 text-rose-950 font-black rounded-none border-y border-rose-300 ";
+                    } else if (isToday) {
+                      buttonClasses += "bg-indigo-50 text-indigo-900 border border-indigo-300 hover:bg-rose-50 ";
+                    } else {
+                      buttonClasses += "hover:bg-rose-100/80 text-slate-800 ";
+                    }
+
+                    dayCells.push(
+                      <button
+                        key={dateStr}
+                        type="button"
+                        onClick={() => {
+                          if (dateStr >= sickStartDate) {
+                            setSickEndDate(dateStr);
+                          } else {
+                            setSickStartDate(dateStr);
+                            setSickEndDate(dateStr);
+                          }
+                        }}
+                        className={buttonClasses}
+                        title={`Seleziona ${dateStr}`}
+                      >
+                        {day}
+                      </button>
+                    );
+                  }
+
+                  return (
+                    <div>
+                      <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-slate-500 mb-1">
+                        {weekDaysNames.map(w => <div key={w}>{w}</div>)}
+                      </div>
+                      <div className="grid grid-cols-7 gap-1 bg-white p-2 rounded-xl border border-slate-200">
+                        {dayCells}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <div className="flex items-center justify-between text-xs font-bold text-slate-700 px-1 pt-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-600 inline-block" />
+                    <span>
+                      {(() => {
+                        if (!sickStartDate || !sickEndDate) return "Nessuna data selezionata";
+                        const s = new Date(sickStartDate);
+                        const e = new Date(sickEndDate);
+                        const diffTime = Math.abs(e.getTime() - s.getTime());
+                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+                        if (sickStartDate === sickEndDate) {
+                          return `1 giorno di malattia (${s.toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "numeric" })})`;
+                        }
+                        return `${diffDays} giorni di malattia (dal ${s.toLocaleDateString("it-IT", { day: "numeric", month: "short" })} al ${e.toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "numeric" })})`;
+                      })()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block font-bold text-slate-800 text-xs mb-1">
+                  Note / Certificato Medico (Opzionale)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Es. Certificato n. 12345, visita specialistica, riposo medico..."
+                  value={sickNotes}
+                  onChange={e => setSickNotes(e.target.value)}
+                  className="w-full border border-slate-300 p-2.5 rounded-2xl font-medium bg-slate-50 focus:bg-white focus:ring-2 focus:ring-rose-500 text-xs text-slate-900 shadow-3xs"
+                />
+              </div>
+
+              <div className="bg-rose-50 border border-rose-200/80 rounded-2xl p-3 text-rose-950 text-[11px] leading-relaxed flex items-start gap-2">
+                <span className="text-base shrink-0">🤒</span>
+                <span>
+                  L'inserimento assegnerà il turno <strong>"Malattia"</strong> per ogni data del periodo selezionato, registrandolo ufficialmente nel tabellone turni e nello storico presenze.
+                </span>
+              </div>
+
+              {/* Modal Buttons */}
+              <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowSickModal(false)}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl text-xs transition-colors cursor-pointer"
+                >
+                  Annulla
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 bg-gradient-to-r from-rose-600 to-red-500 hover:from-rose-500 hover:to-red-400 text-white font-black rounded-2xl text-xs shadow-lg shadow-rose-500/20 transition-all cursor-pointer flex items-center gap-2"
+                >
+                  <AlertCircle className="w-4 h-4" />
+                  <span>
+                    {sickStartDate === sickEndDate
+                      ? `Conferma Malattia (1 Giorno: ${new Date(sickStartDate).toLocaleDateString("it-IT", { day: "numeric", month: "short" })})`
+                      : `Conferma Malattia (${Math.ceil(Math.abs(new Date(sickEndDate).getTime() - new Date(sickStartDate).getTime()) / (1000 * 60 * 60 * 24)) + 1} Giorni)`}
                   </span>
                 </button>
               </div>
