@@ -258,6 +258,16 @@ export const INITIAL_SHIFT_PRESETS: CustomShiftPreset[] = [
   
   // VANNUCCI 2
   {
+    id: "preset-v2-7-15",
+    label: "🌅 07:00-15:00",
+    tipoTurno: "Mattina",
+    orarioInizio: "07:00",
+    orarioFine: "15:00",
+    struttura: "Vannucci 2",
+    subtitle: "07:00 - 15:00 (Turno 07:15 - Aiuto Alzate V1)",
+    isDefault: true
+  },
+  {
     id: "preset-v2-7-14",
     label: "🌅 07:00-14:00",
     tipoTurno: "Mattina",
@@ -417,9 +427,13 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   // -------------------------------------------------------------------------
   const getStartOfWeek = (d: Date) => {
     const date = new Date(d);
+    date.setHours(12, 0, 0, 0);
     const day = date.getDay();
     const diff = date.getDate() - day + (day === 0 ? -6 : 1);
-    return new Date(date.setDate(diff));
+    const start = new Date(date);
+    start.setDate(diff);
+    start.setHours(12, 0, 0, 0);
+    return start;
   };
 
   const formatDateYMD = React.useCallback((d: Date) => {
@@ -435,9 +449,10 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     return Array.from({ length: 8 }, (_, i) => {
       const d = new Date(startOfWeek);
       d.setDate(d.getDate() + (i - 1));
+      d.setHours(12, 0, 0, 0);
       return d;
     });
-  }, [startOfWeek]);
+  }, [startOfWeek.getTime()]);
 
   const todayStr = formatDateYMD(new Date());
 
@@ -1065,7 +1080,17 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       const saved = localStorage.getItem("casafamiglia_saved_shift_presets_v2");
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Ensure new default presets like preset-v2-7-15 are automatically merged if missing
+          const existingIds = new Set(parsed.map((p: CustomShiftPreset) => p.id));
+          const missingDefaults = INITIAL_SHIFT_PRESETS.filter(dp => !existingIds.has(dp.id));
+          if (missingDefaults.length > 0) {
+            const merged = [...parsed, ...missingDefaults];
+            localStorage.setItem("casafamiglia_saved_shift_presets_v2", JSON.stringify(merged));
+            return merged;
+          }
+          return parsed;
+        }
       }
     } catch {}
     return INITIAL_SHIFT_PRESETS;
@@ -1363,31 +1388,45 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   const STRUTTURE = [{ nome: "Vannucci 1" }, { nome: "Vannucci 2" }, { nome: "Vannucci 4" }];
 
   const handleNextWeek = () => {
-    const next = new Date(currentDate);
-    next.setDate(next.getDate() + 7);
-    setCurrentDate(next);
+    setCurrentDate(prev => {
+      const next = new Date(prev);
+      next.setDate(next.getDate() + 7);
+      next.setHours(12, 0, 0, 0);
+      return next;
+    });
   };
 
   const handlePrevWeek = () => {
-    const prev = new Date(currentDate);
-    prev.setDate(prev.getDate() - 7);
-    setCurrentDate(prev);
+    setCurrentDate(prev => {
+      const p = new Date(prev);
+      p.setDate(p.getDate() - 7);
+      p.setHours(12, 0, 0, 0);
+      return p;
+    });
   };
 
   const handleNextMonth = () => {
-    const next = new Date(currentDate);
-    next.setMonth(next.getMonth() + 1);
-    setCurrentDate(next);
+    setCurrentDate(prev => {
+      const next = new Date(prev);
+      next.setMonth(next.getMonth() + 1);
+      next.setHours(12, 0, 0, 0);
+      return next;
+    });
   };
 
   const handlePrevMonth = () => {
-    const prev = new Date(currentDate);
-    prev.setMonth(prev.getMonth() - 1);
-    setCurrentDate(prev);
+    setCurrentDate(prev => {
+      const p = new Date(prev);
+      p.setMonth(p.getMonth() - 1);
+      p.setHours(12, 0, 0, 0);
+      return p;
+    });
   };
 
   const handleToday = () => {
-    setCurrentDate(new Date());
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    setCurrentDate(today);
   };
 
   // Global Keyboard Shortcuts (Escape to close any open modal)
@@ -3454,9 +3493,9 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       return "bg-sky-100 text-sky-950 border-sky-300 hover:bg-sky-200 font-extrabold shadow-2xs ring-1 ring-sky-400/50";
     }
 
-    // 2. FERIE: Sempre Ambra/Giallo
+    // 2. FERIE: Un po' più grigio dei riposi, senza lampeggio
     if (tipo === "Ferie") {
-      return "bg-amber-800 text-amber-50 border-amber-900 hover:bg-amber-900 font-black shadow-xs ring-2 ring-amber-800/50";
+      return "bg-slate-200 text-slate-700 border-slate-300 hover:bg-slate-300 font-bold shadow-2xs";
     }
 
     // 2.5 MALATTIA / RIPOSO MEDICO: Rosso/Rosa scuro 🤒
@@ -3610,7 +3649,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
           .shift-box-notte { background: #0f172a; border-color: #1e293b; color: #ffffff; }
           .shift-box-pulizie { background: #f0fdfa; border-color: #99f6e4; color: #115e59; }
           .shift-box-cucina { background: #e0f2fe; border-color: #7dd3fc; color: #0369a1; }
-          .shift-box-ferie { background: #fff7ed; border-color: #fed7aa; color: #9a3412; }
+          .shift-box-ferie { background: #e2e8f0; border-color: #cbd5e1; color: #334155; }
           .shift-box-riposo { background: #f1f5f9; border-color: #e2e8f0; color: #64748b; font-style: italic; }
           
           .shift-top { display: flex; justify-content: space-between; align-items: center; font-weight: 800; }
@@ -4371,10 +4410,10 @@ function importaTurniResidenzaVannucci() {
             <ChevronRight className="w-4 h-4 text-indigo-700 stroke-[3px]" />
           </button>
 
-          <span className="text-sm font-extrabold text-slate-800 ml-2">
+          <span className="text-sm font-extrabold text-slate-800 ml-2 flex items-center gap-1.5">
             {viewMode === "month"
               ? `Mese di ${getFullMonthName(currentDate).toUpperCase()} ${currentDate.getFullYear()}`
-              : `dal ${weekDays[1].getDate()} ${getFullMonthName(weekDays[1])} al ${weekDays[7].getDate()} ${getFullMonthName(weekDays[7])} ${weekDays[7].getFullYear()}`
+              : <span>Settimana: <strong className="text-indigo-700">{weekDays[1].getDate()} {getFullMonthName(weekDays[1]).slice(0, 3)}</strong> — <strong className="text-indigo-700">{weekDays[7].getDate()} {getFullMonthName(weekDays[7]).slice(0, 3)} {weekDays[7].getFullYear()}</strong></span>
             }
           </span>
         </div>
@@ -4631,7 +4670,7 @@ function importaTurniResidenzaVannucci() {
                 </button>
                 
                 <button
-                  onClick={() => setCurrentDate(new Date())}
+                  onClick={handleToday}
                   className="px-2.5 py-1 bg-indigo-950 hover:bg-indigo-900 border border-indigo-700 text-amber-300 rounded-lg text-xs font-bold transition-all cursor-pointer"
                   title="Vai a oggi"
                 >
@@ -4647,8 +4686,9 @@ function importaTurniResidenzaVannucci() {
                   <ChevronRight className="w-3.5 h-3.5 stroke-[3px]" />
                 </button>
 
-                <span className="text-[11px] sm:text-xs font-semibold bg-indigo-800 px-2.5 py-1 rounded-lg border border-indigo-700 whitespace-nowrap text-amber-200">
-                  dal {weekDays[1].getDate()} {getFullMonthName(weekDays[1])} al {weekDays[7].getDate()} {getFullMonthName(weekDays[7])} {weekDays[7].getFullYear()}
+                <span className="text-[11px] sm:text-xs font-bold bg-indigo-800 px-2.5 py-1 rounded-lg border border-indigo-700 whitespace-nowrap text-amber-300 flex items-center gap-1.5 shadow-xs">
+                  <CalendarIcon className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Settimana: <strong>{weekDays[1].getDate()} {getFullMonthName(weekDays[1]).slice(0, 3)}</strong> — <strong>{weekDays[7].getDate()} {getFullMonthName(weekDays[7]).slice(0, 3)} {weekDays[7].getFullYear()}</strong></span>
                 </span>
               </div>
 
@@ -4710,47 +4750,6 @@ function importaTurniResidenzaVannucci() {
           )}
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden relative group/calendar flex-1 flex flex-col">
           
-          {/* FLOATING DRAG & CLICK EDGE ZONES FOR PREV/NEXT WEEK (0px LAYOUT IMPACT) */}
-          <div
-            onDragOver={handleDragOverPrevWeekZone}
-            onDragLeave={handleDragLeaveWeekZone}
-            onDrop={(e) => {
-              handleDragLeaveWeekZone();
-              e.preventDefault();
-            }}
-            onClick={handlePrevWeek}
-            className={`absolute left-0 top-0 bottom-0 z-30 w-7 hover:w-12 bg-gradient-to-r from-slate-900/90 via-indigo-950/70 to-transparent flex flex-col items-center justify-center cursor-pointer transition-all duration-300 rounded-r-xl ${
-              isHoveringPrevZone
-                ? "opacity-100 w-14 bg-indigo-950/95 border-r-4 border-amber-400 shadow-2xl"
-                : "opacity-0 hover:opacity-100"
-            }`}
-            title="Trascina qui o Clicca per andare alla settimana precedente"
-          >
-            <div className="p-1.5 rounded-full bg-amber-500 text-slate-950 shadow-lg animate-pulse flex items-center justify-center">
-              <ChevronLeft className="w-5 h-5 font-black stroke-[3.5]" />
-            </div>
-          </div>
-
-          <div
-            onDragOver={handleDragOverNextWeekZone}
-            onDragLeave={handleDragLeaveWeekZone}
-            onDrop={(e) => {
-              handleDragLeaveWeekZone();
-              e.preventDefault();
-            }}
-            onClick={handleNextWeek}
-            className={`absolute right-0 top-0 bottom-0 z-30 w-7 hover:w-12 bg-gradient-to-l from-slate-900/90 via-indigo-950/70 to-transparent flex flex-col items-center justify-center cursor-pointer transition-all duration-300 rounded-l-xl ${
-              isHoveringNextZone
-                ? "opacity-100 w-14 bg-indigo-950/95 border-l-4 border-amber-400 shadow-2xl"
-                : "opacity-0 hover:opacity-100"
-            }`}
-            title="Trascina qui o Clicca per andare alla settimana successiva"
-          >
-            <div className="p-1.5 rounded-full bg-amber-500 text-slate-950 shadow-lg animate-pulse flex items-center justify-center">
-              <ChevronRight className="w-5 h-5 font-black stroke-[3.5]" />
-            </div>
-          </div>
-
           {/* TABLE CONTAINER - EXPANDED WIDTH TO ENSURE ALL 7 DAYS FIT PERFECTLY WITHOUT CLIPPING */}
           <div className={`w-full ${isFullScreen ? "overflow-y-auto overflow-x-hidden flex-1 max-h-[calc(100vh-70px)]" : "overflow-auto max-h-[calc(100vh-250px)]"}`}>
             <table id="weekly-schedule-table" className={`w-full text-left border-collapse ${isFullScreen ? "table-fixed min-w-0" : "min-w-[1150px] sm:min-w-[1300px]"}`}>
@@ -4822,7 +4821,7 @@ function importaTurniResidenzaVannucci() {
                           <div className="absolute top-0 left-0 right-0 h-1 bg-amber-500 animate-pulse" />
                         )}
 
-                        <div className={`flex flex-col items-center justify-center space-y-1.5 py-1 ${isReferenceDay ? 'opacity-80' : ''}`}>
+                        <div className={`flex flex-col items-center justify-center space-y-1 py-0.5 ${isReferenceDay ? 'opacity-80' : ''}`}>
                           {isReferenceDay && (
                             <span className="absolute -top-1 bg-slate-300 text-slate-700 text-[9px] px-2 py-0.5 rounded-b-md font-bold shadow-sm">RIFERIMENTO</span>
                           )}
@@ -4840,11 +4839,27 @@ function importaTurniResidenzaVannucci() {
                             }
                             return (
                               <>
-                                <span className={`uppercase text-[11px] font-black tracking-widest flex items-center gap-1 justify-center ${weekdayColor}`} title={festivo.isFestivo ? festivo.label : prefestivo.isPrefestivo ? prefestivo.label : undefined}>
+                                <span className={`uppercase text-[10px] sm:text-[11px] font-black tracking-wider flex items-center gap-1 justify-center ${weekdayColor}`} title={festivo.isFestivo ? festivo.label : prefestivo.isPrefestivo ? prefestivo.label : undefined}>
                                   {getFullWeekdayName(day)}
                                 </span>
-                                <div onContextMenu={(e) => handleDateContextMenu(e, dateYMD)} className={`text-sm sm:text-[15px] font-extrabold tracking-tight whitespace-nowrap overflow-hidden text-ellipsis ${isToday ? `bg-indigo-50 px-2.5 py-1 rounded-xl border border-indigo-200 ${dateColor}` : dateColor} flex items-center justify-center gap-1 cursor-help`} title={festivo.isFestivo ? festivo.label : prefestivo.isPrefestivo ? prefestivo.label : undefined}>
-                                  {day.getDate()} {getFullMonthName(day)} {day.getFullYear()}
+                                <div 
+                                  onContextMenu={(e) => handleDateContextMenu(e, dateYMD)} 
+                                  className={`flex items-center justify-center gap-1 px-2 py-0.5 rounded-lg border transition-all cursor-help ${
+                                    isToday 
+                                      ? "bg-indigo-600 text-white border-indigo-700 shadow-sm" 
+                                      : "bg-white text-slate-800 border-slate-200/90 shadow-2xs"
+                                  }`} 
+                                  title={festivo.isFestivo ? festivo.label : prefestivo.isPrefestivo ? prefestivo.label : `${day.getDate()} ${getFullMonthName(day)} ${day.getFullYear()}`}
+                                >
+                                  <span className={`text-sm sm:text-base font-black ${isToday ? "text-white" : dateColor}`}>
+                                    {day.getDate()}
+                                  </span>
+                                  <span className={`text-[10px] uppercase font-extrabold ${isToday ? "text-indigo-100" : "text-slate-500"}`}>
+                                    {getFullMonthName(day).slice(0, 3)}
+                                  </span>
+                                  <span className={`text-[9px] hidden xl:inline font-semibold ${isToday ? "text-indigo-200" : "text-slate-400"}`}>
+                                    {day.getFullYear()}
+                                  </span>
                                 </div>
                               </>
                             );
@@ -5336,8 +5351,6 @@ function importaTurniResidenzaVannucci() {
                                       className={`group/shift p-2 rounded-lg border text-[11px] font-bold transition-all shadow-2xs relative flex flex-col justify-between h-[72px] min-h-[72px] max-h-[72px] ${
                                         isStaffRole || isEffectivelyLocked ? "cursor-pointer hover:shadow-md" : "cursor-grab active:cursor-grabbing"
                                       } ${getShiftBadgeStyle(s.tipoTurno, s.orarioInizio, s.orarioFine, s.struttura)} ${
-                                        s.tipoTurno === "Ferie" ? "animate-pulse ring-2 ring-amber-500 ring-offset-1 border-amber-500 border-2" : ""
-                                      } ${
                                         isInvalid ? "animate-pulse ring-4 ring-red-600 ring-offset-1 !border-red-600 !bg-red-100 !text-red-900" : ""
                                       } ${
                                         isHovered ? "ring-2 ring-indigo-600 shadow-lg scale-[1.02] z-30" : isStaffHovered ? "ring-1 ring-indigo-400 shadow-xs" : ""
@@ -5620,47 +5633,6 @@ function importaTurniResidenzaVannucci() {
           )}
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden relative group/calendar flex-1 flex flex-col">
           
-          {/* FLOATING DRAG & CLICK EDGE ZONES FOR PREV/NEXT MONTH (0px LAYOUT IMPACT) */}
-          <div
-            onDragOver={handleDragOverPrevWeekZone}
-            onDragLeave={handleDragLeaveWeekZone}
-            onDrop={(e) => {
-              handleDragLeaveWeekZone();
-              e.preventDefault();
-            }}
-            onClick={handlePrevMonth}
-            className={`absolute left-0 top-0 bottom-0 z-30 w-7 hover:w-12 bg-gradient-to-r from-slate-900/90 via-indigo-950/70 to-transparent flex flex-col items-center justify-center cursor-pointer transition-all duration-300 rounded-r-xl ${
-              isHoveringPrevZone
-                ? "opacity-100 w-14 bg-indigo-950/95 border-r-4 border-amber-400 shadow-2xl"
-                : "opacity-0 hover:opacity-100"
-            }`}
-            title="Trascina qui o Clicca per andare al mese precedente"
-          >
-            <div className="p-1.5 rounded-full bg-amber-500 text-slate-950 shadow-lg animate-pulse flex items-center justify-center">
-              <ChevronLeft className="w-5 h-5 font-black stroke-[3.5]" />
-            </div>
-          </div>
-
-          <div
-            onDragOver={handleDragOverNextWeekZone}
-            onDragLeave={handleDragLeaveWeekZone}
-            onDrop={(e) => {
-              handleDragLeaveWeekZone();
-              e.preventDefault();
-            }}
-            onClick={handleNextMonth}
-            className={`absolute right-0 top-0 bottom-0 z-30 w-7 hover:w-12 bg-gradient-to-l from-slate-900/90 via-indigo-950/70 to-transparent flex flex-col items-center justify-center cursor-pointer transition-all duration-300 rounded-l-xl ${
-              isHoveringNextZone
-                ? "opacity-100 w-14 bg-indigo-950/95 border-l-4 border-amber-400 shadow-2xl"
-                : "opacity-0 hover:opacity-100"
-            }`}
-            title="Trascina qui o Clicca per andare al mese successivo"
-          >
-            <div className="p-1.5 rounded-full bg-amber-500 text-slate-950 shadow-lg animate-pulse flex items-center justify-center">
-              <ChevronRight className="w-5 h-5 font-black stroke-[3.5]" />
-            </div>
-          </div>
-
           {/* TABLE CONTAINER - FITS ALL 31 DAYS IN 100% WIDTH */}
           <div className="overflow-auto max-h-[calc(100vh-250px)] w-full">
             <table id="monthly-schedule-table" className="w-full table-fixed text-left border-collapse">
@@ -5931,8 +5903,6 @@ function importaTurniResidenzaVannucci() {
                                     className={`px-0.5 py-0.5 rounded text-[9px] font-black border shadow-2xs hover:scale-110 transition-transform flex items-center justify-center min-w-[16px] relative ${
                                       isPublicView || lockedDays.includes(dateYMD) ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"
                                     } ${badgeStyle} ${
-                                      s.tipoTurno === "Ferie" ? "animate-pulse ring-1 ring-amber-800 border-amber-800 border-2" : ""
-                                    } ${
                                       isShiftHovered ? "ring-2 ring-indigo-600 scale-125 z-30 shadow-md" : ""
                                     }`}
                                     title={s.tipoTurno === "Ferie" ? `🏖️ Ferie — Trascina per spostare/duplicare o clicca per dettagli` : lockedDays.includes(dateYMD) ? `Giorno Bloccato: ${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine})` : `${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine}) - Clicca per dettagli`}
@@ -6705,10 +6675,12 @@ function importaTurniResidenzaVannucci() {
                     onClick={() => {
                       handleOpenVacationModal(newStaffId, newDate);
                     }}
-                    className="p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer bg-gradient-to-tr from-amber-500 to-orange-500 text-white shadow-xs hover:from-amber-600 hover:to-orange-600 ring-2 ring-amber-400/30"
+                    className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
+                      newTipoTurno === "Ferie" ? "bg-slate-300 border-slate-400 text-slate-800 ring-4 ring-slate-400/30 font-black shadow-xs" : "bg-slate-100 border-slate-200 hover:bg-slate-200 text-slate-700"
+                    }`}
                   >
                     <span className="font-extrabold text-[12px] flex items-center gap-1">🏖️ Ferie</span>
-                    <span className="text-[9px] opacity-90 font-normal">Doppio clic: carica ferie / Clic: apri calendario</span>
+                    <span className="text-[9px] opacity-75 font-normal">Doppio clic: carica ferie / Clic: apri calendario</span>
                   </button>
                 </div>
               </div>
@@ -7330,7 +7302,7 @@ function importaTurniResidenzaVannucci() {
                               setEditShiftFine("00:00");
                             }}
                             className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
-                              selectedShiftForDetail?.tipoTurno === "Ferie" ? "bg-amber-800 border-amber-900 text-white ring-4 ring-amber-800/40" : "bg-slate-50 border-slate-200 hover:bg-slate-100"
+                              selectedShiftForDetail?.tipoTurno === "Ferie" ? "bg-slate-300 border-slate-400 text-slate-800 ring-4 ring-slate-400/30 font-black shadow-xs" : "bg-slate-100 border-slate-200 hover:bg-slate-200 text-slate-700"
                             }`}
                           >
                             <span className="font-extrabold text-[12px]">🏖️ Ferie</span>
