@@ -305,19 +305,11 @@ export const INITIAL_SHIFT_PRESETS: CustomShiftPreset[] = [
   },
   
   {
-    id: "preset-cucina-10-14",
-    label: "🍲 10:00-14:00 (Cucina)",
+    id: "preset-cucina-1030-1530",
+    label: "🍲 10:30-15:30 (Cucina)",
     tipoTurno: "Cucina",
-    orarioInizio: "10:00",
-    orarioFine: "14:00",
-    isDefault: true
-  },
-  {
-    id: "preset-cucina-17-20",
-    label: "🍲 17:00-20:00 (Cucina)",
-    tipoTurno: "Cucina",
-    orarioInizio: "17:00",
-    orarioFine: "20:00",
+    orarioInizio: "10:30",
+    orarioFine: "15:30",
     isDefault: true
   },
   // VANNUCCI 4
@@ -786,13 +778,13 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     if (!hasMattina4) missing.push("Vannucci 4: Mattina (08:00 - 15:00)");
     if (!hasPomeriggio4) missing.push("Vannucci 4: Pomeriggio (15:00 - 22:00)");
 
-    // 4. Notte (Generale)
-    const hasNotte = dayShifts.some(s => s.tipoTurno === "Notte");
-    if (!hasNotte) missing.push("Turno di Notte (23:00 - 07:00)");
+    // 4. Notte (Generale - turno che parte alle 23:00)
+    const hasNotte = dayShifts.some(s => s.tipoTurno === "Notte" && (s.orarioInizio === "23:00" || (s.orarioInizio !== "00:00" && s.orarioFine === "07:00")));
+    if (!hasNotte) missing.push("Turno di Notte (23:00 - 24:00)");
 
     // 5. Cucina (Generale - Obbligatoria per completare la giornata)
     const hasCucina = dayShifts.some(s => s.tipoTurno === "Cucina");
-    if (!hasCucina) missing.push("Servizio Cucina (10:30 - 15:00)");
+    if (!hasCucina) missing.push("Servizio Cucina (10:30 - 15:30)");
 
     // 6. Alzate (Almeno 2 turni che partono alle 07:00 tra V1, V2 e Pulizie 07:00-11:00)
     const shiftsAt7 = dayShifts.filter(s => 
@@ -927,20 +919,30 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       },
       {
         id: "notte",
-        label: "Turno di Notte",
+        label: "Turno di Notte (23:00)",
         struttura: "Casa Famiglia",
         tipoTurno: "Notte",
-        orarioStandard: "23:00 - 07:00",
+        orarioStandard: "23:00 - 24:00",
         icon: "🌙",
-        isCovered: findAssigned("Notte").length > 0,
-        assignedStaff: findAssigned("Notte")
+        isCovered: dayShifts.some(s => s.tipoTurno === "Notte" && (s.orarioInizio === "23:00" || (s.orarioInizio !== "00:00" && s.orarioFine === "07:00"))),
+        assignedStaff: dayShifts.filter(s => s.tipoTurno === "Notte" && (s.orarioInizio === "23:00" || (s.orarioInizio !== "00:00" && s.orarioFine === "07:00"))).map(s => {
+          const st = staff.find(m => m.id === s.staffId);
+          return {
+            id: s.staffId,
+            nome: st ? st.nome : "Operatore",
+            cognome: st ? st.cognome : "",
+            orarioInizio: s.orarioInizio,
+            orarioFine: s.orarioFine,
+            note: s.note
+          };
+        })
       },
       {
         id: "cucina",
         label: "Servizio Cucina",
         struttura: "Mensa / Cucina",
         tipoTurno: "Cucina",
-        orarioStandard: "10:30 - 15:00",
+        orarioStandard: "10:30 - 15:30",
         icon: "🍲",
         isCovered: findAssigned("Cucina").length > 0,
         assignedStaff: findAssigned("Cucina")
@@ -975,6 +977,31 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
         note: "Turno extra: concorre anche alle alzate ore 07:00."
       }
     ];
+
+    const smontoShifts = dayShifts.filter(s => s.tipoTurno === "Notte" && s.orarioInizio === "00:00");
+    if (smontoShifts.length > 0) {
+      extraSlots.push({
+        id: "smonto_notte",
+        label: "Smonto Notte (00:00 - 07:00)",
+        struttura: "Casa Famiglia",
+        tipoTurno: "Notte",
+        orarioStandard: "00:00 - 07:00",
+        icon: "🌙🌅",
+        isCovered: true,
+        assignedStaff: smontoShifts.map(s => {
+          const st = staff.find(m => m.id === s.staffId);
+          return {
+            id: s.staffId,
+            nome: st ? st.nome : "Operatore",
+            cognome: st ? st.cognome : "",
+            orarioInizio: s.orarioInizio,
+            orarioFine: s.orarioFine,
+            note: s.note
+          };
+        }),
+        note: "Smonto notte (grafica a metà). Permette l'inserimento di una nuova notte (23:00) per questo giorno."
+      });
+    }
 
     const missingMandatory = mandatorySlots.filter(s => !s.isCovered);
     const coveredMandatory = mandatorySlots.filter(s => s.isCovered);
@@ -1047,7 +1074,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   const [showAddPresetForm, setShowAddPresetForm] = useState<boolean>(false);
   const [customPresetName, setCustomPresetName] = useState<string>("");
   const [customPresetInizio, setCustomPresetInizio] = useState<string>("10:30");
-  const [customPresetFine, setCustomPresetFine] = useState<string>("15:00");
+  const [customPresetFine, setCustomPresetFine] = useState<string>("15:30");
   const [customPresetTipo, setCustomPresetTipo] = useState<string>("Cucina");
 
   const savePresetsToStorage = (presets: CustomShiftPreset[]) => {
@@ -1453,7 +1480,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     const dayShifts = shifts.filter(s => s.data === targetDateStr && s.struttura === currentStruttura);
     const hasMattina = dayShifts.some(s => s.tipoTurno === "Mattina");
     const hasPomeriggio = dayShifts.some(s => s.tipoTurno === "Pomeriggio");
-    const hasNotte = shifts.some(s => s.data === targetDateStr && s.tipoTurno === "Notte");
+    const hasNotte = shifts.some(s => s.data === targetDateStr && s.tipoTurno === "Notte" && (s.orarioInizio === "23:00" || (s.orarioInizio !== "00:00" && s.orarioFine === "07:00")));
 
     let proposedType: "Mattina" | "Pomeriggio" | "Notte" | "Riposo" = "Mattina";
     if (!hasMattina) proposedType = "Mattina";
@@ -1483,13 +1510,19 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     prevShifts.forEach(s => {
        const endParts = s.orarioFine.split(":");
        if (endParts.length === 2) {
-          let mins = parseInt(endParts[0], 10) * 60 + parseInt(endParts[1], 10);
-          // If night shift, it ends the next day (targetDateStr)
-          if (s.tipoTurno === "Notte" || (parseInt(s.orarioFine.split(":")[0], 10) < parseInt(s.orarioInizio.split(":")[0], 10))) {
-              mins += 24 * 60; // Represents time on the target day
+          const sStartHour = parseInt(s.orarioInizio.split(":")[0], 10);
+          const sEndHour = parseInt(endParts[0], 10);
+          const sEndMinute = parseInt(endParts[1] || "0", 10);
+          let mins = sEndHour * 60 + sEndMinute;
+
+          if (s.orarioFine === "24:00" || (s.orarioFine === "00:00" && sStartHour >= 12)) {
+            mins = 24 * 60;
+          } else if (sEndHour < sStartHour) {
+            mins += 24 * 60; // Crosses into next day (e.g. 23:00 - 07:00)
           }
+
           if (mins > lastEndTimeMin) {
-              lastEndTimeMin = mins;
+            lastEndTimeMin = mins;
           }
        }
     });
@@ -1547,7 +1580,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   };
 
   // Open modal prefilled with person and date
-  const handleOpenAddModal = (staffId?: string, dateStr?: string) => {
+  const handleOpenAddModal = (staffId?: string, dateStr?: string, defaultTipo?: string, defaultInizio?: string, defaultFine?: string) => {
     if (isPublicView) return;
     if (dateStr && lockedDays.includes(dateStr)) {
       showToast("🔒 Questo giorno è completato e bloccato contro modifiche accidentali!");
@@ -1560,13 +1593,94 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     setNewStaffId(targetStaffId);
     setNewDate(targetDate);
     
-    // Auto preset times smartly based on structure and previous shifts
-    const suggested = suggestNextShift(targetStaffId, targetDate, newStruttura);
-    setNewTipoTurno(suggested.tipo);
-    setNewOrarioInizio(suggested.inizio);
-    setNewOrarioFine(suggested.fine);
+    if (defaultTipo) {
+      setNewTipoTurno(defaultTipo);
+      setNewOrarioInizio(defaultInizio || "07:00");
+      setNewOrarioFine(defaultFine || "14:00");
+      if (defaultTipo === "Notte") setNewNote("Turno di Notte");
+      else if (defaultTipo === "Cucina") setNewNote("Servizio Cucina e Mensa");
+      else if (defaultTipo === "Pulizie") setNewNote("Servizio Pulizie & Supporto Alzate");
+      else setNewNote("");
+    } else {
+      // Auto preset times smartly based on structure and previous shifts
+      const suggested = suggestNextShift(targetStaffId, targetDate, newStruttura);
+      setNewTipoTurno(suggested.tipo);
+      setNewOrarioInizio(suggested.inizio);
+      setNewOrarioFine(suggested.fine);
+      setNewNote("");
+    }
 
     setShowAddModal(true);
+  };
+
+  const handleAddNightShift = (staffId: string, dateStr: string, struttura: string = "", customNote: string = "") => {
+    const dObj = new Date(dateStr);
+    dObj.setDate(dObj.getDate() + 1);
+    const nextDateStr = dObj.toISOString().split("T")[0];
+
+    const shiftDay1: Shift = {
+      id: `shift-${Date.now()}-notte-1-${Math.random().toString(36).substr(2, 4)}`,
+      staffId,
+      data: dateStr,
+      tipoTurno: "Notte",
+      orarioInizio: "23:00",
+      orarioFine: "24:00",
+      note: customNote || "Turno di Notte (23:00 - 24:00)",
+      struttura: ""
+    };
+
+    const shiftDay2: Shift = {
+      id: `shift-${Date.now()}-notte-2-${Math.random().toString(36).substr(2, 4)}`,
+      staffId,
+      data: nextDateStr,
+      tipoTurno: "Notte",
+      orarioInizio: "00:00",
+      orarioFine: "07:00",
+      note: customNote ? `${customNote} (Continuazione)` : "Turno di Notte (00:00 - 07:00)",
+      struttura: ""
+    };
+
+    return { shiftDay1, shiftDay2, nextDateStr };
+  };
+
+  // Scorciatoia rapida diretta: inserisce il turno Notte (23:00 - 07:00) con 1 clic senza passare dalla scheda
+  const handleQuickAddNightShift = (staffId: string, dateStr: string) => {
+    if (isStaffRole) return;
+    if (lockedDays.includes(dateStr)) {
+      showToast("🔒 Questo giorno è completato e bloccato contro modifiche accidentali!");
+      return;
+    }
+    const dObj = new Date(dateStr);
+    dObj.setDate(dObj.getDate() + 1);
+    const nextDateStr = dObj.toISOString().split("T")[0];
+
+    if (lockedDays.includes(nextDateStr)) {
+      showToast("🔒 Il giorno successivo è bloccato! Impossibile completare il turno notturno.");
+      return;
+    }
+
+    const memberObj = staff.find(s => s.id === staffId);
+    const memberName = memberObj ? `${memberObj.nome} ${memberObj.cognome}` : "Operatore";
+
+    const { shiftDay1, shiftDay2 } = handleAddNightShift(staffId, dateStr, "", "Turno Notte rapido");
+    const existingFiltered = shifts.filter(s => {
+      if (s.staffId === staffId) {
+        if (s.data === dateStr) {
+          if (s.orarioInizio === "23:00" || s.tipoTurno === "Riposo" || s.tipoTurno === "Ferie") {
+            return false;
+          }
+        }
+        if (s.data === nextDateStr) {
+          if (s.orarioInizio === "00:00" || s.tipoTurno === "Riposo" || s.tipoTurno === "Ferie") {
+            return false;
+          }
+        }
+      }
+      return true;
+    });
+    const updatedShiftsList = [...existingFiltered, shiftDay1, shiftDay2];
+    applyShiftsUpdate(updatedShiftsList);
+    showToast(`⚡ Turno di Notte inserito direttamente per ${memberName} (23:00 oggi + 00:00-07:00 domani)!`);
   };
 
   // Handle Submit Form
@@ -1593,6 +1707,41 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       if (!constructedNote.includes("inserite il") && !constructedNote.includes("inserito il")) {
         constructedNote = constructedNote ? `${timestampStamp} - ${constructedNote}` : timestampStamp;
       }
+    }
+
+    // Special Night Shift Rule: 23:00-24:00 today & 00:00-07:00 tomorrow
+    if (newTipoTurno === "Notte" || (newOrarioInizio === "23:00" && (newOrarioFine === "07:00" || newOrarioFine === "24:00"))) {
+      const dObj = new Date(newDate);
+      dObj.setDate(dObj.getDate() + 1);
+      const nextDateStr = dObj.toISOString().split("T")[0];
+
+      if (lockedDays.includes(nextDateStr)) {
+        showToast("🔒 Il giorno successivo è bloccato! Impossibile completare il turno notturno.");
+        return;
+      }
+
+      const { shiftDay1, shiftDay2 } = handleAddNightShift(newStaffId, newDate, newStruttura, constructedNote);
+      const existingFiltered = shifts.filter(s => {
+        if (s.staffId === newStaffId) {
+          if (s.data === newDate) {
+            if (s.orarioInizio === "23:00" || s.tipoTurno === "Riposo" || s.tipoTurno === "Ferie") {
+              return false;
+            }
+          }
+          if (s.data === nextDateStr) {
+            if (s.orarioInizio === "00:00" || s.tipoTurno === "Riposo" || s.tipoTurno === "Ferie") {
+              return false;
+            }
+          }
+        }
+        return true;
+      });
+      const updatedShiftsList = [...existingFiltered, shiftDay1, shiftDay2];
+      applyShiftsUpdate(updatedShiftsList);
+      setShowAddModal(false);
+      setNewNote("");
+      showToast(`⚡ Turno di Notte caricato (23:00-24:00 oggi + 00:00-07:00 domani)!`);
+      return;
     }
 
     const shiftObj: Shift = {
@@ -1648,13 +1797,6 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       return;
     }
 
-    const structureForCheck = ["Notte", "Cucina", "Pulizie", "Riposo", "Ferie"].includes(preset.tipoTurno) ? "" : newStruttura;
-    const validity = checkPotentialShiftValidity(newStaffId, newDate, preset.tipoTurno, structureForCheck, preset.orarioInizio, preset.orarioFine);
-    if (!validity.valid) {
-      showToast(validity.reason || "Errore di validazione del turno");
-      return;
-    }
-
     let constructedNote = newNote.trim();
     if (preset.tipoTurno === "Pulizie" && !constructedNote) {
       constructedNote = "Servizio Pulizie & Supporto Alzate";
@@ -1664,6 +1806,48 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     }
     if (preset.tipoTurno === "Notte" && !constructedNote) {
       constructedNote = "Turno di Notte";
+    }
+
+    // Special Night Shift Rule: 23:00-24:00 today & 00:00-07:00 tomorrow
+    if (preset.tipoTurno === "Notte" || preset.orarioInizio === "23:00") {
+      const dObj = new Date(newDate);
+      dObj.setDate(dObj.getDate() + 1);
+      const nextDateStr = dObj.toISOString().split("T")[0];
+
+      if (lockedDays.includes(nextDateStr)) {
+        showToast("🔒 Il giorno successivo è bloccato! Impossibile completare il turno notturno.");
+        return;
+      }
+
+      const { shiftDay1, shiftDay2 } = handleAddNightShift(newStaffId, newDate, newStruttura, constructedNote);
+      const existingFiltered = shifts.filter(s => {
+        if (s.staffId === newStaffId) {
+          if (s.data === newDate) {
+            if (s.orarioInizio === "23:00" || s.tipoTurno === "Riposo" || s.tipoTurno === "Ferie") {
+              return false;
+            }
+          }
+          if (s.data === nextDateStr) {
+            if (s.orarioInizio === "00:00" || s.tipoTurno === "Riposo" || s.tipoTurno === "Ferie") {
+              return false;
+            }
+          }
+        }
+        return true;
+      });
+      const updatedShiftsList = [...existingFiltered, shiftDay1, shiftDay2];
+      applyShiftsUpdate(updatedShiftsList);
+      setShowAddModal(false);
+      setNewNote("");
+      showToast(`⚡ Turno di Notte caricato (23:00-24:00 oggi + 00:00-07:00 domani)!`);
+      return;
+    }
+
+    const structureForCheck = ["Notte", "Cucina", "Pulizie", "Riposo", "Ferie"].includes(preset.tipoTurno) ? "" : newStruttura;
+    const validity = checkPotentialShiftValidity(newStaffId, newDate, preset.tipoTurno, structureForCheck, preset.orarioInizio, preset.orarioFine);
+    if (!validity.valid) {
+      showToast(validity.reason || "Errore di validazione del turno");
+      return;
     }
 
     const now = new Date();
@@ -1691,7 +1875,6 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
 
     let updatedShiftsList: Shift[];
     if (preset.tipoTurno === "Riposo" || preset.tipoTurno === "Ferie" || preset.tipoTurno === "Cucina") {
-      // Direct replacement for Riposo, Ferie, and Cucina
       const existingFiltered = shifts.filter(s => !(s.staffId === newStaffId && s.data === newDate));
       updatedShiftsList = [...existingFiltered, shiftObj];
     } else {
@@ -1724,7 +1907,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     showToast(`⚡ Turno ${preset.tipoTurno} (${preset.orarioInizio}-${preset.orarioFine}) caricato automaticamente!`);
   };
 
-  // Special Rule: Add both Pulizie (07:00-11:00) + Notte (23:00-07:00) on the same day for the staff member
+  // Special Rule: Add both Pulizie (07:00-11:00) + Notte (23:00-24:00 today & 00:00-07:00 tomorrow) on the same day for the staff member
   const handleAddComboPulizieNotte = (staffId: string, dateStr: string, struttura: string = "") => {
     if (!staffId || !dateStr) return;
     if (lockedDays.includes(dateStr)) {
@@ -1733,14 +1916,17 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     }
 
     const pulizieValidity = checkPotentialShiftValidity(staffId, dateStr, "Pulizie", struttura, "07:00", "11:00");
-    const notteValidity = checkPotentialShiftValidity(staffId, dateStr, "Notte", struttura, "23:00", "07:00");
-
     if (!pulizieValidity.valid) {
       showToast(`⚠️ Turno Pulizie: ${pulizieValidity.reason}`);
       return;
     }
-    if (!notteValidity.valid) {
-      showToast(`⚠️ Turno Notte: ${notteValidity.reason}`);
+
+    const dObj = new Date(dateStr);
+    dObj.setDate(dObj.getDate() + 1);
+    const nextDateStr = dObj.toISOString().split("T")[0];
+
+    if (lockedDays.includes(nextDateStr)) {
+      showToast("🔒 Il giorno successivo è bloccato! Impossibile inserire la seconda parte della notte.");
       return;
     }
 
@@ -1755,26 +1941,30 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       struttura: struttura
     };
 
-    const notteShift: Shift = {
-      id: `shift-${Date.now() + 1}-notte-${Math.random().toString(36).substr(2, 4)}`,
-      staffId: staffId,
-      data: dateStr,
-      tipoTurno: "Notte",
-      orarioInizio: "23:00",
-      orarioFine: "07:00",
-      note: "Turno di Notte (Combo Regola Speciale Pulizie - 1h oggi)",
-      struttura: struttura
-    };
+    const { shiftDay1, shiftDay2 } = handleAddNightShift(staffId, dateStr, struttura, "Turno di Notte (Combo Pulizie)");
 
-    // Remove any Riposo or overlapping work shift on that day for this staff member
-    const otherStaffShifts = shifts.filter(s => !(s.staffId === staffId && s.data === dateStr));
-    const updatedShiftsList = [...otherStaffShifts, pulizieShift, notteShift];
+    const existingFiltered = shifts.filter(s => {
+      if (s.staffId === staffId) {
+        if (s.data === dateStr) {
+          if (s.orarioInizio === "23:00" || s.tipoTurno === "Pulizie" || s.tipoTurno === "Riposo" || s.tipoTurno === "Ferie") {
+            return false;
+          }
+        }
+        if (s.data === nextDateStr) {
+          if (s.orarioInizio === "00:00" || s.tipoTurno === "Riposo" || s.tipoTurno === "Ferie") {
+            return false;
+          }
+        }
+      }
+      return true;
+    });
+    const updatedShiftsList = [...existingFiltered, pulizieShift, shiftDay1, shiftDay2];
 
     applyShiftsUpdate(updatedShiftsList);
     setShowAddModal(false);
     setNewNote("");
     const staffName = staff.find(st => st.id === staffId)?.nome || "Operatore";
-    showToast(`⚡ Caricata Combo Speciale per ${staffName}: Pulizie (07:00-11:00) + Notte (23:00-07:00)!`);
+    showToast(`⚡ Caricata Combo per ${staffName}: Pulizie (07:00-11:00) + Notte (23:00-24:00 oggi & 00:00-07:00 domani)!`);
   };
 
   // Delete Single Shift with Undo
@@ -2455,11 +2645,17 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     prevShifts.forEach(s => {
       const endParts = s.orarioFine.split(":");
       if (endParts.length === 2) {
-        let mins = parseInt(endParts[0], 10) * 60 + parseInt(endParts[1], 10);
-        // Night shift (23:00 - 07:00) ends at 07:00 of the target date (today)
-        if (s.tipoTurno === "Notte" || (parseInt(s.orarioFine.split(":")[0], 10) < parseInt(s.orarioInizio.split(":")[0], 10))) {
+        const sStartHour = parseInt(s.orarioInizio.split(":")[0], 10);
+        const sEndHour = parseInt(endParts[0], 10);
+        const sEndMinute = parseInt(endParts[1] || "0", 10);
+        let mins = sEndHour * 60 + sEndMinute;
+
+        if (s.orarioFine === "24:00" || (s.orarioFine === "00:00" && sStartHour >= 12)) {
+          mins = 24 * 60;
+        } else if (sEndHour < sStartHour) {
           mins += 24 * 60;
         }
+
         if (mins > lastEndTimeMin) lastEndTimeMin = mins;
       }
     });
@@ -2469,7 +2665,10 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       const startMin = parseInt(startParts[0], 10) * 60 + parseInt(startParts[1], 10);
       const nextStartAbsoluteMin = startMin + 24 * 60;
 
-      if (lastEndTimeMin > 0 && (nextStartAbsoluteMin - lastEndTimeMin) < 11 * 60) {
+      // Exemption: night continuation (00:00 starts right after yesterday's 23:00-24:00)
+      const isNightContinuation = (tipoTurno === "Notte" && inizio === "00:00" && prevShifts.some(s => s.tipoTurno === "Notte" && (s.orarioFine === "24:00" || s.orarioFine === "00:00" || s.orarioInizio === "23:00")));
+
+      if (!isNightContinuation && lastEndTimeMin > 0 && (nextStartAbsoluteMin - lastEndTimeMin) < 11 * 60) {
         return false;
       }
     }
@@ -2485,13 +2684,26 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
 
     const endParts = fine.split(":");
     if (endParts.length === 2) {
-      let myEndMin = parseInt(endParts[0], 10) * 60 + parseInt(endParts[1], 10);
-      if (tipoTurno === "Notte" || (parseInt(fine.split(":")[0], 10) < parseInt(inizio.split(":")[0], 10))) {
+      const myStartHour = parseInt(inizio.split(":")[0], 10);
+      const myEndHour = parseInt(endParts[0], 10);
+      const myEndMinute = parseInt(endParts[1] || "0", 10);
+      let myEndMin = myEndHour * 60 + myEndMinute;
+      if (fine === "24:00" || (fine === "00:00" && myStartHour >= 12)) {
+        myEndMin = 24 * 60;
+      } else if (myEndHour < myStartHour) {
         myEndMin += 24 * 60;
       }
 
+      const isThisShiftNightConnectingToNext = (tipoTurno === "Notte" && (fine === "24:00" || fine === "00:00" || fine === "07:00" || fine === "23:59"));
+      const relevantNextShifts = nextShifts.filter(s => {
+        if (isThisShiftNightConnectingToNext && s.tipoTurno === "Notte" && (s.orarioInizio === "00:00" || s.orarioInizio === "24:00")) {
+          return false;
+        }
+        return true;
+      });
+
       let earliestNextStartMin = 48 * 60;
-      nextShifts.forEach(s => {
+      relevantNextShifts.forEach(s => {
         const nStartParts = s.orarioInizio.split(":");
         if (nStartParts.length === 2) {
           let mins = parseInt(nStartParts[0], 10) * 60 + parseInt(nStartParts[1], 10) + 24 * 60;
@@ -2754,8 +2966,21 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   ): { valid: boolean; reason?: string } => {
     if (tipoTurno === "Riposo" || tipoTurno === "Ferie") return { valid: true };
 
-    // 0. New rule: Only one global shift of type Notte, Cucina, or Pulizie per day
-    if (["Notte", "Cucina", "Pulizie"].includes(tipoTurno)) {
+    // 0. New rule: Only one global night shift starting at 23:00, Cucina, or Pulizie per day
+    if (tipoTurno === "Notte" && inizio === "23:00") {
+      const nightStartingExists = shifts.some(s => 
+        s.data === dateStr && 
+        s.tipoTurno === "Notte" && 
+        s.orarioInizio === "23:00" && 
+        s.id !== shiftIdToIgnore
+      );
+      if (nightStartingExists) {
+        return { 
+          valid: false, 
+          reason: `Il turno di Notte è già stato avviato per questo giorno (esiste già una notte che parte alle 23:00).` 
+        };
+      }
+    } else if (["Cucina", "Pulizie"].includes(tipoTurno)) {
       const globalShiftExists = shifts.some(s => 
         s.data === dateStr && 
         s.tipoTurno === tipoTurno && 
@@ -2848,6 +3073,28 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       }
     }
 
+    // Helper to calculate exact end time of a shift relative to 00:00 of its calendar day (in minutes)
+    const getShiftEndInDayMins = (sInizio: string, sFine: string): number => {
+      const startParts = sInizio.split(":");
+      const startHour = parseInt(startParts[0], 10);
+      
+      const endParts = sFine.split(":");
+      const endHour = parseInt(endParts[0], 10);
+      const endMinute = parseInt(endParts[1] || "0", 10);
+      const rawEndMins = endHour * 60 + endMinute;
+
+      // "24:00" or ("00:00" if starting in afternoon/night) marks midnight of this day (1440 mins)
+      if (sFine === "24:00" || (sFine === "00:00" && startHour >= 12)) {
+        return 24 * 60;
+      }
+      // If end hour < start hour (e.g. 23:00 - 07:00), it crosses into the next day (+24h)
+      if (endHour < startHour) {
+        return 24 * 60 + rawEndMins;
+      }
+      // Normal shift ending on the same day (e.g. 07:00 - 14:00 -> 840, 00:00 - 07:00 -> 420, 14:00 - 21:00 -> 1260)
+      return rawEndMins;
+    };
+
     // 2. Check 11-hour rule with PREVIOUS day's shifts
     const targetDateObj = new Date(dateStr);
     targetDateObj.setDate(targetDateObj.getDate() - 1);
@@ -2857,49 +3104,42 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     
     let lastEndTimeMin = 0; 
     prevShifts.forEach(s => {
-       const endParts = s.orarioFine.split(":");
-       if (endParts.length === 2) {
-          let mins = parseInt(endParts[0], 10) * 60 + parseInt(endParts[1], 10);
-          if (s.tipoTurno === "Notte" || (parseInt(s.orarioFine.split(":")[0], 10) < parseInt(s.orarioInizio.split(":")[0], 10))) {
-              mins += 24 * 60; 
-          }
-          if (mins > lastEndTimeMin) {
-              lastEndTimeMin = mins;
-          }
-       }
+      const endMins = getShiftEndInDayMins(s.orarioInizio, s.orarioFine);
+      if (endMins > lastEndTimeMin) {
+        lastEndTimeMin = endMins;
+      }
     });
 
     const startParts = inizio.split(":");
-    const startMin = parseInt(startParts[0], 10) * 60 + parseInt(startParts[1], 10);
-    const nextStartAbsoluteMin = startMin + 24 * 60; 
+    const startMin = parseInt(startParts[0], 10) * 60 + parseInt(startParts[1] || "0", 10);
+    const nextStartAbsoluteMin = startMin + 24 * 60; // relative to 00:00 of prevDateStr
     
-    if (lastEndTimeMin > 0 && (nextStartAbsoluteMin - lastEndTimeMin) < 11 * 60) {
+    // Exemption: continuous night shift (e.g. 23:00-24:00 on prev day and 00:00-07:00 today)
+    const isNightContinuation = (tipoTurno === "Notte" && inizio === "00:00" && prevShifts.some(s => s.tipoTurno === "Notte" && (s.orarioFine === "24:00" || s.orarioFine === "00:00" || s.orarioInizio === "23:00")));
+
+    if (!isNightContinuation && lastEndTimeMin > 0 && (nextStartAbsoluteMin - lastEndTimeMin) < 11 * 60) {
       return { valid: false, reason: "Non rispetta le 11 ore di riposo dal turno precedente" };
     }
     
-    // 3. Check rule with SAME day's shifts (allow 07:00-11:00 + 23:00-07:00 multi-shift with 12h rest)
+    // 3. Check rule with SAME day's shifts (allow 00:00-07:00 + 23:00-24:00 with 16h rest, 07:00-11:00 + 23:00-07:00 multi-shift with 12h rest, etc.)
     const sameDayShifts = shifts.filter(s => s.staffId === staffId && s.data === dateStr && s.id !== shiftIdToIgnore && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie");
     let sameDayOverlap = false;
     let insufficientSameDayRest = false;
 
     sameDayShifts.forEach(s => {
-      const sStartParts = s.orarioInizio.split(":");
-      const sStartMin = parseInt(sStartParts[0], 10) * 60 + parseInt(sStartParts[1], 10);
-      
-      const sEndParts = s.orarioFine.split(":");
-      let sEndMin = parseInt(sEndParts[0], 10) * 60 + parseInt(sEndParts[1], 10);
-      if (s.tipoTurno === "Notte" || (parseInt(s.orarioFine.split(":")[0], 10) < parseInt(s.orarioInizio.split(":")[0], 10))) {
-          sEndMin += 24 * 60;
+      // Exemption: exact identical start time is an overlap
+      if (s.orarioInizio === inizio) {
+        sameDayOverlap = true;
+        return;
       }
 
+      const sStartParts = s.orarioInizio.split(":");
+      const sStartMin = parseInt(sStartParts[0], 10) * 60 + parseInt(sStartParts[1] || "0", 10);
+      const sEndMin = getShiftEndInDayMins(s.orarioInizio, s.orarioFine);
+
       const newStartParts = inizio.split(":");
-      const newStartMin = parseInt(newStartParts[0], 10) * 60 + parseInt(newStartParts[1], 10);
-      
-      const newEndParts = fine.split(":");
-      let newEndMin = parseInt(newEndParts[0], 10) * 60 + parseInt(newEndParts[1], 10);
-      if (tipoTurno === "Notte" || (parseInt(fine.split(":")[0], 10) < parseInt(inizio.split(":")[0], 10))) {
-          newEndMin += 24 * 60;
-      }
+      const newStartMin = parseInt(newStartParts[0], 10) * 60 + parseInt(newStartParts[1] || "0", 10);
+      const newEndMin = getShiftEndInDayMins(inizio, fine);
       
       // Check interval overlap
       if (Math.max(newStartMin, sStartMin) < Math.min(newEndMin, sEndMin)) {
@@ -2929,21 +3169,27 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     
     const nextShifts = shifts.filter(s => s.staffId === staffId && s.data === nextDateStr && s.id !== shiftIdToIgnore && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie");
     
-    const myEndParts = fine.split(":");
-    let myEndMin = parseInt(myEndParts[0], 10) * 60 + parseInt(myEndParts[1], 10);
-    if (tipoTurno === "Notte" || (parseInt(fine.split(":")[0], 10) < parseInt(inizio.split(":")[0], 10))) {
-        myEndMin += 24 * 60; 
-    }
+    const myEndMin = getShiftEndInDayMins(inizio, fine);
     
-    let earliestNextStartMin = 48 * 60; 
-    nextShifts.forEach(s => {
-       const nStartParts = s.orarioInizio.split(":");
-       if (nStartParts.length === 2) {
-          let mins = parseInt(nStartParts[0], 10) * 60 + parseInt(nStartParts[1], 10) + 24 * 60;
-          if (mins < earliestNextStartMin) earliestNextStartMin = mins;
-       }
+    // If this shift is an evening night shift continuing into tomorrow (e.g. 23:00-24:00), skip tomorrow's morning continuation (00:00-07:00)
+    const isThisShiftNightConnectingToNext = (tipoTurno === "Notte" && (fine === "24:00" || fine === "00:00" || fine === "07:00" || fine === "23:59"));
+    
+    const relevantNextShifts = nextShifts.filter(s => {
+      if (isThisShiftNightConnectingToNext && s.tipoTurno === "Notte" && (s.orarioInizio === "00:00" || s.orarioInizio === "24:00")) {
+        return false;
+      }
+      return true;
     });
-    
+
+    let earliestNextStartMin = 48 * 60; 
+    relevantNextShifts.forEach(s => {
+      const nStartParts = s.orarioInizio.split(":");
+      if (nStartParts.length === 2) {
+        let mins = parseInt(nStartParts[0], 10) * 60 + parseInt(nStartParts[1] || "0", 10) + 24 * 60;
+        if (mins < earliestNextStartMin) earliestNextStartMin = mins;
+      }
+    });
+
     if (earliestNextStartMin < 48 * 60 && (earliestNextStartMin - myEndMin) < 11 * 60) {
       return { valid: false, reason: "Non rispetta le 11 ore di riposo prima del turno del giorno successivo" };
     }
@@ -2986,6 +3232,211 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     return hasMattina && hasPomeriggio;
   };
 
+  // Smart Shift Suggestion Interface
+  interface SmartShiftSuggestion {
+    tipoTurno: "Mattina" | "Pomeriggio" | "Notte";
+    struttura: string;
+    shortStruttura: string;
+    orarioInizio: string;
+    orarioFine: string;
+    icon: string;
+    reasonLabel: string;
+    badgeStyle: string;
+  }
+
+  // Calcola il suggerimento intelligente per uno slot vuoto in base ai filtri attivi (Struttura e/o Fascia oraria)
+  // REGOLA: suggerisce solo MATTINO e POMERIGGIO.
+  // Se è attivo SIA il filtro struttura SIA il filtro Mattino/Pomeriggio, suggerisce direttamente quel turno per quella struttura con i suoi colori!
+  // Una volta coperti i turni richiesti per quel giorno, NON suggerisce nulla.
+  const getSmartShiftSuggestion = (dateStr: string): SmartShiftSuggestion | null => {
+    if (isStaffRole || lockedDays.includes(dateStr)) return null;
+    const isFilterActive = activeStrutturaFilters.length > 0 || activeTimeFilter !== null;
+    if (!isFilterActive) return null;
+
+    // Caso speciale Notte
+    if (activeTimeFilter === 'notte') {
+      return {
+        tipoTurno: "Notte",
+        struttura: "",
+        shortStruttura: "Notte",
+        orarioInizio: "23:00",
+        orarioFine: "07:00",
+        icon: "🌙",
+        reasonLabel: "Notte",
+        badgeStyle: "bg-blue-600 text-white border-2 border-blue-700 shadow-md ring-1 ring-blue-600/80"
+      };
+    }
+
+    // Configurazione orari standard e colori per struttura
+    const config = {
+      v1: {
+        mattina: { start: "07:00", end: "15:00" },
+        pomeriggio: { start: "15:00", end: "23:00" },
+        name: "Vannucci 1",
+        short: "V1",
+        badgeStyle: "bg-yellow-400 text-yellow-950 border-2 border-yellow-500 shadow-md ring-1 ring-yellow-500/50"
+      },
+      v2: {
+        mattina: { start: "07:00", end: "14:00" },
+        pomeriggio: { start: "14:00", end: "21:00" },
+        name: "Vannucci 2",
+        short: "V2",
+        badgeStyle: "bg-orange-500 text-white border-2 border-orange-600 shadow-md ring-1 ring-orange-500/60"
+      },
+      v4: {
+        mattina: { start: "08:00", end: "15:00" },
+        pomeriggio: { start: "15:00", end: "20:00" },
+        name: "Vannucci 4",
+        short: "V4",
+        badgeStyle: "bg-lime-300 text-lime-950 border-2 border-lime-500 shadow-md ring-1 ring-lime-400/50"
+      }
+    };
+
+    const isShiftCovered = (structCode: 'v1' | 'v2' | 'v4', tipo: 'Mattina' | 'Pomeriggio') => {
+      const sName = config[structCode].name;
+      return shifts.some(s => 
+        s.data === dateStr && 
+        (s.struttura === sName || s.struttura === sName.replace("Vannucci", "Struttura")) && 
+        s.tipoTurno === tipo
+      );
+    };
+
+    // 1. SE È ATTIVO IL FILTRO "POMERIGGIO" (da solo o combinato con il filtro Struttura)
+    if (activeTimeFilter === 'pomeriggio') {
+      const candidateStructs: ('v1' | 'v2' | 'v4')[] = activeStrutturaFilters.length > 0 
+        ? (activeStrutturaFilters as ('v1' | 'v2' | 'v4')[])
+        : ['v1', 'v2', 'v4'];
+      
+      const target = candidateStructs.find(sc => !isShiftCovered(sc, "Pomeriggio"));
+      if (!target) return null; // Pomeriggio già coperto per la/le struttura/e selezionata/e!
+
+      const c = config[target];
+      return {
+        tipoTurno: "Pomeriggio",
+        struttura: c.name,
+        shortStruttura: c.short,
+        orarioInizio: c.pomeriggio.start,
+        orarioFine: c.pomeriggio.end,
+        icon: "🌇",
+        reasonLabel: `${c.short} Pomeriggio`,
+        badgeStyle: c.badgeStyle
+      };
+    }
+
+    // 2. SE È ATTIVO IL FILTRO "MATTINO" o "ALZATE" (da solo o combinato con il filtro Struttura)
+    if (activeTimeFilter === 'mattino' || activeTimeFilter === 'alzate') {
+      const candidateStructs: ('v1' | 'v2' | 'v4')[] = activeStrutturaFilters.length > 0 
+        ? (activeStrutturaFilters as ('v1' | 'v2' | 'v4')[])
+        : ['v1', 'v2', 'v4'];
+
+      const target = candidateStructs.find(sc => !isShiftCovered(sc, "Mattina"));
+      if (!target) return null; // Mattino già coperto per la/le struttura/e selezionata/e!
+
+      const c = config[target];
+      return {
+        tipoTurno: "Mattina",
+        struttura: c.name,
+        shortStruttura: c.short,
+        orarioInizio: c.mattina.start,
+        orarioFine: c.mattina.end,
+        icon: "🌅",
+        reasonLabel: `${c.short} Mattino`,
+        badgeStyle: c.badgeStyle
+      };
+    }
+
+    // 3. SOLO FILTRO STRUTTURA ATTIVO (senza filtro orario): sequenza logica Mattino -> Pomeriggio
+    if (activeStrutturaFilters.length > 0) {
+      const candidateStructs = activeStrutturaFilters as ('v1' | 'v2' | 'v4')[];
+      const target = candidateStructs.find(sc => !isShiftCovered(sc, "Mattina") || !isShiftCovered(sc, "Pomeriggio"));
+      if (!target) return null; // Entrambi già coperti per tutte le strutture filtrate!
+
+      const c = config[target];
+      const hasM = isShiftCovered(target, "Mattina");
+      const hasP = isShiftCovered(target, "Pomeriggio");
+
+      // Inizia dal Mattino
+      if (!hasM) {
+        return {
+          tipoTurno: "Mattina",
+          struttura: c.name,
+          shortStruttura: c.short,
+          orarioInizio: c.mattina.start,
+          orarioFine: c.mattina.end,
+          icon: "🌅",
+          reasonLabel: `${c.short} Mattino`,
+          badgeStyle: c.badgeStyle
+        };
+      }
+
+      // Se il Mattino c'è già, propone il Pomeriggio
+      if (!hasP) {
+        return {
+          tipoTurno: "Pomeriggio",
+          struttura: c.name,
+          shortStruttura: c.short,
+          orarioInizio: c.pomeriggio.start,
+          orarioFine: c.pomeriggio.end,
+          icon: "🌇",
+          reasonLabel: `${c.short} Pomeriggio`,
+          badgeStyle: c.badgeStyle
+        };
+      }
+    }
+
+    return null;
+  };
+
+  // Assegnazione istantanea con 1 click del turno suggerito
+  const handleQuickAddSmartShift = (
+    staffId: string,
+    dateStr: string,
+    suggestion: SmartShiftSuggestion
+  ) => {
+    if (isStaffRole) return;
+    if (lockedDays.includes(dateStr)) {
+      showToast("🔒 Questo giorno è completato e bloccato contro modifiche accidentali!");
+      return;
+    }
+
+    if (suggestion.tipoTurno === "Notte") {
+      handleQuickAddNightShift(staffId, dateStr);
+      return;
+    }
+
+    const validity = checkPotentialShiftValidity(
+      staffId,
+      dateStr,
+      suggestion.tipoTurno,
+      suggestion.struttura,
+      suggestion.orarioInizio,
+      suggestion.orarioFine
+    );
+    if (!validity.valid) {
+      showToast(`⚠️ Impossibile assegnare: ${validity.reason || "Non rispetta il riposo di 11 ore"}`, true);
+      return;
+    }
+
+    const memberObj = staff.find(s => s.id === staffId);
+    const memberName = memberObj ? `${memberObj.nome} ${memberObj.cognome}` : "Operatore";
+
+    const newShiftObj: Shift = {
+      id: `shift-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      staffId,
+      data: dateStr,
+      tipoTurno: suggestion.tipoTurno,
+      orarioInizio: suggestion.orarioInizio,
+      orarioFine: suggestion.orarioFine,
+      struttura: suggestion.struttura,
+      note: ""
+    };
+
+    const existingFiltered = shifts.filter(s => !(s.staffId === staffId && s.data === dateStr && (s.tipoTurno === "Riposo" || s.tipoTurno === "Ferie")));
+    const updatedShiftsList = [...existingFiltered, newShiftObj];
+    applyShiftsUpdate(updatedShiftsList);
+    showToast(`⚡ ${suggestion.tipoTurno} (${suggestion.shortStruttura} ${suggestion.orarioInizio}-${suggestion.orarioFine}) assegnato con 1-Click a ${memberName}!`);
+  };
+
   // Badge Color Styles for Turno Types (Varies color dynamically if shift hours are customized!)
   const getShiftBadgeStyle = (tipo: string, start?: string, end?: string, struttura?: string) => {
     // 1. TURNO DI NOTTE: Blu come richiesto (ex Nero)
@@ -3021,10 +3472,10 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     // 4. STRUTTURE COLORI DIVERSI (per Mattina, Pomeriggio, Reperibilità, ecc.)
     const normStruttura = struttura || "";
     if (normStruttura === "Vannucci 1" || normStruttura === "Struttura 1") {
-      // Giallo intenso
+      // Giallo intenso per V1
       return "bg-yellow-400 text-yellow-950 border-yellow-500 hover:bg-yellow-500 font-bold shadow-2xs ring-1 ring-yellow-500/50";
     } else if (normStruttura === "Vannucci 2" || normStruttura === "Struttura 2") {
-      // Arancione vivo
+      // Arancione vivo per V2
       return "bg-orange-500 text-white border-orange-600 hover:bg-orange-600 font-bold shadow-2xs ring-1 ring-orange-500/60";
     } else if (normStruttura === "Vannucci 4" || normStruttura === "Struttura 4") {
       // Verde chiaro
@@ -3165,8 +3616,8 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
           .shift-top { display: flex; justify-content: space-between; align-items: center; font-weight: 800; }
           .shift-hours { font-family: monospace; font-size: 8px; font-weight: 700; opacity: 0.9; }
           .struct-tag { font-size: 7.5px; font-weight: 800; padding: 1px 3px; border-radius: 2px; background: rgba(255,255,255,0.9); display: inline-block; margin-top: 1px; }
-          .struct-v1 { color: #ea580c; border: 1px solid #fdba74; }
-          .struct-v2 { color: #ca8a04; border: 1px solid #fde047; }
+          .struct-v1 { color: #ca8a04; border: 1px solid #fde047; }
+          .struct-v2 { color: #ea580c; border: 1px solid #fdba74; }
           .struct-v4 { color: #16a34a; border: 1px solid #86efac; }
           
           .footer { margin-top: 10px; text-align: right; font-size: 8px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 3px; }
@@ -3439,12 +3890,12 @@ function importaTurniResidenzaVannucci() {
   };
 
   // Helpers to check if a global shift already exists for the selected date in Add Modal
-  const hasNotteOnSelectedDay = shifts.some(s => s.data === newDate && s.tipoTurno === "Notte");
+  const hasNotteOnSelectedDay = shifts.some(s => s.data === newDate && s.tipoTurno === "Notte" && (s.orarioInizio === "23:00" || (s.orarioInizio !== "00:00" && s.orarioFine === "07:00")));
   const hasCucinaOnSelectedDay = shifts.some(s => s.data === newDate && s.tipoTurno === "Cucina");
   const hasPulizieOnSelectedDay = shifts.some(s => s.data === newDate && s.tipoTurno === "Pulizie");
 
   // Helpers to check if a global shift already exists for the selected date in Edit Modal
-  const hasNotteOnEditDay = shifts.some(s => s.data === editShiftDate && s.tipoTurno === "Notte" && s.id !== selectedShiftForDetail?.id);
+  const hasNotteOnEditDay = shifts.some(s => s.data === editShiftDate && s.tipoTurno === "Notte" && (s.orarioInizio === "23:00" || (s.orarioInizio !== "00:00" && s.orarioFine === "07:00")) && s.id !== selectedShiftForDetail?.id);
   const hasCucinaOnEditDay = shifts.some(s => s.data === editShiftDate && s.tipoTurno === "Cucina" && s.id !== selectedShiftForDetail?.id);
   const hasPulizieOnEditDay = shifts.some(s => s.data === editShiftDate && s.tipoTurno === "Pulizie" && s.id !== selectedShiftForDetail?.id);
 
@@ -4590,7 +5041,7 @@ function importaTurniResidenzaVannucci() {
                         <td
                           key={dIdx}
                           data-date={dateYMD}
-                          onDoubleClick={() => {
+                          onClick={() => {
                             if (isStaffRole) return;
                             if (isReferenceDay) {
                               showToast("🗓️ Questo giorno è un riferimento della settimana precedente (Sola lettura).");
@@ -4612,10 +5063,6 @@ function importaTurniResidenzaVannucci() {
                           className={`p-2 transition-all relative group/cell h-24 align-top ${
                             isStaffRole || isReferenceDay ? "" : "cursor-pointer"
                           } ${
-                            activeStrutturaFilters.length > 0 || activeTimeFilter
-                              ? "bg-indigo-50/20"
-                              : ""
-                          } ${
                             isDayComplete(dateYMD) && !isReferenceDay
                               ? "border-x-2 border-emerald-500 shadow-2xs"
                               : "border-r border-slate-200 last:border-r-0"
@@ -4628,16 +5075,107 @@ function importaTurniResidenzaVannucci() {
                               ? "bg-white text-indigo-950 opacity-100"
                               : "bg-white opacity-100"
                           }`}
-                          title={isStaffRole ? `${member.nome} — Turni del giorno` : isReferenceDay ? "Giorno di riferimento (sola lettura)" : lockedDays.includes(dateYMD) ? "🔒 Questo giorno è bloccato!" : `${member.nome}: ${dayShifts.length ? dayShifts.map(s => `${s.tipoTurno} (${s.orarioInizio}-${s.orarioFine})`).join(", ") : "Nessun turno"}. Doppio clic per aggiungere/modificare.`}
+                          title={isStaffRole ? `${member.nome} — Turni del giorno` : isReferenceDay ? "Giorno di riferimento (sola lettura)" : lockedDays.includes(dateYMD) ? "🔒 Questo giorno è bloccato!" : `${member.nome}: ${dayShifts.length ? dayShifts.map(s => `${s.tipoTurno} (${s.orarioInizio}-${s.orarioFine})`).join(", ") : "Nessun turno"}. Clicca per inserire turno.`}
                         >
                           <div className="flex flex-col h-full justify-between">
                             <div className={`space-y-1.5 ${isReferenceDay ? 'grayscale-[30%]' : ''}`}>
                               {dayShifts.length === 0 ? (
-                                 <div className="h-[72px] min-h-[72px] rounded-lg border border-dashed border-slate-200/80 hover:border-slate-300 flex items-center justify-center transition-colors">
-                                  <span className="text-[10px] text-slate-300 font-semibold italic group-hover/cell:text-slate-400 select-none">
-                                    -
-                                  </span>
-                                </div>
+                                (() => {
+                                  const smartSuggestion = getSmartShiftSuggestion(dateYMD);
+                                  
+                                  // Se NON ci sono filtri attivi, mostra il classico slot vuoto con il "+"
+                                  if (!smartSuggestion) {
+                                    return (
+                                      <div
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (!isStaffRole && !isReferenceDay) {
+                                            if (isEffectivelyLocked) {
+                                              showToast("🔒 Questo giorno è completato e bloccato contro modifiche accidentali!");
+                                              return;
+                                            }
+                                            handleOpenAddModal(member.id, dateYMD);
+                                          }
+                                        }}
+                                        className="h-[72px] min-h-[72px] rounded-lg border-2 border-dashed border-slate-200 hover:border-indigo-400 bg-slate-50/30 hover:bg-indigo-50/50 flex items-center justify-center transition-all cursor-pointer group/emptybox shadow-3xs"
+                                        title="Clicca per inserire un turno"
+                                      >
+                                        <div className="w-7 h-7 rounded-full bg-white/80 border border-slate-200 group-hover/emptybox:border-indigo-500 group-hover/emptybox:bg-indigo-600 group-hover/emptybox:text-white flex items-center justify-center text-slate-400 transition-all shadow-3xs">
+                                          <Plus className="w-4 h-4 stroke-[2.5]" />
+                                        </div>
+                                      </div>
+                                    );
+                                  }
+
+                                  // Con filtro attivo: A RIPOSO RIMANE BIANCO CON IL "+" (nessun intasamento visivo!)
+                                  // SOLO ALL'HOVER DEL MOUSE evidenzia il turno logico suggerito
+                                  const validity = checkPotentialShiftValidity(
+                                    member.id,
+                                    dateYMD,
+                                    smartSuggestion.tipoTurno,
+                                    smartSuggestion.struttura,
+                                    smartSuggestion.orarioInizio,
+                                    smartSuggestion.orarioFine
+                                  );
+                                  const isInvalid = !validity.valid;
+
+                                  return (
+                                    <div
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (isStaffRole || isReferenceDay) return;
+                                        if (isEffectivelyLocked) {
+                                          showToast("🔒 Questo giorno è completato e bloccato!");
+                                          return;
+                                        }
+                                        if (isInvalid) {
+                                          showToast(`⚠️ Impossibile assegnare: ${validity.reason}`, true);
+                                          return;
+                                        }
+                                        handleQuickAddSmartShift(member.id, dateYMD, smartSuggestion);
+                                      }}
+                                      className="h-[72px] min-h-[72px] rounded-lg border-2 border-dashed border-slate-200 hover:border-transparent bg-slate-50/30 flex items-center justify-center transition-all duration-150 cursor-pointer relative overflow-hidden select-none shadow-3xs group/smartbox"
+                                      title={
+                                        isInvalid
+                                          ? `⚠️ ${validity.reason}`
+                                          : `⚡ Clicca per inserire: ${smartSuggestion.shortStruttura} ${smartSuggestion.tipoTurno} (${smartSuggestion.orarioInizio}-${smartSuggestion.orarioFine})`
+                                      }
+                                    >
+                                      {/* A RIPOSO (SENZA MOUSE): Completamente bianco e pulito con il simbolo "+" ESATTAMENTE COME PRIMA */}
+                                      <div className="w-7 h-7 rounded-full bg-white/80 border border-slate-200 flex items-center justify-center text-slate-400 group-hover/cell:hidden transition-all shadow-3xs">
+                                        <Plus className="w-4 h-4 stroke-[2.5]" />
+                                      </div>
+
+                                      {/* SOLO SE VADO CON IL MOUSE: Evidenzia direttamente con i colori ufficiali della struttura. Cliccando il turno è inserito! */}
+                                      <div className={`hidden group-hover/cell:flex flex-col h-full w-full justify-between p-2 rounded-lg transition-all duration-150 ${smartSuggestion.badgeStyle}`}>
+                                        <div className="flex items-center justify-between gap-1">
+                                          <div className="flex items-center gap-1.5 font-black text-[11px] tracking-tight truncate leading-none">
+                                            <span className="text-xs leading-none">{smartSuggestion.icon}</span>
+                                            <span className="uppercase">{smartSuggestion.shortStruttura} {smartSuggestion.tipoTurno}</span>
+                                          </div>
+                                          <span className="text-[8px] font-black uppercase tracking-wider px-1 py-0.5 rounded bg-black/15">
+                                            1-Click
+                                          </span>
+                                        </div>
+
+                                        <div className="text-[10px] font-mono font-black leading-tight flex items-center justify-between">
+                                          <span>{smartSuggestion.orarioInizio} - {smartSuggestion.orarioFine}</span>
+                                          {isInvalid ? (
+                                            <span className="text-[7.5px] bg-red-800 text-white px-1 py-0.5 rounded font-bold">⚠️ 11h Riposo</span>
+                                          ) : (
+                                            <span className="text-[8.5px] font-sans font-black uppercase tracking-tight opacity-90 underline">
+                                              Inserisci ↵
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        <div className="text-[8px] font-bold opacity-85 truncate tracking-tight">
+                                          {smartSuggestion.reasonLabel}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })()
                               ) : dayShifts.length === 1 ? (
                                 (() => {
                                   const s = dayShifts[0];
@@ -4645,6 +5183,136 @@ function importaTurniResidenzaVannucci() {
                                   const isInvalid = !validity.valid && !isReferenceDay;
                                   const isHovered = hoveredShiftId === s.id;
                                   const isStaffHovered = hoveredStaffId === s.staffId;
+
+                                  const isMorningNight = s.tipoTurno === "Notte" && (s.orarioInizio === "00:00" || s.orarioFine === "07:00") && s.orarioInizio !== "23:00";
+                                  const isEveningNight = s.tipoTurno === "Notte" && s.orarioInizio === "23:00";
+                                  const isPulizie = s.tipoTurno === "Pulizie";
+                                  const isHalfShift = isMorningNight || isEveningNight || isPulizie;
+
+                                  if (isHalfShift) {
+                                    const renderHalfShiftBadge = (shiftItem: Shift) => (
+                                      <div
+                                        key={shiftItem.id}
+                                        draggable={!isStaffRole && !isEffectivelyLocked}
+                                        onDragStart={(e) => {
+                                          if (!isStaffRole && !isEffectivelyLocked) handleDragStartSingleShift(e, shiftItem);
+                                        }}
+                                        onMouseEnter={() => {
+                                          setHoveredShiftId(shiftItem.id);
+                                          setHoveredStaffId(shiftItem.staffId);
+                                        }}
+                                        onMouseLeave={() => {
+                                          setHoveredShiftId(null);
+                                          setHoveredStaffId(null);
+                                        }}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleOpenDetailModal(shiftItem);
+                                        }}
+                                        className={`group/shift px-2 py-0.5 rounded-lg border text-[10px] font-bold transition-all shadow-2xs relative flex items-center justify-between h-[34px] min-h-[34px] max-h-[34px] ${
+                                          isStaffRole || isEffectivelyLocked ? "cursor-pointer hover:shadow-md" : "cursor-grab active:cursor-grabbing"
+                                        } ${getShiftBadgeStyle(shiftItem.tipoTurno, shiftItem.orarioInizio, shiftItem.orarioFine, shiftItem.struttura)} ${
+                                          isInvalid ? "animate-pulse ring-2 ring-red-600 !border-red-600 !bg-red-100 !text-red-900" : ""
+                                        } ${
+                                          isHovered ? "ring-2 ring-indigo-600 shadow-md scale-[1.02] z-30" : isStaffHovered ? "ring-1 ring-indigo-400 shadow-xs" : ""
+                                        } ${
+                                          (activeStrutturaFilters.length > 0 || activeTimeFilter) && !isShiftMatchingFilter(shiftItem) ? "opacity-15 grayscale scale-95 blur-[0.5px] pointer-events-none" : ""
+                                        }`}
+                                        title={isInvalid ? `⚠️ ERRORE: ${validity.reason}` : isMorningNight ? "Turno Smonto Notte (00:00 - 07:00) — Clicca per dettagli" : `${shiftItem.tipoTurno} (${shiftItem.orarioInizio} - ${shiftItem.orarioFine})`}
+                                      >
+                                        <div className="flex items-center gap-1 flex-nowrap truncate min-w-0">
+                                          {isMorningNight ? (
+                                            <span className="text-xs leading-none" title="Smonto Notte">🌙</span>
+                                          ) : shiftItem.tipoTurno === "Pulizie" ? (
+                                            <span className="text-xs leading-none" title="Pulizie">🪣</span>
+                                          ) : (
+                                            <span className="text-xs leading-none">🌙</span>
+                                          )}
+                                          <span className="uppercase font-black truncate text-[9.5px] leading-tight shrink-0">
+                                            {isMorningNight ? "Notte" : shiftItem.tipoTurno}
+                                          </span>
+                                          {isMorningNight && (
+                                            <span className="text-[7.5px] font-black bg-indigo-200/90 text-indigo-950 px-1 py-0.2 rounded-xs uppercase tracking-tight shrink-0 border border-indigo-300">
+                                              Smonto
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        <div className="flex items-center gap-1 shrink-0 font-mono text-[9px] font-bold">
+                                          <span>{shiftItem.orarioInizio}-{shiftItem.orarioFine}</span>
+                                          {!isStaffRole && !lockedDays.includes(dateYMD) && (
+                                            <button
+                                              type="button"
+                                              onClick={(e) => handleDeleteSingleShift(shiftItem.id, e)}
+                                              className="p-0.5 rounded bg-rose-600 hover:bg-rose-700 text-white opacity-0 group-hover/shift:opacity-100 transition-all shadow-xs cursor-pointer"
+                                              title="Elimina questo turno"
+                                            >
+                                              <Trash2 className="w-2.5 h-2.5" />
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+
+                                    const renderAvailableHalfSlot = (isForNight: boolean) => (
+                                      <div
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (!isStaffRole && !isEffectivelyLocked) {
+                                            if (isForNight) {
+                                              handleQuickAddNightShift(member.id, dateYMD);
+                                            } else {
+                                              handleOpenAddModal(member.id, dateYMD);
+                                            }
+                                          }
+                                        }}
+                                        className={`h-[34px] min-h-[34px] max-h-[34px] rounded-lg border-2 border-dashed flex items-center justify-between px-2 transition-all cursor-pointer shadow-3xs group/slotadd opacity-0 group-hover/cell:opacity-100 ${
+                                          isForNight
+                                            ? "border-indigo-400/80 bg-indigo-50/80 hover:bg-indigo-600 hover:text-white text-indigo-700 hover:border-indigo-600"
+                                            : "border-slate-300 bg-slate-50/70 hover:bg-indigo-50 hover:text-indigo-700 text-slate-500 hover:border-indigo-400"
+                                        }`}
+                                        title={
+                                          isForNight
+                                            ? "⚡ Clicca per inserire DIRETTAMENTE la Notte (23:00 oggi + 00:00-07:00 domani) senza passare dalla scheda"
+                                            : "Clicca per inserire un altro turno"
+                                        }
+                                      >
+                                        <div className="flex items-center gap-1.5 text-[9.5px] font-extrabold truncate">
+                                          <div className={`w-4 h-4 rounded-full flex items-center justify-center transition-colors shrink-0 ${
+                                            isForNight
+                                              ? "bg-indigo-200 group-hover/slotadd:bg-white group-hover/slotadd:text-indigo-600 text-indigo-800"
+                                              : "bg-slate-200 group-hover/slotadd:bg-indigo-500 group-hover/slotadd:text-white text-slate-600"
+                                          }`}>
+                                            <Plus className="w-2.5 h-2.5 stroke-[2.5]" />
+                                          </div>
+                                          <span className="truncate">
+                                            {isForNight ? "🌙 + Notte (23:00)" : "+"}
+                                          </span>
+                                        </div>
+                                        <span className={`text-[8.5px] font-mono font-black shrink-0 ${
+                                          isForNight ? "text-indigo-600 group-hover/slotadd:text-white" : "text-slate-400"
+                                        }`}>
+                                          {isForNight ? "⚡ Subito" : "+"}
+                                        </span>
+                                      </div>
+                                    );
+
+                                    return (
+                                      <div className="flex flex-col gap-1">
+                                        {isEveningNight ? (
+                                          <>
+                                            {renderAvailableHalfSlot(false)}
+                                            {renderHalfShiftBadge(s)}
+                                          </>
+                                        ) : (
+                                          <>
+                                            {renderHalfShiftBadge(s)}
+                                            {renderAvailableHalfSlot(isMorningNight || isPulizie)}
+                                          </>
+                                        )}
+                                      </div>
+                                    );
+                                  }
 
                                   return (
                                     <div
@@ -4730,9 +5398,9 @@ function importaTurniResidenzaVannucci() {
                                           {s.struttura && s.tipoTurno !== "Notte" && s.tipoTurno !== "Cucina" && s.tipoTurno !== "Pulizie" && (
                                             <span className="bg-white/95 text-slate-800 px-1.5 py-0.5 rounded text-[8.5px] font-extrabold border border-black/10 uppercase tracking-tight flex items-center gap-0.5 shadow-3xs">
                                               {(s.struttura === "Vannucci 1" || s.struttura === "Struttura 1") ? (
-                                                <span>Vannucci <strong className="text-[11px] font-black text-orange-600 leading-none">1</strong></span>
+                                                <span>Vannucci <strong className="text-[11px] font-black text-yellow-600 leading-none">1</strong></span>
                                               ) : (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2") ? (
-                                                <span>Vannucci <strong className="text-[11px] font-black text-yellow-600 leading-none">2</strong></span>
+                                                <span>Vannucci <strong className="text-[11px] font-black text-orange-600 leading-none">2</strong></span>
                                               ) : (
                                                 <span>Vannucci <strong className="text-[11px] font-black text-emerald-600 leading-none">4</strong></span>
                                               )}
@@ -5189,7 +5857,7 @@ function importaTurniResidenzaVannucci() {
                           data-date={dateYMD}
                           onMouseEnter={() => setHoveredStaffId(member.id)}
                           onMouseLeave={() => setHoveredStaffId(null)}
-                          onDoubleClick={() => {
+                          onClick={() => {
                             if (isPublicView) return;
                             if (lockedDays.includes(dateYMD)) {
                               showToast("🔒 Questo giorno è completato e bloccato contro modifiche accidentali!");
@@ -5936,23 +6604,23 @@ function importaTurniResidenzaVannucci() {
                     onDoubleClick={() => {
                       if (hasCucinaOnSelectedDay) return;
                       setNewNote("Servizio Cucina e Mensa");
-                      handleFastSubmit({ tipoTurno: "Cucina", orarioInizio: "10:30", orarioFine: "15:00" });
+                      handleFastSubmit({ tipoTurno: "Cucina", orarioInizio: "10:30", orarioFine: "15:30" });
                     }}
                     onClick={() => {
                       if (hasCucinaOnSelectedDay) return;
                       setNewTipoTurno("Cucina");
                       setNewOrarioInizio("10:30");
-                      setNewOrarioFine("15:00");
+                      setNewOrarioFine("15:30");
                       if (!newNote) setNewNote("Servizio Cucina e Mensa");
                     }}
                     className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
                       hasCucinaOnSelectedDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
-                      "cursor-pointer " + (newTipoTurno === "Cucina" && newOrarioInizio === "10:30" && newOrarioFine === "15:00" ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30" : "bg-sky-50/80 border-sky-300 hover:bg-sky-100 text-sky-950")
+                      "cursor-pointer " + (newTipoTurno === "Cucina" && newOrarioInizio === "10:30" && newOrarioFine === "15:30" ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30" : "bg-sky-50/80 border-sky-300 hover:bg-sky-100 text-sky-950")
                     }`}
                     title={hasCucinaOnSelectedDay ? "Turno Cucina già assegnato per questo giorno" : "Clicca per selezionare il turno Cucina"}
                   >
                     <span className="font-extrabold text-[12px]">🍲 Cucina</span>
-                    <span className="text-[9px] opacity-75 font-normal">{hasCucinaOnSelectedDay ? "Già assegnato" : "10:30 - 15:00"}</span>
+                    <span className="text-[9px] opacity-75 font-normal">{hasCucinaOnSelectedDay ? "Già assegnato" : "10:30 - 15:30"}</span>
                   </button>
 
                   {/* Servizi Comuni: Pulizie */}
@@ -6603,17 +7271,17 @@ function importaTurniResidenzaVannucci() {
                               if (hasCucinaOnEditDay) return;
                               setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Cucina" } : prev);
                               setEditShiftInizio("10:30");
-                              setEditShiftFine("15:00");
+                              setEditShiftFine("15:30");
                               if (!editShiftNote) setEditShiftNote("Servizio Cucina e Mensa");
                             }}
                             className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
                               hasCucinaOnEditDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
-                              "cursor-pointer " + (selectedShiftForDetail?.tipoTurno === "Cucina" && editShiftInizio === "10:30" && editShiftFine === "15:00" ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30" : "bg-sky-50/80 border-sky-200 hover:bg-sky-100 text-sky-900")
+                              "cursor-pointer " + (selectedShiftForDetail?.tipoTurno === "Cucina" && editShiftInizio === "10:30" && editShiftFine === "15:30" ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30" : "bg-sky-50/80 border-sky-200 hover:bg-sky-100 text-sky-900")
                             }`}
                             title={hasCucinaOnEditDay ? "Turno Cucina già assegnato per questo giorno" : "Clicca per selezionare il turno Cucina"}
                           >
                             <span className="font-extrabold text-[12px]">🍲 Cucina</span>
-                            <span className="text-[9px] opacity-75 font-normal">{hasCucinaOnEditDay ? "Già assegnato" : "10:30 - 15:00"}</span>
+                            <span className="text-[9px] opacity-75 font-normal">{hasCucinaOnEditDay ? "Già assegnato" : "10:30 - 15:30"}</span>
                           </button>
 
                           {/* Servizi Comuni: Pulizie */}
@@ -7525,6 +8193,7 @@ function importaTurniResidenzaVannucci() {
         const cucinaSlot = cov.mandatorySlots.find(s => s.id === "cucina");
         const alzateSlot = cov.mandatorySlots.find(s => s.id === "alzate");
         const pulizieSlot = cov.extraSlots.find(s => s.id === "pulizie");
+        const smontoNotteSlot = cov.extraSlots.find(s => s.id === "smonto_notte");
 
         const renderShiftSymbolChip = (slot: typeof v1_m, icon: string, shortName: string) => {
           if (!slot) return null;
@@ -7598,7 +8267,7 @@ function importaTurniResidenzaVannucci() {
               <div className="flex items-center gap-1.5">
                 {/* V1 */}
                 <div className="flex-1 bg-slate-900/90 border border-slate-800 rounded-xl p-1.5 flex flex-col gap-1 min-w-0">
-                  <div className="flex items-center justify-between text-[10px] font-black text-indigo-300 uppercase tracking-tight px-0.5">
+                  <div className="flex items-center justify-between text-[10px] font-black text-yellow-400 uppercase tracking-tight px-0.5">
                     <span>🏠 V1</span>
                     {v1_m?.isCovered && v1_p?.isCovered ? (
                       <span className="text-emerald-400 text-[10px]">✓</span>
@@ -7614,7 +8283,7 @@ function importaTurniResidenzaVannucci() {
 
                 {/* V2 */}
                 <div className="flex-1 bg-slate-900/90 border border-slate-800 rounded-xl p-1.5 flex flex-col gap-1 min-w-0">
-                  <div className="flex items-center justify-between text-[10px] font-black text-teal-300 uppercase tracking-tight px-0.5">
+                  <div className="flex items-center justify-between text-[10px] font-black text-orange-400 uppercase tracking-tight px-0.5">
                     <span>🏠 V2</span>
                     {v2_m?.isCovered && v2_p?.isCovered ? (
                       <span className="text-emerald-400 text-[10px]">✓</span>
@@ -7755,6 +8424,24 @@ function importaTurniResidenzaVannucci() {
                     </div>
                   )}
                 </div>
+
+                {/* Smonto Notte (00:00 - 07:00 del mattino) */}
+                {smontoNotteSlot && (
+                  <div className="flex-1 min-w-0">
+                    <div
+                      title={`Smonto Notte: ${smontoNotteSlot.assignedStaff.map(s => `${s.nome} ${s.cognome}`).join(", ")} (00:00 - 07:00)`}
+                      className="bg-indigo-900/70 border border-indigo-400/60 text-indigo-200 p-1.5 rounded-xl flex items-center justify-between gap-1 shadow-2xs"
+                    >
+                      <div className="flex items-center gap-1 min-w-0 truncate">
+                        <span className="text-xs">🌙🌅</span>
+                        <span className="text-[10px] font-extrabold text-white truncate">
+                          {smontoNotteSlot.assignedStaff[0]?.nome || "Smonto"}
+                        </span>
+                      </div>
+                      <span className="text-indigo-300 font-bold text-[9px] font-mono">00-07</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Mini Ferie & Riposi Footer */}
