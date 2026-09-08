@@ -279,15 +279,6 @@ export const INITIAL_SHIFT_PRESETS: CustomShiftPreset[] = [
     isDefault: true
   },
   {
-    id: "preset-pulizie-7-11",
-    label: "🪣🧹 07:00-11:00 (Pulizie)",
-    tipoTurno: "Pulizie",
-    orarioInizio: "07:00",
-    orarioFine: "11:00",
-    subtitle: "Pulizie / Aiuto Alzate V1",
-    isDefault: true
-  },
-  {
     id: "preset-v1-15-23",
     label: "🌆 15:00-23:00",
     tipoTurno: "Pomeriggio",
@@ -296,16 +287,7 @@ export const INITIAL_SHIFT_PRESETS: CustomShiftPreset[] = [
     struttura: "Vannucci 1",
     isDefault: true
   },
-  {
-    id: "preset-v1-23-07",
-    label: "🌙 23:00-07:00 (Notte)",
-    tipoTurno: "Notte",
-    orarioInizio: "23:00",
-    orarioFine: "07:00",
-    struttura: "Vannucci 1",
-    isDefault: true
-  },
-  
+
   // VANNUCCI 2
   {
     id: "preset-v2-7-15",
@@ -314,7 +296,15 @@ export const INITIAL_SHIFT_PRESETS: CustomShiftPreset[] = [
     orarioInizio: "07:00",
     orarioFine: "15:00",
     struttura: "Vannucci 2",
-    subtitle: "07:00 - 15:00 (Turno 07:15 - Aiuto Alzate V1)",
+    isDefault: true
+  },
+  {
+    id: "preset-v2-15-21",
+    label: "🌆 15:00-21:00",
+    tipoTurno: "Pomeriggio",
+    orarioInizio: "15:00",
+    orarioFine: "21:00",
+    struttura: "Vannucci 2",
     isDefault: true
   },
   {
@@ -323,25 +313,6 @@ export const INITIAL_SHIFT_PRESETS: CustomShiftPreset[] = [
     tipoTurno: "Mattina",
     orarioInizio: "07:00",
     orarioFine: "14:00",
-    struttura: "Vannucci 2",
-    subtitle: "07:00 - 14:00 (Aiuto Alzate V1)",
-    isDefault: true
-  },
-  {
-    id: "preset-v2-8-14",
-    label: "🌅 08:00-14:00",
-    tipoTurno: "Mattina",
-    orarioInizio: "08:00",
-    orarioFine: "14:00",
-    struttura: "Vannucci 2",
-    isDefault: true
-  },
-  {
-    id: "preset-v2-8-15",
-    label: "🌅 08:00-15:00",
-    tipoTurno: "Mattina",
-    orarioInizio: "08:00",
-    orarioFine: "15:00",
     struttura: "Vannucci 2",
     isDefault: true
   },
@@ -355,32 +326,15 @@ export const INITIAL_SHIFT_PRESETS: CustomShiftPreset[] = [
     isDefault: true
   },
   {
-    id: "preset-v2-15-21",
-    label: "🌆 15:00-21:00",
-    tipoTurno: "Pomeriggio",
-    orarioInizio: "15:00",
-    orarioFine: "21:00",
+    id: "preset-v2-8-15",
+    label: "🌅 08:00-15:00",
+    tipoTurno: "Mattina",
+    orarioInizio: "08:00",
+    orarioFine: "15:00",
     struttura: "Vannucci 2",
     isDefault: true
   },
-  
-  {
-    id: "preset-cucina-1030-1530",
-    label: "🍲 10:30-15:30 (Cucina)",
-    tipoTurno: "Cucina",
-    orarioInizio: "10:30",
-    orarioFine: "15:30",
-    isDefault: true
-  },
-  {
-    id: "preset-servizio-17-20",
-    label: "🍽️ 17:00-20:00 (Servizio)",
-    tipoTurno: "Servizio",
-    orarioInizio: "17:00",
-    orarioFine: "20:00",
-    subtitle: "In generale su tutti",
-    isDefault: true
-  },
+
   // VANNUCCI 4
   {
     id: "preset-v4-8-15",
@@ -1136,19 +1090,18 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   // Custom Shift Presets State & Storage Management
   const [savedPresets, setSavedPresets] = useState<CustomShiftPreset[]>(() => {
     try {
-      const saved = localStorage.getItem("casafamiglia_saved_shift_presets_v2");
+      const saved = localStorage.getItem("casafamiglia_saved_shift_presets_v3") || localStorage.getItem("casafamiglia_saved_shift_presets_v2");
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // Ensure new default presets like preset-v2-7-15 are automatically merged if missing
-          const existingIds = new Set(parsed.map((p: CustomShiftPreset) => p.id));
+          // Filter out obsolete preset-v4-15-20 (15:00-20:00)
+          const filtered = parsed.filter((p: CustomShiftPreset) => p.id !== "preset-v4-15-20");
+          // Ensure new default presets like preset-v4-7-14 and preset-v2-7-15 are automatically merged if missing
+          const existingIds = new Set(filtered.map((p: CustomShiftPreset) => p.id));
           const missingDefaults = INITIAL_SHIFT_PRESETS.filter(dp => !existingIds.has(dp.id));
-          if (missingDefaults.length > 0) {
-            const merged = [...parsed, ...missingDefaults];
-            localStorage.setItem("casafamiglia_saved_shift_presets_v2", JSON.stringify(merged));
-            return merged;
-          }
-          return parsed;
+          const merged = missingDefaults.length > 0 ? [...filtered, ...missingDefaults] : filtered;
+          localStorage.setItem("casafamiglia_saved_shift_presets_v3", JSON.stringify(merged));
+          return merged;
         }
       }
     } catch {}
@@ -1164,7 +1117,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   const savePresetsToStorage = (presets: CustomShiftPreset[]) => {
     setSavedPresets(presets);
     try {
-      localStorage.setItem("casafamiglia_saved_shift_presets_v2", JSON.stringify(presets));
+      localStorage.setItem("casafamiglia_saved_shift_presets_v3", JSON.stringify(presets));
     } catch (e) {
       console.error("Error saving shift presets", e);
     }
@@ -2063,6 +2016,123 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     setNewNote("");
     const staffName = staff.find(st => st.id === staffId)?.nome || "Operatore";
     showToast(`⚡ Caricata Combo per ${staffName}: Pulizie (07:00-11:00) + Notte (23:00-24:00 oggi & 00:00-07:00 domani)!`);
+  };
+
+  // Special Combo for Vannucci 4: Morning (07:00-14:00 or 08:00-15:00) + Servizio (17:00-20:00)
+  const handleAddComboV4Servizio = (staffId: string, dateStr: string, morningStart: "07:00" | "08:00", morningEnd: "14:00" | "15:00", shiftIdToIgnore?: string) => {
+    if (!staffId || !dateStr) return;
+
+    if (lockedDays.includes(dateStr)) {
+      showToast("🔒 Questo giorno è bloccato! Impossibile modificare.");
+      return;
+    }
+
+    // Check validity of morning shift on Vannucci 4
+    const morningValidity = checkPotentialShiftValidity(staffId, dateStr, "Mattina", "Vannucci 4", morningStart, morningEnd, shiftIdToIgnore);
+    if (!morningValidity.valid) {
+      showToast(`⚠️ Impossibile inserire Mattina V4: ${morningValidity.reason}`);
+      return;
+    }
+
+    // Check validity of Servizio shift (ensure not already assigned to another staff member)
+    const otherServizio = shifts.find(s => s.data === dateStr && s.tipoTurno === "Servizio" && s.staffId !== staffId);
+    if (otherServizio) {
+      const otherStaff = staff.find(st => st.id === otherServizio.staffId)?.nome || "un altro operatore";
+      showToast(`⚠️ Il turno di Servizio (17:00-20:00) è già assegnato a ${otherStaff} per questo giorno.`);
+      return;
+    }
+
+    const morningShift: Shift = {
+      id: shiftIdToIgnore || `shift-${Date.now()}-v4m-${Math.random().toString(36).substr(2, 4)}`,
+      staffId: staffId,
+      data: dateStr,
+      tipoTurno: "Mattina",
+      orarioInizio: morningStart,
+      orarioFine: morningEnd,
+      note: "Mattina V4",
+      struttura: "Vannucci 4"
+    };
+
+    const existingOwnServizio = shifts.find(s => s.data === dateStr && s.tipoTurno === "Servizio" && s.staffId === staffId);
+    const servizioShift: Shift = existingOwnServizio || {
+      id: `shift-${Date.now() + 1}-v4srv-${Math.random().toString(36).substr(2, 4)}`,
+      staffId: staffId,
+      data: dateStr,
+      tipoTurno: "Servizio",
+      orarioInizio: "17:00",
+      orarioFine: "20:00",
+      note: "Servizio Pomeridiano",
+      struttura: ""
+    };
+
+    // Remove any existing shifts for this staffId on dateStr except non-conflicting
+    const otherStaffShifts = shifts.filter(s => !(s.staffId === staffId && s.data === dateStr));
+    const nonConflictingSameDay = shifts.filter(s => 
+      s.staffId === staffId && 
+      s.data === dateStr && 
+      s.tipoTurno !== "Riposo" && 
+      s.tipoTurno !== "Ferie" && 
+      s.tipoTurno !== "Mattina" && 
+      s.tipoTurno !== "Servizio" &&
+      s.id !== shiftIdToIgnore
+    );
+
+    const updatedShiftsList = [...otherStaffShifts, ...nonConflictingSameDay, morningShift, servizioShift];
+
+    applyShiftsUpdate(updatedShiftsList);
+    setShowAddModal(false);
+    if (selectedShiftForDetail) setSelectedShiftForDetail(null);
+    setNewNote("");
+    const staffName = staff.find(st => st.id === staffId)?.nome || "Operatore";
+    showToast(`⚡ Caricata Combo V4 per ${staffName}: 🌅 Mattina ${morningStart}-${morningEnd} + 🍽️ Servizio 17:00-20:00!`);
+  };
+
+  const handleAddComboV4Full = (staffId: string, dateStr: string) => {
+    if (!staffId || !dateStr) return;
+    if (lockedDays.includes(dateStr)) {
+      showToast("🔒 Questo giorno è bloccato! Impossibile modificare.");
+      return;
+    }
+
+    const existingFiltered = shifts.filter(s => !(s.staffId === staffId && s.data === dateStr));
+    const nonConflictingSameDay = shifts.filter(s => 
+      s.staffId === staffId && 
+      s.data === dateStr && 
+      s.tipoTurno !== "Riposo" && 
+      s.tipoTurno !== "Ferie" && 
+      s.tipoTurno !== "Mattina" && 
+      s.tipoTurno !== "Pomeriggio"
+    );
+
+    const shift1: Shift = {
+      id: `shift-v4-m-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      staffId,
+      data: dateStr,
+      tipoTurno: "Mattina",
+      orarioInizio: "08:15",
+      orarioFine: "15:20",
+      struttura: "Vannucci 4",
+      note: "Turno Mattina V4"
+    };
+
+    const shift2: Shift = {
+      id: `shift-v4-p-${Date.now() + 1}-${Math.random().toString(36).substr(2, 4)}`,
+      staffId,
+      data: dateStr,
+      tipoTurno: "Pomeriggio",
+      orarioInizio: "15:20",
+      orarioFine: "22:00",
+      struttura: "Vannucci 4",
+      note: "Turno Pomeriggio V4 (Combo)"
+    };
+
+    const updated = [...existingFiltered, ...nonConflictingSameDay, shift1, shift2];
+    applyShiftsUpdate(updated);
+    setShowAddModal(false);
+    if (selectedShiftForDetail) setSelectedShiftForDetail(null);
+    setNewNote("");
+    const staffName = staff.find(st => st.id === staffId)?.nome || "Operatore";
+    showToast(`⚡ Caricato Combo V4 (08:15-15:20 + 15:20-22:00) per ${staffName}!`);
   };
 
   // Delete Single Shift with Undo
@@ -3247,7 +3317,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
         const firstEnd = Math.min(sEndMin, newEndMin);
         const secondStart = Math.max(sStartMin, newStartMin);
         const gap = secondStart - firstEnd;
-        if (gap < 11 * 60 && tipoTurno !== "Servizio" && s.tipoTurno !== "Servizio") {
+        if (gap < 11 * 60 && tipoTurno !== "Servizio" && s.tipoTurno !== "Servizio" && struttura !== "Vannucci 4" && s.struttura !== "Vannucci 4") {
           insufficientSameDayRest = true;
         }
       }
@@ -3372,14 +3442,14 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
         pomeriggio: { start: "15:00", end: "23:00" },
         name: "Vannucci 1",
         short: "V1",
-        badgeStyle: "bg-yellow-400 text-yellow-950 border-2 border-yellow-500 shadow-md ring-1 ring-yellow-500/50"
+        badgeStyle: "bg-orange-500 text-white border-2 border-orange-600 shadow-md ring-1 ring-orange-500/60"
       },
       v2: {
         mattina: { start: "07:00", end: "14:00" },
         pomeriggio: { start: "14:00", end: "21:00" },
         name: "Vannucci 2",
         short: "V2",
-        badgeStyle: "bg-orange-500 text-white border-2 border-orange-600 shadow-md ring-1 ring-orange-500/60"
+        badgeStyle: "bg-yellow-400 text-yellow-950 border-2 border-yellow-500 shadow-md ring-1 ring-yellow-500/50"
       },
       v4: {
         mattina: { start: "08:00", end: "15:00" },
@@ -3575,11 +3645,11 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     // 4. STRUTTURE COLORI DIVERSI (per Mattina, Pomeriggio, Reperibilità, ecc.)
     const normStruttura = struttura || "";
     if (normStruttura === "Vannucci 1" || normStruttura === "Struttura 1") {
-      // Giallo intenso per V1
-      return "bg-yellow-400 text-yellow-950 border-yellow-500 hover:bg-yellow-500 font-bold shadow-2xs ring-1 ring-yellow-500/50";
-    } else if (normStruttura === "Vannucci 2" || normStruttura === "Struttura 2") {
-      // Arancione vivo per V2
+      // Arancione vivo per V1 (richiesto da committenza)
       return "bg-orange-500 text-white border-orange-600 hover:bg-orange-600 font-bold shadow-2xs ring-1 ring-orange-500/60";
+    } else if (normStruttura === "Vannucci 2" || normStruttura === "Struttura 2") {
+      // Giallo intenso per V2 (richiesto da committenza)
+      return "bg-yellow-400 text-yellow-950 border-yellow-500 hover:bg-yellow-500 font-bold shadow-2xs ring-1 ring-yellow-500/50";
     } else if (normStruttura === "Vannucci 4" || normStruttura === "Struttura 4") {
       // Verde chiaro
       return "bg-lime-300 text-lime-950 border-lime-400 hover:bg-lime-400 font-bold shadow-2xs ring-1 ring-lime-400/50";
@@ -3721,8 +3791,8 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
           .shift-top { display: flex; justify-content: space-between; align-items: center; font-weight: 800; }
           .shift-hours { font-family: monospace; font-size: 8px; font-weight: 700; opacity: 0.9; }
           .struct-tag { font-size: 7.5px; font-weight: 800; padding: 1px 3px; border-radius: 2px; background: rgba(255,255,255,0.9); display: inline-block; margin-top: 1px; }
-          .struct-v1 { color: #ca8a04; border: 1px solid #fde047; }
-          .struct-v2 { color: #ea580c; border: 1px solid #fdba74; }
+          .struct-v1 { color: #ea580c; border: 1px solid #fdba74; }
+          .struct-v2 { color: #ca8a04; border: 1px solid #fde047; }
           .struct-v4 { color: #16a34a; border: 1px solid #86efac; }
           
           .footer { margin-top: 10px; text-align: right; font-size: 8px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 3px; }
@@ -3732,7 +3802,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
         <div class="header">
           <h1>RESIDENZA VANNUCCI</h1>
           <h2>TURNI DI SERVIZIO</h2>
-          <p>Settimana dal ${formatDateIT(weekDays[1] || weekDays[0])} al ${formatDateIT(weekDays[weekDays.length - 1])}</p>
+          <p>Settimana dal ${weekDays[1].getDate()} ${getFullMonthName(weekDays[1]).slice(0, 3)} al ${weekDays[weekDays.length - 1].getDate()} ${getFullMonthName(weekDays[weekDays.length - 1]).slice(0, 3)} ${weekDays[weekDays.length - 1].getFullYear()}</p>
         </div>
 
         ${viewMode === 'struttura' ? `
@@ -3743,7 +3813,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
                 ${weekDays.map((d, idx) => `
                   <th class="day-header ${idx === 0 ? 'ref-day' : ''}">
                     <div class="day-name">${idx === 0 ? 'Dom. Prec.' : d.toLocaleDateString('it-IT', { weekday: 'short' })}</div>
-                    <div class="day-date">${d.getDate()}/${d.getMonth()+1}</div>
+                    <div class="day-date">${d.getDate()} ${getFullMonthName(d).slice(0, 3)}</div>
                   </th>
                 `).join('')}
               </tr>
@@ -3785,7 +3855,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
                 ${weekDays.map((d, idx) => `
                   <th class="day-header ${idx === 0 ? 'ref-day' : ''}">
                     <div class="day-name">${idx === 0 ? 'Dom. Prec.' : d.toLocaleDateString('it-IT', { weekday: 'short' })}</div>
-                    <div class="day-date">${d.getDate()}/${d.getMonth()+1}</div>
+                    <div class="day-date">${d.getDate()} ${getFullMonthName(d).slice(0, 3)}</div>
                   </th>
                 `).join('')}
               </tr>
@@ -4649,7 +4719,7 @@ function importaTurniResidenzaVannucci() {
                       onClick={() => handleStrutturaFilterClick("v1")}
                       className={`px-3 py-1.5 rounded-lg flex items-center justify-center text-[10px] font-black transition-all duration-200 cursor-pointer ${
                         activeStrutturaFilters.includes("v1") 
-                          ? "bg-yellow-400 text-yellow-950 shadow-lg ring-2 ring-yellow-500 scale-105" 
+                          ? "bg-orange-500 text-white shadow-lg ring-2 ring-orange-400 scale-105" 
                           : "bg-indigo-900/40 text-indigo-300 hover:bg-indigo-800/60 hover:text-white"
                       }`}
                       title="Filtra per VANNUCCI 1"
@@ -4663,7 +4733,7 @@ function importaTurniResidenzaVannucci() {
                       onClick={() => handleStrutturaFilterClick("v2")}
                       className={`px-3 py-1.5 rounded-lg flex items-center justify-center text-[10px] font-black transition-all duration-200 cursor-pointer ${
                         activeStrutturaFilters.includes("v2") 
-                          ? "bg-orange-500 text-white shadow-lg ring-2 ring-orange-400 scale-105" 
+                          ? "bg-yellow-400 text-yellow-950 shadow-lg ring-2 ring-yellow-500 scale-105" 
                           : "bg-indigo-900/40 text-indigo-300 hover:bg-indigo-800/60 hover:text-white"
                       }`}
                       title="Filtra per VANNUCCI 2"
@@ -5507,9 +5577,9 @@ function importaTurniResidenzaVannucci() {
                                           {s.struttura && s.tipoTurno !== "Notte" && s.tipoTurno !== "Cucina" && s.tipoTurno !== "Pulizie" && s.tipoTurno !== "Servizio" && (
                                             <span className="bg-white/95 text-slate-800 px-1.5 py-0.5 rounded text-[8.5px] font-extrabold border border-black/10 uppercase tracking-tight flex items-center gap-0.5 shadow-3xs">
                                               {(s.struttura === "Vannucci 1" || s.struttura === "Struttura 1") ? (
-                                                <span>Vannucci <strong className="text-[11px] font-black text-yellow-600 leading-none">1</strong></span>
+                                                <span>Vannucci <strong className="text-[11px] font-black text-orange-600 leading-none">1</strong></span>
                                               ) : (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2") ? (
-                                                <span>Vannucci <strong className="text-[11px] font-black text-orange-600 leading-none">2</strong></span>
+                                                <span>Vannucci <strong className="text-[11px] font-black text-yellow-600 leading-none">2</strong></span>
                                               ) : (
                                                 <span>Vannucci <strong className="text-[11px] font-black text-emerald-600 leading-none">4</strong></span>
                                               )}
@@ -6293,26 +6363,26 @@ function importaTurniResidenzaVannucci() {
       {/* MODAL: ADD SHIFT */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-6xl w-full p-5 shadow-2xl space-y-4 max-h-[95vh] flex flex-col">
-            <div className="flex items-center justify-between border-b pb-2 shrink-0">
-              <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
+          <div className="bg-white rounded-2xl max-w-4xl w-full p-6 shadow-2xl space-y-5 max-h-[95vh] flex flex-col">
+            <div className="flex items-center justify-between border-b pb-3 shrink-0">
+              <h3 className="font-extrabold text-slate-900 text-lg flex items-center gap-2">
                 <CalendarIcon className="w-5 h-5 text-indigo-600" />
                 <span>Aggiungi Turno nel Calendario</span>
               </h3>
-              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleFormSubmit} className="flex flex-col text-xs overflow-hidden">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-5 overflow-hidden">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 overflow-y-auto pr-1">
                 
-                {/* LEFT COLUMN: Context Info & Graphical Situation */}
-                <div className="space-y-3 flex flex-col">
-                  {/* Informazione Operatore - locked/evidenziato */}
-                  <div className="bg-indigo-600/5 border border-indigo-500/20 p-3 rounded-2xl flex items-center justify-between shadow-3xs shrink-0">
+                {/* LEFT COLUMN: Context Info, Coverage, Structure Selection & Notes */}
+                <div className="space-y-4 flex flex-col">
+                  {/* Informazione Operatore */}
+                  <div className="bg-indigo-600/5 border border-indigo-500/20 p-3.5 rounded-2xl flex items-center justify-between shadow-3xs shrink-0">
                     <div>
-                      <span className="text-[9px] font-black uppercase tracking-widest text-indigo-700 block mb-0.5">Operatore Selezionato</span>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-indigo-700 block mb-0.5">Operatore Selezionato</span>
                       <span className="text-lg font-extrabold text-indigo-950 block leading-none">
                         {staff.find(st => st.id === newStaffId) ? `${staff.find(st => st.id === newStaffId)?.nome} ${staff.find(st => st.id === newStaffId)?.cognome}` : "Operatore"}
                       </span>
@@ -6325,22 +6395,22 @@ function importaTurniResidenzaVannucci() {
                     </div>
                   </div>
 
-                  {/* Situazione Grafica del Giorno (Richiesta Utente: Identica al hover) */}
-                  <div className="bg-slate-900 text-white p-3 rounded-2xl shadow-md border border-slate-700 flex flex-col gap-2 shrink-0">
-                    <div className="flex items-center justify-between border-b border-slate-700/50 pb-1.5">
+                  {/* Situazione Grafica del Giorno */}
+                  <div className="bg-slate-900 text-white p-3.5 rounded-2xl shadow-md border border-slate-700 flex flex-col gap-2 shrink-0">
+                    <div className="flex items-center justify-between border-b border-slate-700/50 pb-2">
                       <div className="flex items-center gap-1.5">
                         <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400">Situazione Copertura</span>
-                        <span className="text-xs font-black text-slate-100 tracking-wide bg-slate-800 px-2 py-0.5 rounded-lg border border-slate-700">{formatItalianVerbalDate(newDate).toUpperCase()}</span>
+                        <span className="text-xs font-black text-slate-100 tracking-wide bg-slate-800 px-2.5 py-0.5 rounded-lg border border-slate-700">{formatItalianVerbalDate(newDate).toUpperCase()}</span>
                       </div>
                       {(() => {
                         const cov = getDayCoverageDetails(newDate);
                         return cov.isComplete ? (
-                          <span className="bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded-full text-[9px] font-black flex items-center gap-0.5">
-                            <CheckCircle2 className="w-2.5 h-2.5" /> OK
+                          <span className="bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full text-[10px] font-black flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3" /> OK
                           </span>
                         ) : (
-                          <span className="bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded-full text-[9px] font-black flex items-center gap-0.5">
-                            <AlertCircle className="w-2.5 h-2.5" /> {cov.totalCovered}/{cov.totalRequired}
+                          <span className="bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full text-[10px] font-black flex items-center gap-1">
+                            <AlertCircle className="w-3 h-3" /> {cov.totalCovered}/{cov.totalRequired}
                           </span>
                         );
                       })()}
@@ -6353,7 +6423,7 @@ function importaTurniResidenzaVannucci() {
                         if (!slot) return null;
                         const isCovered = slot.isCovered;
                         return (
-                          <div key={slotId} className={`flex items-center gap-1 px-1.5 py-0.5 rounded-lg border text-[9px] font-bold truncate ${
+                          <div key={slotId} className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-[10px] font-bold truncate ${
                             isCovered ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300" : "bg-rose-500/10 border-rose-500/40 text-rose-300"
                           }`}>
                             <span>{icon}</span>
@@ -6367,7 +6437,7 @@ function importaTurniResidenzaVannucci() {
                       return (
                         <div className="grid grid-cols-2 gap-2">
                           <div className="space-y-1.5">
-                            <div className="flex items-center gap-1 font-black text-[8px] text-indigo-400 uppercase tracking-tighter opacity-70">🏠 Strutture</div>
+                            <div className="flex items-center gap-1 font-black text-[9px] text-indigo-400 uppercase tracking-tighter opacity-70">🏠 Strutture</div>
                             <div className="grid grid-cols-1 gap-1">
                               <div className="flex gap-1">{renderMiniChip("v1_m", "🌅")} {renderMiniChip("v1_p", "🌆")}</div>
                               <div className="flex gap-1">{renderMiniChip("v2_m", "🌅")} {renderMiniChip("v2_p", "🌆")}</div>
@@ -6375,7 +6445,7 @@ function importaTurniResidenzaVannucci() {
                             </div>
                           </div>
                           <div className="space-y-1.5">
-                            <div className="flex items-center gap-1 font-black text-[8px] text-indigo-400 uppercase tracking-tighter opacity-70">⚙️ Servizi</div>
+                            <div className="flex items-center gap-1 font-black text-[9px] text-indigo-400 uppercase tracking-tighter opacity-70">⚙️ Servizi</div>
                             <div className="grid grid-cols-1 gap-1">
                               {renderMiniChip("notte", "🌙")}
                               {renderMiniChip("cucina", "🍲")}
@@ -6389,508 +6459,376 @@ function importaTurniResidenzaVannucci() {
                   </div>
 
                   {/* Scelta Struttura */}
-                  <div className="space-y-1.5 shrink-0">
+                  <div className="space-y-2 shrink-0">
                     <label className="block font-black text-slate-700 tracking-wide uppercase text-[10px]">Struttura di Assegnazione *</label>
                     <div className="grid grid-cols-3 gap-2">
-                  {(() => {
-                    const sat1 = isStrutturaSatura("Vannucci 1", newDate);
-                    return (
-                      <button
-                        type="button"
-                        onClick={() => !sat1 && setNewStruttura("Vannucci 1")}
-                        disabled={sat1}
-                        title={sat1 ? "Struttura satura (Mattina e Pomeriggio già assegnati)" : ""}
-                        className={`p-3 rounded-xl border font-black transition-all text-center text-xs flex flex-col items-center justify-center ${
-                          sat1 ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400 grayscale" :
-                          "cursor-pointer " + (newStruttura === "Vannucci 1"
-                            ? "bg-yellow-400 text-yellow-950 border-yellow-500 ring-4 ring-yellow-400/25 scale-102"
-                            : "bg-yellow-50/50 text-yellow-950 border-yellow-200 hover:bg-yellow-100")
-                        }`}
-                      >
-                        <span className="text-[11px]">Vannucci</span>
-                        <strong className="text-base font-black leading-none">1</strong>
-                      </button>
-                    );
-                  })()}
-                  {(() => {
-                    const sat2 = isStrutturaSatura("Vannucci 2", newDate);
-                    return (
-                      <button
-                        type="button"
-                        onClick={() => !sat2 && setNewStruttura("Vannucci 2")}
-                        disabled={sat2}
-                        title={sat2 ? "Struttura satura (Mattina e Pomeriggio già assegnati)" : ""}
-                        className={`p-3 rounded-xl border font-black transition-all text-center text-xs flex flex-col items-center justify-center ${
-                          sat2 ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400 grayscale" :
-                          "cursor-pointer " + (newStruttura === "Vannucci 2"
-                            ? "bg-orange-500 text-white border-orange-600 ring-4 ring-orange-500/20 scale-102"
-                            : "bg-orange-50/50 text-orange-950 border-orange-200 hover:bg-orange-100")
-                        }`}
-                      >
-                        <span className="text-[11px]">Vannucci</span>
-                        <strong className="text-base font-black leading-none">2</strong>
-                      </button>
-                    );
-                  })()}
-                  {(() => {
-                    const sat3 = isStrutturaSatura("Vannucci 4", newDate);
-                    return (
-                      <button
-                        type="button"
-                        onClick={() => !sat3 && setNewStruttura("Vannucci 4")}
-                        disabled={sat3}
-                        title={sat3 ? "Struttura satura (Mattina e Pomeriggio già assegnati)" : ""}
-                        className={`p-3 rounded-xl border font-black transition-all text-center text-xs flex flex-col items-center justify-center ${
-                          sat3 ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400 grayscale" :
-                          "cursor-pointer " + (newStruttura === "Vannucci 4"
-                            ? "bg-lime-400 text-lime-950 border-lime-500 ring-4 ring-lime-400/25 scale-102"
-                            : "bg-lime-50/50 text-lime-950 border-lime-200 hover:bg-lime-100")
-                        }`}
-                      >
-                        <span className="text-[11px]">Vannucci</span>
-                        <strong className="text-base font-black leading-none">4</strong>
-                      </button>
-                    );
-                  })()}
-                </div>
-              </div>
-            </div>
+                      {(() => {
+                        const sat1 = isStrutturaSatura("Vannucci 1", newDate);
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => !sat1 && setNewStruttura("Vannucci 1")}
+                            disabled={sat1}
+                            className={`p-3.5 rounded-xl border font-black transition-all text-center text-xs flex flex-col items-center justify-center cursor-pointer ${
+                              sat1 ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400 grayscale" :
+                              (newStruttura === "Vannucci 1"
+                                ? "bg-orange-500 text-white border-orange-600 ring-4 ring-orange-500/20 scale-102 shadow-sm"
+                                : "bg-orange-50/50 text-orange-950 border-orange-200 hover:bg-orange-100")
+                            }`}
+                          >
+                            <span className="text-[11px]">Vannucci</span>
+                            <strong className="text-base font-black leading-none">1</strong>
+                          </button>
+                        );
+                      })()}
+                      {(() => {
+                        const sat2 = isStrutturaSatura("Vannucci 2", newDate);
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => !sat2 && setNewStruttura("Vannucci 2")}
+                            disabled={sat2}
+                            className={`p-3.5 rounded-xl border font-black transition-all text-center text-xs flex flex-col items-center justify-center cursor-pointer ${
+                              sat2 ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400 grayscale" :
+                              (newStruttura === "Vannucci 2"
+                                ? "bg-yellow-400 text-yellow-950 border-yellow-500 ring-4 ring-yellow-400/25 scale-102 shadow-sm"
+                                : "bg-yellow-50/50 text-yellow-950 border-yellow-200 hover:bg-yellow-100")
+                            }`}
+                          >
+                            <span className="text-[11px]">Vannucci</span>
+                            <strong className="text-base font-black leading-none">2</strong>
+                          </button>
+                        );
+                      })()}
+                      {(() => {
+                        const sat3 = isStrutturaSatura("Vannucci 4", newDate);
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => !sat3 && setNewStruttura("Vannucci 4")}
+                            disabled={sat3}
+                            className={`p-3.5 rounded-xl border font-black transition-all text-center text-xs flex flex-col items-center justify-center cursor-pointer ${
+                              sat3 ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400 grayscale" :
+                              (newStruttura === "Vannucci 4"
+                                ? "bg-lime-400 text-lime-950 border-lime-500 ring-4 ring-lime-400/25 scale-102 shadow-sm"
+                                : "bg-lime-50/50 text-lime-950 border-lime-200 hover:bg-lime-100")
+                            }`}
+                          >
+                            <span className="text-[11px]">Vannucci</span>
+                            <strong className="text-base font-black leading-none">4</strong>
+                          </button>
+                        );
+                      })()}
+                    </div>
+                  </div>
 
-                {/* MIDDLE COLUMN: Presets */}
-                <div className="space-y-3 overflow-hidden flex flex-col">
-                  {/* Shift Presets */}
-                  <div className="space-y-2 flex flex-col overflow-hidden">
-                    <div className="flex items-center justify-between shrink-0">
-                      <label className="block font-black text-slate-700 tracking-wide uppercase text-[10px]">
-                        Preset Orari & Turni ({savedPresets.length})
-                      </label>
-                  <div className="flex items-center gap-2">
+                  {/* Notes */}
+                  <div className="space-y-1.5 shrink-0">
+                    <label className="block font-black text-slate-700 tracking-wide uppercase text-[10px]">Note o Mansioni Specifiche:</label>
+                    <input
+                      type="text"
+                      value={newNote}
+                      onChange={e => setNewNote(e.target.value)}
+                      className="w-full border p-3 rounded-xl bg-slate-50 font-medium focus:bg-white text-xs"
+                      placeholder="es. Sostituzione turno, mansioni speciali..."
+                    />
+                  </div>
+                </div>
+
+                {/* RIGHT COLUMN: Presets & Special Statuses (Riposo, Ferie, Malattia) */}
+                <div className="space-y-3 flex flex-col">
+                  <div className="flex items-center justify-between shrink-0">
+                    <label className="block font-black text-slate-700 tracking-wide uppercase text-[10px]">
+                      Seleziona Turno o Stato
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {newStruttura.toLowerCase().includes("4") ? (
+                      <>
+                        {/* VANNUCCI 4 ONLY: Presets 08:15-15:20 and 15:20-22:00 */}
+                        {savedPresets
+                          .filter(preset => preset.struttura && preset.struttura.toLowerCase().includes("4"))
+                          .map((preset) => {
+                            const isSelected = newTipoTurno === preset.tipoTurno && newOrarioInizio === preset.orarioInizio && newOrarioFine === preset.orarioFine;
+                            const validity = checkPotentialShiftValidity(newStaffId, newDate, preset.tipoTurno, newStruttura, preset.orarioInizio, preset.orarioFine);
+
+                            return (
+                              <div key={preset.id} className="relative group/preset">
+                                <button
+                                 type="button"
+                                 onDoubleClick={() => {
+                                   if (!validity.valid) return;
+                                   handleFastSubmit(preset);
+                                 }}
+                                 onClick={() => {
+                                   if (!validity.valid) return;
+                                   setNewTipoTurno(preset.tipoTurno);
+                                   setNewOrarioInizio(preset.orarioInizio);
+                                   setNewOrarioFine(preset.orarioFine);
+                                 }}
+                                 disabled={!validity.valid}
+                                 title={validity.reason || `${preset.label} (${preset.orarioInizio} - ${preset.orarioFine})`}
+                                 className={`w-full p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center relative ${
+                                   !validity.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
+                                   "cursor-pointer " + (isSelected
+                                     ? "bg-lime-400 border-lime-500 text-lime-950 ring-4 ring-lime-400/25 shadow-sm"
+                                     : "bg-lime-50/60 border-lime-200 hover:bg-lime-100 text-lime-950")
+                                 }`}
+                                >
+                                  <span className="font-extrabold text-[12px] truncate pr-1">{preset.label}</span>
+                                  <span className="text-[10px] opacity-75 font-normal truncate">
+                                    {preset.subtitle || `${preset.orarioInizio} - ${preset.orarioFine}`}
+                                  </span>
+                                </button>
+                              </div>
+                            );
+                          })}
+
+                        {/* VANNUCCI 4 COMBO SERVIZIO: 08:00-15:00 + 17:00-20:00 */}
+                        {(() => {
+                          const otherServizio = shifts.find(s => s.data === newDate && s.tipoTurno === "Servizio" && s.staffId !== newStaffId);
+                          const disabled = !!otherServizio;
+                          const otherStaffName = otherServizio ? staff.find(st => st.id === otherServizio.staffId)?.nome || "un altro operatore" : "";
+
+                          return (
+                            <button
+                              type="button"
+                              disabled={disabled}
+                              onClick={() => {
+                                if (disabled) return;
+                                handleAddComboV4Servizio(newStaffId, newDate, "08:00", "15:00");
+                              }}
+                              className={`col-span-2 p-3 rounded-xl border-2 font-bold transition-all text-xs flex flex-col justify-center shadow-xs ${
+                                disabled
+                                  ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400"
+                                  : "cursor-pointer border-lime-500/80 bg-gradient-to-r from-lime-500/20 via-emerald-500/20 to-teal-500/20 hover:from-lime-500/30 hover:to-teal-500/30 text-slate-900"
+                              }`}
+                              title={disabled ? `Turno Servizio già assegnato a ${otherStaffName}` : "Assegna Mattina V4 (08:00-15:00) + Servizio (17:00-20:00)"}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="font-black text-xs text-lime-950 flex items-center gap-1">
+                                  <span>⚡ Combo V4: 08:00 - 15:00 + 17:00 - 20:00</span>
+                                </span>
+                                <span className="text-[9px] font-extrabold text-violet-800 bg-violet-100 px-1.5 py-0.2 rounded">10h tot (7h + 3h)</span>
+                              </div>
+                              <span className="text-[10px] text-slate-700 font-semibold mt-0.5">
+                                {disabled ? `⚠️ Servizio serale già assegnato a ${otherStaffName}` : "🌅 Mattina V4 (08:00-15:00) + 🍽️ Servizio Pomeridiano (17:00-20:00)"}
+                              </span>
+                            </button>
+                          );
+                        })()}
+                      </>
+                    ) : (
+                      <>
+                        {savedPresets
+                          .filter((preset) => {
+                            if (!preset.struttura || preset.tipoTurno === "Cucina" || preset.tipoTurno === "Notte" || preset.tipoTurno === "Pulizie" || preset.tipoTurno === "Servizio") {
+                              return true;
+                            }
+                            const currentS = newStruttura.toLowerCase();
+                            const presetS = preset.struttura.toLowerCase();
+                            if (currentS.includes("1") && presetS.includes("1")) return true;
+                            if (currentS.includes("2") && presetS.includes("2")) return true;
+                            return false;
+                          })
+                          .map((preset) => {
+                          const isSelected = newTipoTurno === preset.tipoTurno && newOrarioInizio === preset.orarioInizio && newOrarioFine === preset.orarioFine;
+                          const validity = checkPotentialShiftValidity(newStaffId, newDate, preset.tipoTurno, newStruttura, preset.orarioInizio, preset.orarioFine);
+
+                          return (
+                            <div key={preset.id} className="relative group/preset">
+                              <button
+                                type="button"
+                                onDoubleClick={() => {
+                                  if (!validity.valid) return;
+                                  handleFastSubmit(preset);
+                                }}
+                                onClick={() => {
+                                  if (!validity.valid) return;
+                                  setNewTipoTurno(preset.tipoTurno);
+                                  setNewOrarioInizio(preset.orarioInizio);
+                                  setNewOrarioFine(preset.orarioFine);
+                                  if (preset.tipoTurno === "Cucina" && !newNote) {
+                                    setNewNote("Servizio Cucina e Mensa");
+                                  }
+                                }}
+                                disabled={!validity.valid}
+                                title={validity.reason || `${preset.label} (${preset.orarioInizio} - ${preset.orarioFine})`}
+                                className={`w-full p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center relative ${
+                                  !validity.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
+                                  "cursor-pointer " + (isSelected
+                                    ? preset.tipoTurno === "Pulizie"
+                                      ? "bg-teal-600 border-teal-700 text-white ring-4 ring-teal-600/30"
+                                      : preset.tipoTurno === "Cucina"
+                                      ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30"
+                                      : preset.tipoTurno === "Notte"
+                                      ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30"
+                                      : newStruttura === "Vannucci 1" || newStruttura === "Struttura 1"
+                                      ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
+                                      : newStruttura === "Vannucci 2" || newStruttura === "Struttura 2"
+                                      ? "bg-yellow-400 border-yellow-500 text-yellow-950 ring-4 ring-yellow-400/25"
+                                      : "bg-lime-400 border-lime-500 text-lime-950 ring-4 ring-lime-400/25"
+                                    : preset.tipoTurno === "Pulizie"
+                                    ? "bg-teal-50/80 border-teal-200 hover:bg-teal-100 text-teal-950"
+                                    : preset.tipoTurno === "Cucina"
+                                    ? "bg-sky-50/80 border-sky-300 hover:bg-sky-100 text-sky-950"
+                                    : preset.tipoTurno === "Notte"
+                                    ? "bg-blue-50 border-blue-200 hover:bg-blue-100 text-blue-900"
+                                    : "bg-slate-50 border-slate-200 hover:bg-slate-100")
+                                }`}
+                              >
+                                <span className="font-extrabold text-[12px] truncate pr-5">{preset.label}</span>
+                                <span className="text-[10px] opacity-75 font-normal truncate">
+                                  {preset.subtitle || `${preset.orarioInizio} - ${preset.orarioFine}`}
+                                </span>
+                              </button>
+
+                              {/* Trash Button to Remove Preset */}
+                              <button
+                                type="button"
+                                onClick={(e) => handleRemovePreset(preset.id, e)}
+                                className="absolute top-1.5 right-1.5 p-1 rounded-md opacity-60 hover:opacity-100 hover:bg-rose-600 hover:text-white text-rose-500 bg-white/80 shadow-3xs transition-all cursor-pointer z-10"
+                                title="Rimuovi questo preset orario"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          );
+                        })}
+
+                        {/* Turno Notturno */}
+                        <button
+                          type="button"
+                          disabled={hasNotteOnSelectedDay}
+                          onClick={() => {
+                            if (hasNotteOnSelectedDay) return;
+                            setNewTipoTurno("Notte");
+                            setNewOrarioInizio("23:00");
+                            setNewOrarioFine("07:00");
+                            if (!newNote) setNewNote("Turno di Notte");
+                          }}
+                          className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                            hasNotteOnSelectedDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
+                            "cursor-pointer " + (newTipoTurno === "Notte" && newOrarioInizio === "23:00" && newOrarioFine === "07:00" ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30" : "bg-blue-50/80 border-blue-200 hover:bg-blue-100 text-blue-900")
+                          }`}
+                        >
+                          <span className="font-extrabold text-[12px]">🌙 Notte</span>
+                          <span className="text-[10px] opacity-75 font-normal">{hasNotteOnSelectedDay ? "Già assegnato" : "23:00 - 07:00"}</span>
+                        </button>
+
+                        {/* Cucina */}
+                        <button
+                          type="button"
+                          disabled={hasCucinaOnSelectedDay}
+                          onClick={() => {
+                            if (hasCucinaOnSelectedDay) return;
+                            setNewTipoTurno("Cucina");
+                            setNewOrarioInizio("10:30");
+                            setNewOrarioFine("15:30");
+                            if (!newNote) setNewNote("Servizio Cucina e Mensa");
+                          }}
+                          className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                            hasCucinaOnSelectedDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
+                            "cursor-pointer " + (newTipoTurno === "Cucina" && newOrarioInizio === "10:30" && newOrarioFine === "15:30" ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30" : "bg-sky-50/80 border-sky-300 hover:bg-sky-100 text-sky-950")
+                          }`}
+                        >
+                          <span className="font-extrabold text-[12px]">🍲 Cucina</span>
+                          <span className="text-[10px] opacity-75 font-normal">{hasCucinaOnSelectedDay ? "Già assegnato" : "10:30 - 15:30"}</span>
+                        </button>
+
+                        {/* Pulizie */}
+                        <button
+                          type="button"
+                          disabled={hasPulizieOnSelectedDay}
+                          onClick={() => {
+                            if (hasPulizieOnSelectedDay) return;
+                            setNewTipoTurno("Pulizie");
+                            setNewOrarioInizio("07:00");
+                            setNewOrarioFine("11:00");
+                            if (!newNote) setNewNote("Servizio Pulizie & Supporto Alzate");
+                          }}
+                          className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                            hasPulizieOnSelectedDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
+                            "cursor-pointer " + (newTipoTurno === "Pulizie" && newOrarioInizio === "07:00" && newOrarioFine === "11:00" ? "bg-teal-600 border-teal-700 text-white ring-4 ring-teal-600/30" : "bg-teal-50/80 border-teal-200 hover:bg-teal-100 text-teal-950")
+                          }`}
+                        >
+                          <span className="font-extrabold text-[12px]">🪣🧹 Pulizie</span>
+                          <span className="text-[10px] opacity-75 font-normal">{hasPulizieOnSelectedDay ? "Già assegnato" : "07:00 - 11:00"}</span>
+                        </button>
+                      </>
+                    )}
+
+                    {/* Riposo */}
                     <button
                       type="button"
                       onClick={() => {
-                        setCustomPresetInizio(newOrarioInizio);
-                        setCustomPresetFine(newOrarioFine);
-                        setCustomPresetTipo(newTipoTurno === "Riposo" || newTipoTurno === "Ferie" ? "Cucina" : newTipoTurno);
-                        setShowAddPresetForm(!showAddPresetForm);
+                        setNewTipoTurno("Riposo");
+                        setNewOrarioInizio("00:00");
+                        setNewOrarioFine("00:00");
                       }}
-                      className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 hover:underline cursor-pointer"
+                      className={`p-3 rounded-xl text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
+                        newTipoTurno === "Riposo" ? "bg-slate-100 !border-double !border-[3px] !border-red-500 text-slate-800 ring-4 ring-red-400/20" : "bg-slate-50 border border-slate-200 hover:bg-slate-100"
+                      }`}
                     >
-                      <Plus className="w-3 h-3" />
-                      <span>{showAddPresetForm ? "Chiudi Form" : "Nuovo Preset"}</span>
+                      <span className="font-extrabold text-[12px]">🛋️ Riposo</span>
+                      <span className="text-[10px] opacity-75 font-normal">Giorno libero</span>
                     </button>
-                    {savedPresets.length !== INITIAL_SHIFT_PRESETS.length && (
-                      <button
-                        type="button"
-                        onClick={handleResetDefaultPresets}
-                        className="text-[10px] font-medium text-slate-400 hover:text-slate-600 underline"
-                        title="Ripristina preset di default"
-                      >
-                        Ripristina
-                      </button>
-                    )}
-                  </div>
-                </div>
 
-
-                {/* Inline form to create and save a new preset */}
-                {showAddPresetForm && (
-                  <div className="bg-indigo-500/10 border border-indigo-500/30 p-3 rounded-xl space-y-2 text-xs animate-in fade-in duration-150">
-                    <div className="flex items-center justify-between">
-                      <span className="font-extrabold text-indigo-950 text-[11px] flex items-center gap-1">
-                        <Clock className="w-3.5 h-3.5 text-indigo-600" />
-                        <span>Memorizza Nuovo Preset Orario</span>
-                      </span>
-                      <button type="button" onClick={() => setShowAddPresetForm(false)} className="text-slate-400 hover:text-slate-600">
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block font-bold text-slate-700 text-[9px] mb-0.5">Nome / Etichetta</label>
-                        <input
-                          type="text"
-                          placeholder="es. Cucina, Post-pranzo"
-                          value={customPresetName}
-                          onChange={(e) => setCustomPresetName(e.target.value)}
-                          className="w-full border p-1.5 rounded-lg bg-white font-semibold text-xs"
-                        />
-                      </div>
-                      <div>
-                        <label className="block font-bold text-slate-700 text-[9px] mb-0.5">Tipo Turno</label>
-                        <select
-                          value={customPresetTipo}
-                          onChange={(e) => setCustomPresetTipo(e.target.value)}
-                          className="w-full border p-1.5 rounded-lg bg-white font-semibold text-xs"
-                        >
-                          <option value="Cucina">🍳 Cucina</option>
-                          <option value="Mattina">🌅 Mattina</option>
-                          <option value="Pomeriggio">🌆 Pomeriggio</option>
-                          <option value="Notte">🌙 Notte</option>
-                          <option value="Reperibilità">📞 Reperibilità</option>
-                          <option value="Personalizzato">⏱️ Personalizzato</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block font-bold text-slate-700 text-[9px] mb-0.5">Ora Inizio</label>
-                        <input
-                          type="time"
-                          value={customPresetInizio}
-                          onChange={(e) => setCustomPresetInizio(e.target.value)}
-                          className="w-full border p-1.5 rounded-lg bg-white font-mono text-xs font-bold"
-                        />
-                      </div>
-                      <div>
-                        <label className="block font-bold text-slate-700 text-[9px] mb-0.5">Ora Fine</label>
-                        <input
-                          type="time"
-                          value={customPresetFine}
-                          onChange={(e) => setCustomPresetFine(e.target.value)}
-                          className="w-full border p-1.5 rounded-lg bg-white font-mono text-xs font-bold"
-                        />
-                      </div>
-                    </div>
-
+                    {/* Ferie */}
                     <button
                       type="button"
-                      onClick={handleAddNewPreset}
-                      className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-lg text-xs shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                      onClick={() => {
+                        setNewTipoTurno("Ferie");
+                        setNewOrarioInizio("00:00");
+                        setNewOrarioFine("00:00");
+                      }}
+                      className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
+                        newTipoTurno === "Ferie" ? "bg-slate-500 border-slate-600 text-white ring-4 ring-slate-500/30 font-black shadow-xs" : "bg-slate-100 border-slate-200 hover:bg-slate-200 text-slate-700"
+                      }`}
                     >
-                      <Save className="w-3.5 h-3.5" />
-                      <span>Memorizza Preset Orario</span>
+                      <span className="font-extrabold text-[12px]">🏖️ Ferie 🍹</span>
+                      <span className="text-[10px] opacity-75 font-normal">Ferie pianificate</span>
+                    </button>
+
+                    {/* Malattia */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewTipoTurno("Malattia");
+                        setNewOrarioInizio("00:00");
+                        setNewOrarioFine("00:00");
+                      }}
+                      className={`col-span-2 p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
+                        newTipoTurno === "Malattia" ? "bg-rose-700 border-rose-800 text-white ring-4 ring-rose-700/30 font-black shadow-xs" : "bg-rose-50 border-rose-200 hover:bg-rose-100 text-rose-900"
+                      }`}
+                    >
+                      <span className="font-extrabold text-[12px] flex items-center gap-1">🤒 Malattia / Riposo Medico</span>
+                      <span className="text-[10px] opacity-75 font-normal">Assenza per motivi di salute o certificato medico</span>
                     </button>
                   </div>
-                )}
-
-                {/* Preset Buttons Grid */}
-                <div className="grid grid-cols-2 gap-2">
-                  {savedPresets
-                    .filter((preset) => {
-                      if (!preset.struttura || preset.tipoTurno === "Cucina" || preset.tipoTurno === "Notte" || preset.tipoTurno === "Pulizie" || preset.tipoTurno === "Servizio") {
-                        return true;
-                      }
-                      const currentS = newStruttura.toLowerCase();
-                      const presetS = preset.struttura.toLowerCase();
-                      if (currentS.includes("1") && presetS.includes("1")) return true;
-                      if (currentS.includes("2") && presetS.includes("2")) return true;
-                      if (currentS.includes("4") && presetS.includes("4")) return true;
-                      return false;
-                    })
-                    .map((preset) => {
-                    const isSelected = newTipoTurno === preset.tipoTurno && newOrarioInizio === preset.orarioInizio && newOrarioFine === preset.orarioFine;
-                    const validity = checkPotentialShiftValidity(newStaffId, newDate, preset.tipoTurno, newStruttura, preset.orarioInizio, preset.orarioFine);
-
-                    return (
-                      <div key={preset.id} className="relative group/preset">
-                        <button
-                          type="button"
-                          onDoubleClick={() => {
-                            if (!validity.valid) return;
-                            handleFastSubmit(preset);
-                          }}
-                          onClick={() => {
-                            if (!validity.valid) return;
-                            setNewTipoTurno(preset.tipoTurno);
-                            setNewOrarioInizio(preset.orarioInizio);
-                            setNewOrarioFine(preset.orarioFine);
-                            if (preset.tipoTurno === "Cucina" && !newNote) {
-                              setNewNote("Servizio Cucina e Mensa");
-                            }
-                          }}
-                          disabled={!validity.valid}
-                          title={validity.reason || `${preset.label} (${preset.orarioInizio} - ${preset.orarioFine})`}
-                          className={`w-full p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center relative ${
-                            !validity.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
-                            "cursor-pointer " + (isSelected
-                              ? preset.tipoTurno === "Pulizie"
-                                ? "bg-teal-600 border-teal-700 text-white ring-4 ring-teal-600/30"
-                                : preset.tipoTurno === "Cucina"
-                                ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30"
-                                : preset.tipoTurno === "Notte"
-                                ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30"
-                                : newStruttura === "Vannucci 1" || newStruttura === "Struttura 1"
-                                ? "bg-yellow-400 border-yellow-500 text-yellow-950 ring-4 ring-yellow-400/25"
-                                : newStruttura === "Vannucci 2" || newStruttura === "Struttura 2"
-                                ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
-                                : "bg-lime-400 border-lime-500 text-lime-950 ring-4 ring-lime-400/25"
-                              : preset.tipoTurno === "Pulizie"
-                              ? "bg-teal-50/80 border-teal-200 hover:bg-teal-100 text-teal-950"
-                              : preset.tipoTurno === "Cucina"
-                              ? "bg-sky-50/80 border-sky-300 hover:bg-sky-100 text-sky-950"
-                              : preset.tipoTurno === "Notte"
-                              ? "bg-blue-50 border-blue-200 hover:bg-blue-100 text-blue-900"
-                              : "bg-slate-50 border-slate-200 hover:bg-slate-100")
-                          }`}
-                        >
-                          <span className="font-extrabold text-[12px] truncate pr-5">{preset.label}</span>
-                          <span className="text-[9px] opacity-75 font-normal truncate">
-                            {preset.subtitle || `${preset.orarioInizio} - ${preset.orarioFine}`}
-                          </span>
-                        </button>
-
-                        {/* Trash Button to Remove Any Preset */}
-                        <button
-                          type="button"
-                          onClick={(e) => handleRemovePreset(preset.id, e)}
-                          className="absolute top-1.5 right-1.5 p-1 rounded-md opacity-60 hover:opacity-100 hover:bg-rose-600 hover:text-white text-rose-500 bg-white/80 shadow-3xs transition-all cursor-pointer z-10"
-                          title="Rimuovi questo preset orario"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                    );
-                  })}
-
-                  {/* Turno Notturno Generale */}
-                  <button
-                    type="button"
-                    disabled={hasNotteOnSelectedDay}
-                    onDoubleClick={() => {
-                      if (hasNotteOnSelectedDay) return;
-                      setNewNote("Turno di Notte");
-                      handleFastSubmit({ tipoTurno: "Notte", orarioInizio: "23:00", orarioFine: "07:00" });
-                    }}
-                    onClick={() => {
-                      if (hasNotteOnSelectedDay) return;
-                      setNewTipoTurno("Notte");
-                      setNewOrarioInizio("23:00");
-                      setNewOrarioFine("07:00");
-                      if (!newNote) setNewNote("Turno di Notte");
-                    }}
-                    className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
-                      hasNotteOnSelectedDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
-                      "cursor-pointer " + (newTipoTurno === "Notte" && newOrarioInizio === "23:00" && newOrarioFine === "07:00" ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30" : "bg-blue-50/80 border-blue-200 hover:bg-blue-100 text-blue-900")
-                    }`}
-                    title={hasNotteOnSelectedDay ? "Turno Notte già assegnato per questo giorno" : "Clicca per selezionare il turno Notte"}
-                  >
-                    <span className="font-extrabold text-[12px]">🌙 Notte</span>
-                    <span className="text-[9px] opacity-75 font-normal">{hasNotteOnSelectedDay ? "Già assegnato" : "23:00 - 07:00"}</span>
-                  </button>
-
-                  {/* Servizi Comuni: Cucina */}
-                  <button
-                    type="button"
-                    disabled={hasCucinaOnSelectedDay}
-                    onDoubleClick={() => {
-                      if (hasCucinaOnSelectedDay) return;
-                      setNewNote("Servizio Cucina e Mensa");
-                      handleFastSubmit({ tipoTurno: "Cucina", orarioInizio: "10:30", orarioFine: "15:30" });
-                    }}
-                    onClick={() => {
-                      if (hasCucinaOnSelectedDay) return;
-                      setNewTipoTurno("Cucina");
-                      setNewOrarioInizio("10:30");
-                      setNewOrarioFine("15:30");
-                      if (!newNote) setNewNote("Servizio Cucina e Mensa");
-                    }}
-                    className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
-                      hasCucinaOnSelectedDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
-                      "cursor-pointer " + (newTipoTurno === "Cucina" && newOrarioInizio === "10:30" && newOrarioFine === "15:30" ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30" : "bg-sky-50/80 border-sky-300 hover:bg-sky-100 text-sky-950")
-                    }`}
-                    title={hasCucinaOnSelectedDay ? "Turno Cucina già assegnato per questo giorno" : "Clicca per selezionare il turno Cucina"}
-                  >
-                    <span className="font-extrabold text-[12px]">🍲 Cucina</span>
-                    <span className="text-[9px] opacity-75 font-normal">{hasCucinaOnSelectedDay ? "Già assegnato" : "10:30 - 15:30"}</span>
-                  </button>
-
-                  {/* Servizi Comuni: Pulizie */}
-                  <button
-                    type="button"
-                    disabled={hasPulizieOnSelectedDay}
-                    onDoubleClick={() => {
-                      if (hasPulizieOnSelectedDay) return;
-                      setNewNote("Servizio Pulizie & Supporto Alzate");
-                      handleFastSubmit({ tipoTurno: "Pulizie", orarioInizio: "07:00", orarioFine: "11:00" });
-                    }}
-                    onClick={() => {
-                      if (hasPulizieOnSelectedDay) return;
-                      setNewTipoTurno("Pulizie");
-                      setNewOrarioInizio("07:00");
-                      setNewOrarioFine("11:00");
-                      if (!newNote) setNewNote("Servizio Pulizie & Supporto Alzate");
-                    }}
-                    className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
-                      hasPulizieOnSelectedDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
-                      "cursor-pointer " + (newTipoTurno === "Pulizie" && newOrarioInizio === "07:00" && newOrarioFine === "11:00" ? "bg-teal-600 border-teal-700 text-white ring-4 ring-teal-600/30" : "bg-teal-50/80 border-teal-200 hover:bg-teal-100 text-teal-950")
-                    }`}
-                    title={hasPulizieOnSelectedDay ? "Turno Pulizie già assegnato per questo giorno" : "Clicca per selezionare il turno Pulizie"}
-                  >
-                    <span className="font-extrabold text-[12px] flex items-center gap-1">🪣🧹 Pulizie</span>
-                    <span className="text-[9px] opacity-75 font-normal">{hasPulizieOnSelectedDay ? "Già assegnato" : "07:00 - 11:00 (Aiuto Alzate V1)"}</span>
-                  </button>
-
-                  {/* Servizi Comuni: Servizio */}
-                  <button
-                    type="button"
-                    disabled={hasServizioOnSelectedDay}
-                    onDoubleClick={() => {
-                      if (hasServizioOnSelectedDay) return;
-                      setNewNote("Servizio Pomeridiano");
-                      handleFastSubmit({ tipoTurno: "Servizio", orarioInizio: "17:00", orarioFine: "20:00" });
-                    }}
-                    onClick={() => {
-                      if (hasServizioOnSelectedDay) return;
-                      setNewTipoTurno("Servizio");
-                      setNewOrarioInizio("17:00");
-                      setNewOrarioFine("20:00");
-                      if (!newNote) setNewNote("Servizio Pomeridiano");
-                    }}
-                    className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
-                      hasServizioOnSelectedDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
-                      "cursor-pointer " + (newTipoTurno === "Servizio" && newOrarioInizio === "17:00" && newOrarioFine === "20:00" ? "bg-violet-600 border-violet-700 text-white ring-4 ring-violet-600/30" : "bg-violet-50/80 border-violet-200 hover:bg-violet-100 text-violet-950")
-                    }`}
-                    title={hasServizioOnSelectedDay ? "Turno Servizio già assegnato per questo giorno" : "Clicca per selezionare il turno Servizio"}
-                  >
-                    <span className="font-extrabold text-[12px] flex items-center gap-1">🍽️ Servizio</span>
-                    <span className="text-[9px] opacity-75 font-normal">{hasServizioOnSelectedDay ? "Già assegnato" : "17:00 - 20:00"}</span>
-                  </button>
-
-                  {/* COMBO SPECIALE 2-COL BUTTON */}
-                  <button
-                    type="button"
-                    disabled={hasPulizieOnSelectedDay || hasNotteOnSelectedDay}
-                    onDoubleClick={() => {
-                      if (hasPulizieOnSelectedDay || hasNotteOnSelectedDay) return;
-                      handleAddComboPulizieNotte(newStaffId, newDate, newStruttura);
-                    }}
-                    onClick={() => {
-                      if (hasPulizieOnSelectedDay || hasNotteOnSelectedDay) return;
-                      handleAddComboPulizieNotte(newStaffId, newDate, newStruttura);
-                    }}
-                    className={`col-span-2 p-2.5 rounded-xl border-2 font-bold transition-all text-xs flex flex-col justify-center shadow-xs ${
-                      (hasPulizieOnSelectedDay || hasNotteOnSelectedDay)
-                        ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400"
-                        : "cursor-pointer border-teal-500/60 bg-gradient-to-r from-teal-500/15 via-indigo-500/15 to-blue-500/15 hover:from-teal-500/25 hover:to-blue-500/25"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-black text-xs text-indigo-950 flex items-center gap-1">
-                        <span>⚡ Combo Regola Speciale</span>
-                        <span className="text-[9px] bg-teal-700 text-white px-1.5 py-0.2 rounded-full font-bold">12h Riposo</span>
-                      </span>
-                      <span className="text-[9px] font-extrabold text-amber-800 bg-amber-100 px-1.5 py-0.2 rounded">5h oggi (4h+1h)</span>
-                    </div>
-                    <span className="text-[10px] text-slate-700 font-semibold mt-0.5">
-                      {hasPulizieOnSelectedDay || hasNotteOnSelectedDay 
-                        ? "⚠️ Pulizie o Notte già presenti in questo giorno" 
-                        : "✨ Carica: 🪣 Pulizie (07:00-11:00) + 🌙 Notte (23:00-07:00)"}
-                    </span>
-                  </button>
-
-                  {/* Riposo */}
-                  <button
-                    type="button"
-                    onDoubleClick={() => handleFastSubmit({ tipoTurno: "Riposo", orarioInizio: "00:00", orarioFine: "00:00" })}
-                    onClick={() => {
-                      setNewTipoTurno("Riposo");
-                      setNewOrarioInizio("00:00");
-                      setNewOrarioFine("00:00");
-                    }}
-                    className={`p-2.5 rounded-xl text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
-                      newTipoTurno === "Riposo" ? "bg-slate-100 !border-double !border-[3px] !border-red-500 text-slate-800 ring-4 ring-red-400/20" : "bg-slate-50 border border-slate-200 hover:bg-slate-100"
-                    }`}
-                  >
-                    <span className="font-extrabold text-[12px]">🛋️ Riposo</span>
-                    <span className="text-[9px] opacity-75 font-normal">Giorno libero</span>
-                  </button>
-
-                  {/* Ferie */}
-                  <button
-                    type="button"
-                    onDoubleClick={() => handleFastSubmit({ tipoTurno: "Ferie", orarioInizio: "00:00", orarioFine: "00:00" })}
-                    onClick={() => {
-                      handleOpenVacationModal(newStaffId, newDate);
-                    }}
-                    className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
-                      newTipoTurno === "Ferie" ? "bg-slate-500 border-slate-600 text-white ring-4 ring-slate-500/30 font-black shadow-xs" : "bg-slate-100 border-slate-200 hover:bg-slate-200 text-slate-700"
-                    }`}
-                  >
-                    <span className="font-extrabold text-[12px] flex items-center gap-1">🏖️ Ferie 🍹</span>
-                    <span className="text-[9px] opacity-75 font-normal">Doppio clic: carica ferie / Clic: apri calendario</span>
-                  </button>
                 </div>
               </div>
-            </div>
 
-            {/* RIGHT COLUMN: Custom Time & Notes */}
-            <div className="space-y-3 flex flex-col overflow-hidden">
-              {/* Custom Time Picker & Quick Save */}
-              <div className="bg-indigo-50/70 p-3 rounded-xl border border-indigo-100 space-y-2 shrink-0">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[9px] font-black uppercase text-indigo-900 block tracking-tight">Personalizzazione Orario</span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        setCustomPresetInizio(newOrarioInizio);
-                        setCustomPresetFine(newOrarioFine);
-                        const computedTipo = newTipoTurno === "Riposo" || newTipoTurno === "Ferie" ? "Cucina" : newTipoTurno;
-                        setCustomPresetTipo(computedTipo);
-                        handleAddNewPreset(e as any, newOrarioInizio, newOrarioFine, computedTipo);
-                      }}
-                      className="text-[10px] font-extrabold text-indigo-700 hover:text-indigo-900 bg-indigo-100 hover:bg-indigo-200 px-2 py-0.5 rounded-md flex items-center gap-1 cursor-pointer transition-colors"
-                      title="Salva l'orario inserito nei tuoi preset memorizzati"
-                    >
-                      <Save className="w-3 h-3 text-indigo-600" />
-                      <span>Memorizza come Preset</span>
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Inizio (HH:MM)</label>
-                      <input
-                        type="time"
-                        value={newOrarioInizio}
-                        onChange={(e) => setNewOrarioInizio(e.target.value)}
-                        className="w-full border border-indigo-200 p-2 rounded-xl text-xs font-mono font-bold bg-white text-slate-900 focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Fine (HH:MM)</label>
-                      <input
-                        type="time"
-                        value={newOrarioFine}
-                        onChange={(e) => setNewOrarioFine(e.target.value)}
-                        className="w-full border border-indigo-200 p-2 rounded-xl text-xs font-mono font-bold bg-white text-slate-900 focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-              {/* Notes */}
-              <div>
-                <label className="block font-black text-slate-700 tracking-wide uppercase text-[10px] mb-1">Note o Mansioni Specifiche:</label>
-                <input
-                  type="text"
-                  value={newNote}
-                  onChange={e => setNewNote(e.target.value)}
-                  className="w-full border p-2.5 rounded-xl bg-slate-50 font-medium focus:bg-white"
-                  placeholder="es. Responsabile carrello medicinali / Sostituzione turno"
-                />
-            </div>
-            
-              <div className="pt-3 flex justify-end gap-2 border-t mt-2 shrink-0">
+              {/* Action Buttons */}
+              <div className="pt-4 flex justify-end gap-2.5 border-t mt-4 shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl cursor-pointer"
+                  className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl cursor-pointer text-xs"
                 >
                   Annulla
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow cursor-pointer transition-colors"
+                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow cursor-pointer transition-colors text-xs"
                 >
                   Salva Turno in Calendario
                 </button>
               </div>
-            </div>
+            </form>
           </div>
-          </form>
         </div>
-      </div>
       )}
 
       {/* MODAL: STAFF PROFILE & NOTES & STATS */}
@@ -7215,8 +7153,8 @@ function importaTurniResidenzaVannucci() {
                                 className={`p-3 rounded-xl border font-black transition-all text-center text-xs flex flex-col items-center justify-center ${
                                   sat1 ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400 grayscale" :
                                   "cursor-pointer " + (editShiftStruttura === "Vannucci 1" || editShiftStruttura === "Struttura 1"
-                                    ? "bg-yellow-400 text-yellow-950 border-yellow-500 ring-4 ring-yellow-400/25 scale-102"
-                                    : "bg-yellow-50/50 text-yellow-950 border-yellow-200 hover:bg-yellow-100")
+                                    ? "bg-orange-500 text-white border-orange-600 ring-4 ring-orange-500/20 scale-102"
+                                    : "bg-orange-50/50 text-orange-950 border-orange-200 hover:bg-orange-100")
                                 }`}
                               >
                                 <span className="text-[11px]">Vannucci</span>
@@ -7235,8 +7173,8 @@ function importaTurniResidenzaVannucci() {
                                 className={`p-3 rounded-xl border font-black transition-all text-center text-xs flex flex-col items-center justify-center ${
                                   sat2 ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400 grayscale" :
                                   "cursor-pointer " + (editShiftStruttura === "Vannucci 2" || editShiftStruttura === "Struttura 2"
-                                    ? "bg-orange-500 text-white border-orange-600 ring-4 ring-orange-500/20 scale-102"
-                                    : "bg-orange-50/50 text-orange-950 border-orange-200 hover:bg-orange-100")
+                                    ? "bg-yellow-400 text-yellow-950 border-yellow-500 ring-4 ring-yellow-400/25 scale-102"
+                                    : "bg-yellow-50/50 text-yellow-950 border-yellow-200 hover:bg-yellow-100")
                                 }`}
                               >
                                 <span className="text-[11px]">Vannucci</span>
@@ -7280,152 +7218,262 @@ function importaTurniResidenzaVannucci() {
 
                         {/* Preset Buttons Grid */}
                         <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
-                          {savedPresets
-                            .filter((preset) => {
-                              if (!preset.struttura || preset.tipoTurno === "Cucina" || preset.tipoTurno === "Notte" || preset.tipoTurno === "Pulizie" || preset.tipoTurno === "Servizio") {
-                                return true;
-                              }
-                              const currentS = editShiftStruttura.toLowerCase();
-                              const presetS = preset.struttura.toLowerCase();
-                              if (currentS.includes("1") && presetS.includes("1")) return true;
-                              if (currentS.includes("2") && presetS.includes("2")) return true;
-                              if (currentS.includes("4") && presetS.includes("4")) return true;
-                              return false;
-                            })
-                            .map((preset) => {
-                            const isSelected = selectedShiftForDetail?.tipoTurno === preset.tipoTurno && editShiftInizio === preset.orarioInizio && editShiftFine === preset.orarioFine;
-                            const validity = checkPotentialShiftValidity(selectedShiftForDetail?.staffId || "", editShiftDate, preset.tipoTurno, editShiftStruttura, preset.orarioInizio, preset.orarioFine, selectedShiftForDetail?.id);
+                          {editShiftStruttura.toLowerCase().includes("4") ? (
+                            <>
+                              {/* V4 ONLY: Presets 07-14 and 08-15 */}
+                              {savedPresets
+                                .filter(preset => preset.struttura && preset.struttura.toLowerCase().includes("4"))
+                                .map((preset) => {
+                                  const isSelected = selectedShiftForDetail?.tipoTurno === preset.tipoTurno && editShiftInizio === preset.orarioInizio && editShiftFine === preset.orarioFine;
+                                  const validity = checkPotentialShiftValidity(selectedShiftForDetail?.staffId || "", editShiftDate, preset.tipoTurno, editShiftStruttura, preset.orarioInizio, preset.orarioFine, selectedShiftForDetail?.id);
 
-                            return (
-                              <div key={preset.id} className="relative group/preset">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (!validity.valid) return;
-                                    setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: preset.tipoTurno } : prev);
-                                    setEditShiftInizio(preset.orarioInizio);
-                                    setEditShiftFine(preset.orarioFine);
-                                    if (preset.tipoTurno === "Cucina" && !editShiftNote) {
-                                      setEditShiftNote("Servizio Cucina e Mensa");
-                                    }
-                                  }}
-                                  disabled={!validity.valid}
-                                  title={validity.reason || `${preset.label} (${preset.orarioInizio} - ${preset.orarioFine})`}
-                                  className={`w-full p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center relative ${
-                                    !validity.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
-                                    "cursor-pointer " + (isSelected
-                                      ? preset.tipoTurno === "Pulizie"
-                                        ? "bg-teal-600 border-teal-700 text-white ring-4 ring-teal-600/30"
-                                        : preset.tipoTurno === "Cucina"
-                                        ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30"
-                                        : preset.tipoTurno === "Notte"
-                                        ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30"
-                                        : editShiftStruttura === "Vannucci 1" || editShiftStruttura === "Struttura 1"
-                                        ? "bg-yellow-400 border-yellow-500 text-yellow-950 ring-4 ring-yellow-400/25"
-                                        : editShiftStruttura === "Vannucci 2" || editShiftStruttura === "Struttura 2"
-                                        ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
-                                        : "bg-lime-400 border-lime-500 text-lime-950 ring-4 ring-lime-400/25"
-                                      : preset.tipoTurno === "Pulizie"
-                                      ? "bg-teal-50/80 border-teal-200 hover:bg-teal-100 text-teal-950"
-                                      : preset.tipoTurno === "Cucina"
-                                      ? "bg-sky-50/80 border-sky-300 hover:bg-sky-100 text-sky-950"
-                                      : preset.tipoTurno === "Notte"
-                                      ? "bg-blue-50 border-blue-200 hover:bg-blue-100 text-blue-900"
-                                      : "bg-slate-50 border-slate-200 hover:bg-slate-100")
-                                  }`}
-                                >
-                                  <span className="font-extrabold text-[12px] truncate pr-1">{preset.label}</span>
-                                  <span className="text-[9px] opacity-75 font-normal truncate">
-                                    {preset.subtitle || `${preset.orarioInizio} - ${preset.orarioFine}`}
-                                  </span>
-                                </button>
-                              </div>
-                            );
-                          })}
+                                  return (
+                                    <div key={preset.id} className="relative group/preset">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (!validity.valid) return;
+                                          setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: preset.tipoTurno } : prev);
+                                          setEditShiftInizio(preset.orarioInizio);
+                                          setEditShiftFine(preset.orarioFine);
+                                        }}
+                                        disabled={!validity.valid}
+                                        title={validity.reason || `${preset.label} (${preset.orarioInizio} - ${preset.orarioFine})`}
+                                        className={`w-full p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center relative ${
+                                          !validity.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
+                                          "cursor-pointer " + (isSelected
+                                            ? "bg-lime-400 border-lime-500 text-lime-950 ring-4 ring-lime-400/25"
+                                            : "bg-lime-50/60 border-lime-200 hover:bg-lime-100 text-lime-950")
+                                        }`}
+                                      >
+                                        <span className="font-extrabold text-[12px] truncate pr-1">{preset.label}</span>
+                                        <span className="text-[9px] opacity-75 font-normal truncate">
+                                          {preset.subtitle || `${preset.orarioInizio} - ${preset.orarioFine}`}
+                                        </span>
+                                      </button>
+                                    </div>
+                                  );
+                                })}
 
-                          {/* Turno Notturno Generale */}
-                          <button
-                            type="button"
-                            disabled={hasNotteOnEditDay}
-                            onClick={() => {
-                              if (hasNotteOnEditDay) return;
-                              setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Notte" } : prev);
-                              setEditShiftInizio("23:00");
-                              setEditShiftFine("07:00");
-                              if (!editShiftNote) setEditShiftNote("Turno di Notte");
-                            }}
-                            className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
-                              hasNotteOnEditDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
-                              "cursor-pointer " + (selectedShiftForDetail?.tipoTurno === "Notte" && editShiftInizio === "23:00" && editShiftFine === "07:00" ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30" : "bg-blue-50/80 border-blue-200 hover:bg-blue-100 text-blue-900")
-                            }`}
-                            title={hasNotteOnEditDay ? "Turno Notte già assegnato per questo giorno" : "Clicca per selezionare il turno Notte"}
-                          >
-                            <span className="font-extrabold text-[12px]">🌙 Notte</span>
-                            <span className="text-[9px] opacity-75 font-normal">{hasNotteOnEditDay ? "Già assegnato" : "23:00 - 07:00"}</span>
-                          </button>
+                              {/* V4 COMBO 1: 07:00-14:00 + 17:00-20:00 */}
+                              {(() => {
+                                const staffId = selectedShiftForDetail?.staffId || "";
+                                const otherServizio = shifts.find(s => s.data === editShiftDate && s.tipoTurno === "Servizio" && s.staffId !== staffId);
+                                const disabled = !!otherServizio;
+                                const otherStaffName = otherServizio ? staff.find(st => st.id === otherServizio.staffId)?.nome || "un altro operatore" : "";
 
-                          {/* Servizi Comuni: Cucina */}
-                          <button
-                            type="button"
-                            disabled={hasCucinaOnEditDay}
-                            onClick={() => {
-                              if (hasCucinaOnEditDay) return;
-                              setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Cucina" } : prev);
-                              setEditShiftInizio("10:30");
-                              setEditShiftFine("15:30");
-                              if (!editShiftNote) setEditShiftNote("Servizio Cucina e Mensa");
-                            }}
-                            className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
-                              hasCucinaOnEditDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
-                              "cursor-pointer " + (selectedShiftForDetail?.tipoTurno === "Cucina" && editShiftInizio === "10:30" && editShiftFine === "15:30" ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30" : "bg-sky-50/80 border-sky-200 hover:bg-sky-100 text-sky-900")
-                            }`}
-                            title={hasCucinaOnEditDay ? "Turno Cucina già assegnato per questo giorno" : "Clicca per selezionare il turno Cucina"}
-                          >
-                            <span className="font-extrabold text-[12px]">🍲 Cucina</span>
-                            <span className="text-[9px] opacity-75 font-normal">{hasCucinaOnEditDay ? "Già assegnato" : "10:30 - 15:30"}</span>
-                          </button>
+                                return (
+                                  <button
+                                    type="button"
+                                    disabled={disabled}
+                                    onClick={() => {
+                                      if (disabled) return;
+                                      handleAddComboV4Servizio(staffId, editShiftDate, "07:00", "14:00", selectedShiftForDetail?.id);
+                                    }}
+                                    className={`col-span-2 p-2.5 rounded-xl border-2 font-bold transition-all text-xs flex flex-col justify-center shadow-xs ${
+                                      disabled
+                                        ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400"
+                                        : "cursor-pointer border-lime-500/80 bg-gradient-to-r from-lime-500/15 via-emerald-500/15 to-violet-500/15 hover:from-lime-500/25 hover:to-violet-500/25 text-slate-900"
+                                    }`}
+                                    title={disabled ? `Turno Servizio già assegnato a ${otherStaffName}` : "Assegna Mattina V4 (07:00-14:00) + Servizio (17:00-20:00)"}
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-black text-xs text-lime-950 flex items-center gap-1">
+                                        <span>⚡ Combo V4: 07:00 - 14:00 + 17:00 - 20:00</span>
+                                      </span>
+                                      <span className="text-[9px] font-extrabold text-violet-800 bg-violet-100 px-1.5 py-0.2 rounded">10h tot (7h + 3h)</span>
+                                    </div>
+                                    <span className="text-[10px] text-slate-700 font-semibold mt-0.5">
+                                      {disabled ? `⚠️ Servizio serale già assegnato a ${otherStaffName}` : "🌅 Mattina V4 (07-14) + 🍽️ Servizio Pomeridiano (17-20)"}
+                                    </span>
+                                  </button>
+                                );
+                              })()}
 
-                          {/* Servizi Comuni: Pulizie */}
-                          <button
-                            type="button"
-                            disabled={hasPulizieOnEditDay}
-                            onClick={() => {
-                              if (hasPulizieOnEditDay) return;
-                              setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Pulizie" } : prev);
-                              setEditShiftInizio("07:00");
-                              setEditShiftFine("11:00");
-                              if (!editShiftNote) setEditShiftNote("Servizio Pulizie & Supporto Alzate");
-                            }}
-                            className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
-                              hasPulizieOnEditDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
-                              "cursor-pointer " + (selectedShiftForDetail?.tipoTurno === "Pulizie" && editShiftInizio === "07:00" && editShiftFine === "11:00" ? "bg-teal-600 border-teal-700 text-white ring-4 ring-teal-600/30" : "bg-teal-50/80 border-teal-200 hover:bg-teal-100 text-teal-950")
-                            }`}
-                            title={hasPulizieOnEditDay ? "Turno Pulizie già assegnato per questo giorno" : "Clicca per selezionare il turno Pulizie"}
-                          >
-                            <span className="font-extrabold text-[12px] flex items-center gap-1">🪣🧹 Pulizie</span>
-                            <span className="text-[9px] opacity-75 font-normal">{hasPulizieOnEditDay ? "Già assegnato" : "07:00 - 11:00"}</span>
-                          </button>
+                              {/* V4 COMBO 2: 08:00-15:00 + 17:00-20:00 */}
+                              {(() => {
+                                const staffId = selectedShiftForDetail?.staffId || "";
+                                const otherServizio = shifts.find(s => s.data === editShiftDate && s.tipoTurno === "Servizio" && s.staffId !== staffId);
+                                const disabled = !!otherServizio;
+                                const otherStaffName = otherServizio ? staff.find(st => st.id === otherServizio.staffId)?.nome || "un altro operatore" : "";
 
-                          {/* Servizi Comuni: Servizio */}
-                          <button
-                            type="button"
-                            disabled={hasServizioOnEditDay}
-                            onClick={() => {
-                              if (hasServizioOnEditDay) return;
-                              setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Servizio" } : prev);
-                              setEditShiftInizio("17:00");
-                              setEditShiftFine("20:00");
-                              if (!editShiftNote) setEditShiftNote("Servizio Pomeridiano");
-                            }}
-                            className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
-                              hasServizioOnEditDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
-                              "cursor-pointer " + (selectedShiftForDetail?.tipoTurno === "Servizio" && editShiftInizio === "17:00" && editShiftFine === "20:00" ? "bg-violet-600 border-violet-700 text-white ring-4 ring-violet-600/30" : "bg-violet-50/80 border-violet-200 hover:bg-violet-100 text-violet-950")
-                            }`}
-                            title={hasServizioOnEditDay ? "Turno Servizio già assegnato per questo giorno" : "Clicca per selezionare il turno Servizio"}
-                          >
-                            <span className="font-extrabold text-[12px] flex items-center gap-1">🍽️ Servizio</span>
-                            <span className="text-[9px] opacity-75 font-normal">{hasServizioOnEditDay ? "Già assegnato" : "17:00 - 20:00"}</span>
-                          </button>
+                                return (
+                                  <button
+                                    type="button"
+                                    disabled={disabled}
+                                    onClick={() => {
+                                      if (disabled) return;
+                                      handleAddComboV4Servizio(staffId, editShiftDate, "08:00", "15:00", selectedShiftForDetail?.id);
+                                    }}
+                                    className={`col-span-2 p-2.5 rounded-xl border-2 font-bold transition-all text-xs flex flex-col justify-center shadow-xs ${
+                                      disabled
+                                        ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400"
+                                        : "cursor-pointer border-lime-500/80 bg-gradient-to-r from-lime-500/15 via-emerald-500/15 to-violet-500/15 hover:from-lime-500/25 hover:to-violet-500/25 text-slate-900"
+                                    }`}
+                                    title={disabled ? `Turno Servizio già assegnato a ${otherStaffName}` : "Assegna Mattina V4 (08:00-15:00) + Servizio (17:00-20:00)"}
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-black text-xs text-lime-950 flex items-center gap-1">
+                                        <span>⚡ Combo V4: 08:00 - 15:00 + 17:00 - 20:00</span>
+                                      </span>
+                                      <span className="text-[9px] font-extrabold text-violet-800 bg-violet-100 px-1.5 py-0.2 rounded">10h tot (7h + 3h)</span>
+                                    </div>
+                                    <span className="text-[10px] text-slate-700 font-semibold mt-0.5">
+                                      {disabled ? `⚠️ Servizio serale già assegnato a ${otherStaffName}` : "🌅 Mattina V4 (08-15) + 🍽️ Servizio Pomeridiano (17-20)"}
+                                    </span>
+                                  </button>
+                                );
+                              })()}
+                            </>
+                          ) : (
+                            <>
+                              {savedPresets
+                                .filter((preset) => {
+                                  if (!preset.struttura || preset.tipoTurno === "Cucina" || preset.tipoTurno === "Notte" || preset.tipoTurno === "Pulizie" || preset.tipoTurno === "Servizio") {
+                                    return true;
+                                  }
+                                  const currentS = editShiftStruttura.toLowerCase();
+                                  const presetS = preset.struttura.toLowerCase();
+                                  if (currentS.includes("1") && presetS.includes("1")) return true;
+                                  if (currentS.includes("2") && presetS.includes("2")) return true;
+                                  return false;
+                                })
+                                .map((preset) => {
+                                const isSelected = selectedShiftForDetail?.tipoTurno === preset.tipoTurno && editShiftInizio === preset.orarioInizio && editShiftFine === preset.orarioFine;
+                                const validity = checkPotentialShiftValidity(selectedShiftForDetail?.staffId || "", editShiftDate, preset.tipoTurno, editShiftStruttura, preset.orarioInizio, preset.orarioFine, selectedShiftForDetail?.id);
+
+                                return (
+                                  <div key={preset.id} className="relative group/preset">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (!validity.valid) return;
+                                        setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: preset.tipoTurno } : prev);
+                                        setEditShiftInizio(preset.orarioInizio);
+                                        setEditShiftFine(preset.orarioFine);
+                                        if (preset.tipoTurno === "Cucina" && !editShiftNote) {
+                                          setEditShiftNote("Servizio Cucina e Mensa");
+                                        }
+                                      }}
+                                      disabled={!validity.valid}
+                                      title={validity.reason || `${preset.label} (${preset.orarioInizio} - ${preset.orarioFine})`}
+                                      className={`w-full p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center relative ${
+                                        !validity.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
+                                        "cursor-pointer " + (isSelected
+                                          ? preset.tipoTurno === "Pulizie"
+                                            ? "bg-teal-600 border-teal-700 text-white ring-4 ring-teal-600/30"
+                                            : preset.tipoTurno === "Cucina"
+                                            ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30"
+                                            : preset.tipoTurno === "Notte"
+                                            ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30"
+                                            : editShiftStruttura === "Vannucci 1" || editShiftStruttura === "Struttura 1"
+                                            ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
+                                            : editShiftStruttura === "Vannucci 2" || editShiftStruttura === "Struttura 2"
+                                            ? "bg-yellow-400 border-yellow-500 text-yellow-950 ring-4 ring-yellow-400/25"
+                                            : "bg-lime-400 border-lime-500 text-lime-950 ring-4 ring-lime-400/25"
+                                          : preset.tipoTurno === "Pulizie"
+                                          ? "bg-teal-50/80 border-teal-200 hover:bg-teal-100 text-teal-950"
+                                          : preset.tipoTurno === "Cucina"
+                                          ? "bg-sky-50/80 border-sky-300 hover:bg-sky-100 text-sky-950"
+                                          : preset.tipoTurno === "Notte"
+                                          ? "bg-blue-50 border-blue-200 hover:bg-blue-100 text-blue-900"
+                                          : "bg-slate-50 border-slate-200 hover:bg-slate-100")
+                                      }`}
+                                    >
+                                      <span className="font-extrabold text-[12px] truncate pr-1">{preset.label}</span>
+                                      <span className="text-[9px] opacity-75 font-normal truncate">
+                                        {preset.subtitle || `${preset.orarioInizio} - ${preset.orarioFine}`}
+                                      </span>
+                                    </button>
+                                  </div>
+                                );
+                              })}
+
+                              {/* Turno Notturno Generale */}
+                              <button
+                                type="button"
+                                disabled={hasNotteOnEditDay}
+                                onClick={() => {
+                                  if (hasNotteOnEditDay) return;
+                                  setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Notte" } : prev);
+                                  setEditShiftInizio("23:00");
+                                  setEditShiftFine("07:00");
+                                  if (!editShiftNote) setEditShiftNote("Turno di Notte");
+                                }}
+                                className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                                  hasNotteOnEditDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
+                                  "cursor-pointer " + (selectedShiftForDetail?.tipoTurno === "Notte" && editShiftInizio === "23:00" && editShiftFine === "07:00" ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30" : "bg-blue-50/80 border-blue-200 hover:bg-blue-100 text-blue-900")
+                                }`}
+                                title={hasNotteOnEditDay ? "Turno Notte già assegnato per questo giorno" : "Clicca per selezionare il turno Notte"}
+                              >
+                                <span className="font-extrabold text-[12px]">🌙 Notte</span>
+                                <span className="text-[9px] opacity-75 font-normal">{hasNotteOnEditDay ? "Già assegnato" : "23:00 - 07:00"}</span>
+                              </button>
+
+                              {/* Servizi Comuni: Cucina */}
+                              <button
+                                type="button"
+                                disabled={hasCucinaOnEditDay}
+                                onClick={() => {
+                                  if (hasCucinaOnEditDay) return;
+                                  setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Cucina" } : prev);
+                                  setEditShiftInizio("10:30");
+                                  setEditShiftFine("15:30");
+                                  if (!editShiftNote) setEditShiftNote("Servizio Cucina e Mensa");
+                                }}
+                                className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                                  hasCucinaOnEditDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
+                                  "cursor-pointer " + (selectedShiftForDetail?.tipoTurno === "Cucina" && editShiftInizio === "10:30" && editShiftFine === "15:30" ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30" : "bg-sky-50/80 border-sky-200 hover:bg-sky-100 text-sky-900")
+                                }`}
+                                title={hasCucinaOnEditDay ? "Turno Cucina già assegnato per questo giorno" : "Clicca per selezionare il turno Cucina"}
+                              >
+                                <span className="font-extrabold text-[12px]">🍲 Cucina</span>
+                                <span className="text-[9px] opacity-75 font-normal">{hasCucinaOnEditDay ? "Già assegnato" : "10:30 - 15:30"}</span>
+                              </button>
+
+                              {/* Servizi Comuni: Pulizie */}
+                              <button
+                                type="button"
+                                disabled={hasPulizieOnEditDay}
+                                onClick={() => {
+                                  if (hasPulizieOnEditDay) return;
+                                  setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Pulizie" } : prev);
+                                  setEditShiftInizio("07:00");
+                                  setEditShiftFine("11:00");
+                                  if (!editShiftNote) setEditShiftNote("Servizio Pulizie & Supporto Alzate");
+                                }}
+                                className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                                  hasPulizieOnEditDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
+                                  "cursor-pointer " + (selectedShiftForDetail?.tipoTurno === "Pulizie" && editShiftInizio === "07:00" && editShiftFine === "11:00" ? "bg-teal-600 border-teal-700 text-white ring-4 ring-teal-600/30" : "bg-teal-50/80 border-teal-200 hover:bg-teal-100 text-teal-950")
+                                }`}
+                                title={hasPulizieOnEditDay ? "Turno Pulizie già assegnato per questo giorno" : "Clicca per selezionare il turno Pulizie"}
+                              >
+                                <span className="font-extrabold text-[12px] flex items-center gap-1">🪣🧹 Pulizie</span>
+                                <span className="text-[9px] opacity-75 font-normal">{hasPulizieOnEditDay ? "Già assegnato" : "07:00 - 11:00"}</span>
+                              </button>
+
+                              {/* Servizi Comuni: Servizio */}
+                              <button
+                                type="button"
+                                disabled={hasServizioOnEditDay}
+                                onClick={() => {
+                                  if (hasServizioOnEditDay) return;
+                                  setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Servizio" } : prev);
+                                  setEditShiftInizio("17:00");
+                                  setEditShiftFine("20:00");
+                                  if (!editShiftNote) setEditShiftNote("Servizio Pomeridiano");
+                                }}
+                                className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                                  hasServizioOnEditDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
+                                  "cursor-pointer " + (selectedShiftForDetail?.tipoTurno === "Servizio" && editShiftInizio === "17:00" && editShiftFine === "20:00" ? "bg-violet-600 border-violet-700 text-white ring-4 ring-violet-600/30" : "bg-violet-50/80 border-violet-200 hover:bg-violet-100 text-violet-950")
+                                }`}
+                                title={hasServizioOnEditDay ? "Turno Servizio già assegnato per questo giorno" : "Clicca per selezionare il turno Servizio"}
+                              >
+                                <span className="font-extrabold text-[12px] flex items-center gap-1">🍽️ Servizio</span>
+                                <span className="text-[9px] opacity-75 font-normal">{hasServizioOnEditDay ? "Già assegnato" : "17:00 - 20:00"}</span>
+                              </button>
+                            </>
+                          )}
 
                           {/* Riposo */}
                           <button
@@ -7457,6 +7505,22 @@ function importaTurniResidenzaVannucci() {
                           >
                             <span className="font-extrabold text-[12px] flex items-center gap-1">🏖️ Ferie 🍹</span>
                             <span className="text-[9px] opacity-75 font-normal">Pianificate / Desiderate</span>
+                          </button>
+
+                          {/* Malattia */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Malattia" } : prev);
+                              setEditShiftInizio("00:00");
+                              setEditShiftFine("00:00");
+                            }}
+                            className={`col-span-2 p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
+                              selectedShiftForDetail?.tipoTurno === "Malattia" ? "bg-rose-700 border-rose-800 text-white ring-4 ring-rose-700/30 font-black shadow-xs" : "bg-rose-50 border-rose-200 hover:bg-rose-100 text-rose-900"
+                            }`}
+                          >
+                            <span className="font-extrabold text-[12px] flex items-center gap-1">🤒 Malattia / Riposo Medico</span>
+                            <span className="text-[9px] opacity-75 font-normal">Assenza per motivi di salute o certificato</span>
                           </button>
                         </div>
                       </div>
