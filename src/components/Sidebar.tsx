@@ -44,6 +44,7 @@ interface SidebarProps {
   onResetData: () => void;
   onLogout: () => void;
   onResetAllPasswords?: () => void;
+  onResetClaudiaPassword?: () => void;
   isSuperAdmin?: boolean;
 }
 
@@ -97,6 +98,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onResetData,
   onLogout,
   onResetAllPasswords,
+  onResetClaudiaPassword,
   isSuperAdmin
 }) => {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -360,6 +362,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
           >
             <UserCheck className="w-3.5 h-3.5" />
             {!isCollapsed && <span>Azzera Password</span>}
+          </button>
+        )}
+        {isSuperAdmin && onResetClaudiaPassword && (
+          <button
+            onClick={onResetClaudiaPassword}
+            title="Azzera password a Claudia (a 1234)"
+            className="flex w-full items-center justify-center gap-1.5 py-2 px-2.5 bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 rounded-xl text-xs font-semibold border border-orange-500/30 transition-all cursor-pointer mb-2"
+          >
+            <UserCheck className="w-3.5 h-3.5" />
+            {!isCollapsed && <span>Azzera Password Claudia</span>}
           </button>
         )}
         <div className={`grid ${isCollapsed ? "grid-cols-1" : "grid-cols-2"} gap-2`}>

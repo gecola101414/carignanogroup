@@ -600,6 +600,22 @@ export default function App() {
           window.location.reload();
         }}
         isSuperAdmin={currentUser.username.toLowerCase() === 'antonio'}
+        onResetClaudiaPassword={() => {
+          if (confirm("Vuoi azzerare la password di CLAUDIA al valore predefinito '1234'?")) {
+            const updatedCreds = credentials.map(c => {
+              if (c.username.toLowerCase() === 'claudia') {
+                return {
+                  ...c,
+                  passwordHash: "1234",
+                  mustChange: true
+                };
+              }
+              return c;
+            });
+            handleUpdateCredentials(updatedCreds);
+            alert("La password di CLAUDIA è stata reimpostata a '1234'.");
+          }
+        }}
         onResetAllPasswords={() => {
           if (confirm("Attenzione: Vuoi reimpostare le password di tutti gli utenti al valore predefinito '1234'? Al prossimo accesso, a ciascuno verrà chiesto di crearne una nuova.")) {
             const updatedCreds = credentials.map(c => {

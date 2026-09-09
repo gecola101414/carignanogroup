@@ -478,7 +478,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
 
   // Global weekly filters (Multi-structure and independent time slot support)
   const [activeStrutturaFilters, setActiveStrutturaFilters] = useState<('v1' | 'v2' | 'v4')[]>([]);
-  const [activeTimeFilter, setActiveTimeFilter] = useState<'alzate' | 'notte' | 'mattino' | 'pomeriggio' | null>(null);
+  const [activeTimeFilter, setActiveTimeFilter] = useState<'alzate' | 'notte' | 'mattino' | 'pomeriggio' | 'riposi' | null>(null);
 
   // Compute displayedStaff (strictly filtered to personal staff member when staff role or filter active, excluding archived)
   const displayedStaff = React.useMemo(() => {
@@ -512,6 +512,8 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
           );
           if (activeTimeFilter === "notte" && isNightShift) {
             matchesStruttura = true;
+          } else if (activeTimeFilter === "riposi") {
+            matchesStruttura = true;
           } else {
             matchesStruttura = targetStructures.includes(s.struttura || "");
           }
@@ -534,14 +536,21 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
             const hour = parseInt(s.orarioInizio?.split(":")[0] || "99");
             matchesTime = hour >= 12 && hour < 22;
           }
+          else if (type === "riposi") {
+            matchesTime = s.tipoTurno === "Riposo";
+            matchesStruttura = true;
+          }
         }
 
         return matchesStruttura && matchesTime;
       }).map(s => s.staffId));
 
-      // Staff that are "free" (have at least one day without any shift in the week)
+      // Staff that are "free" (have at least one day without any shift in the week) or have a riposo when filtering riposi
       const freeStaffIds = new Set(baseList.filter(m => {
         const memberShiftsInWeek = weekShifts.filter(s => s.staffId === m.id);
+        if (activeTimeFilter === "riposi") {
+          return memberShiftsInWeek.some(s => s.tipoTurno === "Riposo");
+        }
         return memberShiftsInWeek.length < weekDates.length;
       }).map(m => m.id));
 
@@ -1227,6 +1236,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       setVacationCalendarMonth(new Date(d.getFullYear(), d.getMonth(), 1));
     }
     setShowAddModal(false);
+    setSelectedShiftForDetail(null);
     setShowVacationModal(true);
   };
 
@@ -1328,6 +1338,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       setSickCalendarMonth(new Date(d.getFullYear(), d.getMonth(), 1));
     }
     setShowAddModal(false);
+    setSelectedShiftForDetail(null);
     setShowSickModal(true);
   };
 
@@ -2076,13 +2087,6 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       return;
     }
 
-    // Check validity of morning shift on Vannucci 4
-    const morningValidity = checkPotentialShiftValidity(staffId, dateStr, "Mattina", "Vannucci 4", morningStart, morningEnd, shiftIdToIgnore);
-    if (!morningValidity.valid) {
-      showToast(`⚠️ Impossibile inserire Mattina V4: ${morningValidity.reason}`);
-      return;
-    }
-
     // Check validity of Servizio shift (ensure not already assigned to another staff member)
     const otherServizio = shifts.find(s => s.data === dateStr && s.tipoTurno === "Servizio" && s.staffId !== staffId);
     if (otherServizio) {
@@ -2098,20 +2102,20 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       tipoTurno: "Mattina",
       orarioInizio: morningStart,
       orarioFine: morningEnd,
-      note: "Mattina V4",
+      note: "Mattina V4 (Combo)",
       struttura: "Vannucci 4"
     };
 
     const existingOwnServizio = shifts.find(s => s.data === dateStr && s.tipoTurno === "Servizio" && s.staffId === staffId);
-    const servizioShift: Shift = existingOwnServizio || {
+    const servizioShift: Shift = existingOwnServizio ? { ...existingOwnServizio, struttura: "Vannucci 4", note: "Servizio V4 (Combo)" } : {
       id: `shift-${Date.now() + 1}-v4srv-${Math.random().toString(36).substr(2, 4)}`,
       staffId: staffId,
       data: dateStr,
       tipoTurno: "Servizio",
       orarioInizio: "17:00",
       orarioFine: "20:00",
-      note: "Servizio Pomeridiano",
-      struttura: ""
+      note: "Servizio V4 (Combo)",
+      struttura: "Vannucci 4"
     };
 
     // Remove any existing shifts for this staffId on dateStr except non-conflicting
@@ -2134,6 +2138,59 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     setNewNote("");
     const staffName = staff.find(st => st.id === staffId)?.nome || "Operatore";
     showToast(`⚡ Caricata Combo V4 per ${staffName}: 🌅 Mattina ${morningStart}-${morningEnd} + 🍽️ Servizio 17:00-20:00!`);
+  };
+
+  // Special Combo for Vannucci 2: Pulizie (07:00-08:00) + Mattina (08:00-15:00)
+  const handleAddComboV2PulizieMattina = (staffId: string, dateStr: string, shiftIdToIgnore?: string) => {
+    if (!staffId || !dateStr) return;
+
+    if (lockedDays.includes(dateStr)) {
+      showToast("🔒 Questo giorno è bloccato! Impossibile modificare.");
+      return;
+    }
+
+    const pulizieShift: Shift = {
+      id: `shift-${Date.now()}-v2pul-${Math.random().toString(36).substr(2, 4)}`,
+      staffId: staffId,
+      data: dateStr,
+      tipoTurno: "Pulizie",
+      orarioInizio: "07:00",
+      orarioFine: "08:00",
+      note: "Pulizie V2 (Combo)",
+      struttura: "Vannucci 2"
+    };
+
+    const morningShift: Shift = {
+      id: shiftIdToIgnore || `shift-${Date.now() + 1}-v2m-${Math.random().toString(36).substr(2, 4)}`,
+      staffId: staffId,
+      data: dateStr,
+      tipoTurno: "Mattina",
+      orarioInizio: "08:00",
+      orarioFine: "15:00",
+      note: "Mattina V2 (Combo)",
+      struttura: "Vannucci 2"
+    };
+
+    // Remove any existing shifts for this staffId on dateStr except non-conflicting
+    const otherStaffShifts = shifts.filter(s => !(s.staffId === staffId && s.data === dateStr));
+    const nonConflictingSameDay = shifts.filter(s => 
+      s.staffId === staffId && 
+      s.data === dateStr && 
+      s.tipoTurno !== "Riposo" && 
+      s.tipoTurno !== "Ferie" && 
+      s.tipoTurno !== "Mattina" && 
+      s.tipoTurno !== "Pulizie" &&
+      s.id !== shiftIdToIgnore
+    );
+
+    const updatedShiftsList = [...otherStaffShifts, ...nonConflictingSameDay, pulizieShift, morningShift];
+
+    applyShiftsUpdate(updatedShiftsList);
+    setShowAddModal(false);
+    if (selectedShiftForDetail) setSelectedShiftForDetail(null);
+    setNewNote("");
+    const staffName = staff.find(st => st.id === staffId)?.nome || "Operatore";
+    showToast(`⚡ Caricata Combo V2 per ${staffName}: 🪣 Pulizie (07:00-08:00) + 🌅 Mattina (08:00-15:00)!`);
   };
 
   const handleAddComboV4Full = (staffId: string, dateStr: string) => {
@@ -2227,17 +2284,17 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
         return [...prev, type];
       }
     });
-    // Clicking V1/V2/V4 clears Alzate (exclusive)
-    if (activeTimeFilter === 'alzate') {
+    // Clicking V1/V2/V4 clears Alzate or Riposi (exclusive)
+    if (activeTimeFilter === 'alzate' || activeTimeFilter === 'riposi') {
       setActiveTimeFilter(null);
     }
   };
 
-  const handleTimeFilterClick = (type: 'alzate' | 'notte' | 'mattino' | 'pomeriggio') => {
+  const handleTimeFilterClick = (type: 'alzate' | 'notte' | 'mattino' | 'pomeriggio' | 'riposi') => {
     if (activeTimeFilter === type) {
       setActiveTimeFilter(null);
     } else {
-      if (type === 'alzate') {
+      if (type === 'alzate' || type === 'riposi') {
         setActiveStrutturaFilters([]);
       }
       // Notte is independent: does NOT clear structure filters
@@ -2726,26 +2783,54 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   const handleSaveShiftEdit = () => {
     if (!selectedShiftForDetail || !onUpdateShifts) return;
 
-    if (lockedDays.includes(selectedShiftForDetail.data) || (editShiftDate && lockedDays.includes(editShiftDate))) {
+    const targetDate = editShiftDate || selectedShiftForDetail.data;
+    const targetStaffId = editShiftStaffId || selectedShiftForDetail.staffId;
+
+    if (lockedDays.includes(selectedShiftForDetail.data) || lockedDays.includes(targetDate)) {
       showToast("🔒 Questo giorno è bloccato! Sbloccalo prima di modificare il turno.");
       return;
     }
 
-    const updatedShifts = shifts.map(s => {
-      if (s.id === selectedShiftForDetail.id) {
-        return {
-          ...s,
-          id: s.id.startsWith("auto-") ? `shift-edited-${Date.now()}-${Math.random().toString(36).substr(2, 4)}` : s.id,
-          staffId: editShiftStaffId || s.staffId,
-          data: editShiftDate || s.data,
-          orarioInizio: editShiftInizio || s.orarioInizio,
-          orarioFine: editShiftFine || s.orarioFine,
-          struttura: editShiftStruttura || s.struttura,
-          note: editShiftNote
-        };
-      }
-      return s;
-    });
+    const isRiposo = selectedShiftForDetail.tipoTurno === "Riposo";
+
+    let updatedShifts: Shift[];
+    if (isRiposo) {
+      // Filter out other shifts of this member on this date and replace with the updated riposo shift
+      const otherShifts = shifts.filter(s => !(s.id !== selectedShiftForDetail.id && s.staffId === targetStaffId && s.data === targetDate));
+      updatedShifts = otherShifts.map(s => {
+        if (s.id === selectedShiftForDetail.id) {
+          return {
+            ...s,
+            id: s.id.startsWith("auto-") ? `shift-edited-${Date.now()}-${Math.random().toString(36).substr(2, 4)}` : s.id,
+            staffId: targetStaffId,
+            data: targetDate,
+            tipoTurno: "Riposo",
+            orarioInizio: "00:00",
+            orarioFine: "00:00",
+            struttura: "",
+            note: editShiftNote || s.note || "Riposo"
+          };
+        }
+        return s;
+      });
+    } else {
+      updatedShifts = shifts.map(s => {
+        if (s.id === selectedShiftForDetail.id) {
+          return {
+            ...s,
+            id: s.id.startsWith("auto-") ? `shift-edited-${Date.now()}-${Math.random().toString(36).substr(2, 4)}` : s.id,
+            staffId: targetStaffId,
+            data: targetDate,
+            tipoTurno: selectedShiftForDetail.tipoTurno,
+            orarioInizio: editShiftInizio || s.orarioInizio,
+            orarioFine: editShiftFine || s.orarioFine,
+            struttura: ["Notte", "Riposo", "Ferie", "Cucina", "Pulizie", "Servizio"].includes(selectedShiftForDetail.tipoTurno) ? "" : (editShiftStruttura || s.struttura),
+            note: editShiftNote
+          };
+        }
+        return s;
+      });
+    }
 
     applyShiftsUpdate(updatedShifts);
     setSelectedShiftForDetail(null);
@@ -3179,9 +3264,12 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     struttura: string,
     inizio: string,
     fine: string,
-    shiftIdToIgnore?: string
+    shiftIdToIgnore?: string,
+    note?: string
   ): { valid: boolean; reason?: string } => {
     if (tipoTurno === "Riposo" || tipoTurno === "Ferie") return { valid: true };
+    // Tutti i turni combo sono sempre autorizzati e rispettano le regole a prescindere
+    if (note && note.toLowerCase().includes("combo")) return { valid: true };
 
     // 0. New rule: Only one global night shift starting at 23:00, Cucina, or Pulizie per day
     if (tipoTurno === "Notte" && inizio === "23:00") {
@@ -3198,16 +3286,21 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
         };
       }
     } else if (["Cucina", "Pulizie", "Servizio"].includes(tipoTurno)) {
-      const globalShiftExists = shifts.some(s => 
-        s.data === dateStr && 
-        s.tipoTurno === tipoTurno && 
-        s.id !== shiftIdToIgnore
-      );
-      if (globalShiftExists) {
-        return { 
-          valid: false, 
-          reason: `Il turno ${tipoTurno} è già presente in organico per questo giorno (assegnato ad un altro operatore).` 
-        };
+      // Pulizie 07:00-08:00 (V2 combo orario blando) non va in conflitto con le pulizie generali
+      const isV2PulizieBlando = tipoTurno === "Pulizie" && inizio === "07:00" && fine === "08:00";
+      if (!isV2PulizieBlando) {
+        const globalShiftExists = shifts.some(s => 
+          s.data === dateStr && 
+          s.tipoTurno === tipoTurno && 
+          s.id !== shiftIdToIgnore &&
+          !(s.tipoTurno === "Pulizie" && s.orarioInizio === "07:00" && s.orarioFine === "08:00")
+        );
+        if (globalShiftExists) {
+          return { 
+            valid: false, 
+            reason: `Il turno ${tipoTurno} è già presente in organico per questo giorno (assegnato ad un altro operatore).` 
+          };
+        }
       }
     }
 
@@ -3334,8 +3427,12 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     // Exemption: continuous night shift (e.g. 23:00-24:00 on prev day and 00:00-07:00 today)
     const isNightContinuation = (tipoTurno === "Notte" && inizio === "00:00" && prevShifts.some(s => s.tipoTurno === "Notte" && (s.orarioFine === "24:00" || s.orarioFine === "00:00" || s.orarioInizio === "23:00")));
 
-    if (!isNightContinuation && lastEndTimeMin > 0 && (nextStartAbsoluteMin - lastEndTimeMin) < 11 * 60) {
-      return { valid: false, reason: "Non rispetta le 11 ore di riposo dal turno precedente" };
+    // Orario blando: se turno 07:00 - 08:00 (es. Pulizie V2), bastano 10 ore di riposo dal giorno prima
+    const isOrarioBlando = (inizio === "07:00" && fine === "08:00") || (tipoTurno === "Pulizie" && inizio === "07:00" && fine === "08:00");
+    const requiredRestPrev = isOrarioBlando ? 10 * 60 : 11 * 60;
+
+    if (!isNightContinuation && lastEndTimeMin > 0 && (nextStartAbsoluteMin - lastEndTimeMin) < requiredRestPrev) {
+      return { valid: false, reason: isOrarioBlando ? "Non rispetta le 10 ore di riposo dal turno precedente (orario blando 07:00-08:00)" : "Non rispetta le 11 ore di riposo dal turno precedente" };
     }
     
     // 3. Check rule with SAME day's shifts (allow 00:00-07:00 + 23:00-24:00 with 16h rest, 07:00-11:00 + 23:00-07:00 multi-shift with 12h rest, etc.)
@@ -3366,7 +3463,9 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
         const firstEnd = Math.min(sEndMin, newEndMin);
         const secondStart = Math.max(sStartMin, newStartMin);
         const gap = secondStart - firstEnd;
-        if (gap < 11 * 60 && tipoTurno !== "Servizio" && s.tipoTurno !== "Servizio" && struttura !== "Vannucci 4" && s.struttura !== "Vannucci 4") {
+        // Combos (e.g. 07-08 + 08-15, or 08-15 + 17-20 V4/Servizio) are authorized
+        const isComboShift = (isOrarioBlando || (inizio === "08:00" && sEndMin === 8 * 60) || (newEndMin === 8 * 60 && sStartMin === 8 * 60) || tipoTurno === "Servizio" || s.tipoTurno === "Servizio" || struttura === "Vannucci 4" || s.struttura === "Vannucci 4");
+        if (gap < 11 * 60 && !isComboShift) {
           insufficientSameDayRest = true;
         }
       }
@@ -3399,23 +3498,32 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     });
 
     let earliestNextStartMin = 48 * 60; 
+    let nextHasOrarioBlando = false;
     relevantNextShifts.forEach(s => {
       const nStartParts = s.orarioInizio.split(":");
       if (nStartParts.length === 2) {
         let mins = parseInt(nStartParts[0], 10) * 60 + parseInt(nStartParts[1] || "0", 10) + 24 * 60;
-        if (mins < earliestNextStartMin) earliestNextStartMin = mins;
+        if (mins < earliestNextStartMin) {
+          earliestNextStartMin = mins;
+          nextHasOrarioBlando = (s.orarioInizio === "07:00" && s.orarioFine === "08:00") || (s.tipoTurno === "Pulizie" && s.orarioInizio === "07:00" && s.orarioFine === "08:00");
+        }
       }
     });
 
-    if (earliestNextStartMin < 48 * 60 && (earliestNextStartMin - myEndMin) < 11 * 60) {
-      return { valid: false, reason: "Non rispetta le 11 ore di riposo prima del turno del giorno successivo" };
+    const requiredRestNext = nextHasOrarioBlando ? 10 * 60 : 11 * 60;
+    if (earliestNextStartMin < 48 * 60 && (earliestNextStartMin - myEndMin) < requiredRestNext) {
+      return { valid: false, reason: nextHasOrarioBlando ? "Non rispetta le 10 ore di riposo prima del turno successivo (orario blando)" : "Non rispetta le 11 ore di riposo prima del turno del giorno successivo" };
     }
     
     return { valid: true };
   };
 
   const checkShiftValidity = (shift: Shift) => {
-    return checkPotentialShiftValidity(shift.staffId, shift.data, shift.tipoTurno, shift.struttura, shift.orarioInizio, shift.orarioFine, shift.id);
+    // Tutti i tasti e turni combo sono sempre autorizzati e rispettano le regole a prescindere
+    if (shift.note && shift.note.toLowerCase().includes("combo")) {
+      return { valid: true };
+    }
+    return checkPotentialShiftValidity(shift.staffId, shift.data, shift.tipoTurno, shift.struttura, shift.orarioInizio, shift.orarioFine, shift.id, shift.note);
   };
 
   const isStrutturaSatura = (struttura: string, data: string, shiftIdToIgnore?: string) => {
@@ -3675,8 +3783,12 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       return "bg-sky-100 text-sky-950 border-sky-300 hover:bg-sky-200 font-extrabold shadow-2xs ring-1 ring-sky-400/50";
     }
 
-    // 1.6 TURNO DI SERVIZIO: Indaco / Viola
+    // 1.6 TURNO DI SERVIZIO: Verde lime se Vannucci 4 o se orario 17:00-20:00 (parte bassa combo V4), altrimenti Indaco/Viola
     if (tipo === "Servizio") {
+      const normStr = (struttura || "").toLowerCase();
+      if (normStr.includes("4") || (start === "17:00" && end === "20:00")) {
+        return "bg-lime-300 text-lime-950 border-lime-400 hover:bg-lime-400 font-bold shadow-2xs ring-1 ring-lime-400/50";
+      }
       return "bg-violet-600 text-white border-violet-700 hover:bg-violet-700 font-black shadow-xs ring-1 ring-violet-600/80";
     }
 
@@ -3838,8 +3950,9 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
           .shift-box-pulizie { background: #f0fdfa; border-color: #99f6e4; color: #115e59; }
           .shift-box-cucina { background: #e0f2fe; border-color: #7dd3fc; color: #0369a1; }
           .shift-box-servizio { background: #ede9fe; border-color: #c4b5fd; color: #6d28d9; }
+          .shift-box-servizio-v4 { background: #ecfccb; border-color: #a3e635; color: #365314; font-weight: 700; }
           .shift-box-ferie { background: #64748b; border-color: #475569; color: #ffffff; font-weight: 800; }
-          .shift-box-riposo { display: none; }
+          .shift-box-riposo { background: #f8fafc; border-color: #cbd5e1; color: #475569; font-weight: 700; }
           
           .shift-top { display: flex; justify-content: space-between; align-items: center; font-weight: 800; }
           .shift-hours { font-family: monospace; font-size: 8px; font-weight: 700; opacity: 0.9; }
@@ -3920,7 +4033,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
                   ${weekDays.map((d, idx) => {
                     const dateStr = formatDateYMD(d);
                     const memberShifts = shifts.filter(s => s.staffId === member.id && s.data === dateStr);
-                    const activeShifts = memberShifts.filter(s => s.tipoTurno !== "Riposo");
+                    const activeShifts = memberShifts;
                     if (activeShifts.length === 0) {
                       return `<td class="${idx === 0 ? 'ref-day' : ''}"></td>`;
                     }
@@ -3933,16 +4046,24 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
                           else if (s.tipoTurno === "Notte") { boxClass = "shift-box-notte"; icon = "🌙"; }
                           else if (s.tipoTurno === "Pulizie") { boxClass = "shift-box-pulizie"; icon = "🪣🧹"; }
                           else if (s.tipoTurno === "Cucina") { boxClass = "shift-box-cucina"; icon = "🍲"; }
-                          else if (s.tipoTurno === "Servizio") { boxClass = "shift-box-servizio"; icon = "🍽️"; }
+                          else if (s.tipoTurno === "Servizio") {
+                            const isV4Servizio = (s.struttura || "").toLowerCase().includes("4") || (s.orarioInizio === "17:00" && s.orarioFine === "20:00");
+                            boxClass = isV4Servizio ? "shift-box-servizio-v4" : "shift-box-servizio";
+                            icon = "🍽️";
+                          }
                           else if (s.tipoTurno === "Ferie") { boxClass = "shift-box-ferie"; icon = "⛱️🍹"; }
+                          else if (s.tipoTurno === "Riposo") { boxClass = "shift-box-riposo"; icon = "🛋️"; }
 
                           const structClass = s.struttura === "Vannucci 1" ? "struct-v1" : s.struttura === "Vannucci 2" ? "struct-v2" : "struct-v4";
+                          const labelText = activeShifts.length > 1 && (s.tipoTurno === "Mattina" || s.tipoTurno === "Pomeriggio")
+                            ? (s.tipoTurno === "Mattina" ? "M" : "P")
+                            : s.tipoTurno;
 
                           return `
                             <div class="shift-box ${boxClass}">
                               <div class="shift-top">
-                                <span>${icon} ${s.tipoTurno}</span>
-                                ${s.tipoTurno !== "Ferie" ? `<span class="shift-hours">${s.orarioInizio}-${s.orarioFine}</span>` : ''}
+                                <span>${icon} ${labelText}</span>
+                                ${s.tipoTurno !== "Ferie" && s.tipoTurno !== "Riposo" ? `<span class="shift-hours">${s.orarioInizio}-${s.orarioFine}</span>` : ''}
                               </div>
                               ${s.struttura && !["Notte", "Riposo", "Ferie", "Cucina", "Pulizie", "Servizio"].includes(s.tipoTurno) ? `
                                 <div class="struct-tag ${structClass}">Vannucci ${s.struttura.replace(/\D/g, '')}</div>
@@ -4003,6 +4124,8 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
           .tag-pulizie { background: #ccfbf1; color: #0f766e; }
           .tag-cucina { background: #e0f2fe; color: #0369a1; }
           .tag-servizio { background: #ede9fe; color: #6d28d9; }
+          .tag-servizio-v4 { background: #ecfccb; color: #365314; font-weight: 700; }
+          .tag-riposo { background: #f8fafc; color: #475569; border: 1px solid #cbd5e1; font-weight: bold; }
           .footer { margin-top: 10px; text-align: right; font-size: 8px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 3px; }
         </style>
       </head>
@@ -4032,7 +4155,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
                 ${daysArray.map(d => {
                   const dateStr = formatDateYMD(d);
                   const memberShifts = shifts.filter(s => s.staffId === member.id && s.data === dateStr);
-                  const activeShifts = memberShifts.filter(s => s.tipoTurno !== "Riposo");
+                  const activeShifts = memberShifts;
                   if (activeShifts.length === 0) {
                     return `<td></td>`;
                   }
@@ -4047,7 +4170,12 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
                         else if (s.tipoTurno === "Ferie") { tagClass = "tag-ferie"; label = "FER"; }
                         else if (s.tipoTurno === "Pulizie") { tagClass = "tag-pulizie"; label = "PUL"; }
                         else if (s.tipoTurno === "Cucina") { tagClass = "tag-cucina"; label = "CUC"; }
-                        else if (s.tipoTurno === "Servizio") { tagClass = "tag-servizio"; label = "SRV"; }
+                        else if (s.tipoTurno === "Servizio") {
+                          const isV4Servizio = (s.struttura || "").toLowerCase().includes("4") || (s.orarioInizio === "17:00" && s.orarioFine === "20:00");
+                          tagClass = isV4Servizio ? "tag-servizio-v4" : "tag-servizio";
+                          label = "SRV";
+                        }
+                        else if (s.tipoTurno === "Riposo") { tagClass = "tag-riposo"; label = "RIP"; }
                         return `
                           <div class="shift-tag ${tagClass}">
                             ${label}
@@ -4823,13 +4951,14 @@ function importaTurniResidenzaVannucci() {
                     </button>
                   </div>
 
-                  {/* Range Filters (Mattina, Pomeriggio) - SECONDARY Group */}
-                  <div className="flex items-center gap-3 pl-2">
-                    {(["mattino", "pomeriggio"] as const).map((type) => {
+                  {/* Range Filters (Mattina, Pomeriggio, Riposi) - SECONDARY Group */}
+                  <div className="flex items-center gap-2 pl-2">
+                    {(["mattino", "pomeriggio", "riposi"] as const).map((type) => {
                       const isActive = activeTimeFilter === type;
                       const config = {
                         mattino: { label: "☀️ Mattina", activeClass: "bg-sky-500 ring-sky-300", title: "Filtra per turni di Mattina" },
-                        pomeriggio: { label: "🌤️ Pom.", activeClass: "bg-emerald-600 ring-emerald-300", title: "Filtra per turni di Pomeriggio" }
+                        pomeriggio: { label: "🌤️ Pom.", activeClass: "bg-emerald-600 ring-emerald-300", title: "Filtra per turni di Pomeriggio" },
+                        riposi: { label: "🛋️ Riposi", activeClass: "bg-rose-600 ring-rose-300", title: "Filtra per turni di Riposo" }
                       };
                       const { label, activeClass, title } = config[type];
                       
@@ -5226,7 +5355,7 @@ function importaTurniResidenzaVannucci() {
                           const targetStructures = activeStrutturaFilters.map(f => 
                             f === "v1" ? "Vannucci 1" : f === "v2" ? "Vannucci 2" : "Vannucci 4"
                           );
-                          if (activeTimeFilter === "notte" && isNightShift) {
+                          if ((activeTimeFilter === "notte" && isNightShift) || (activeTimeFilter === "riposi" && s.tipoTurno === "Riposo")) {
                             matchesStruttura = true;
                           } else {
                             matchesStruttura = targetStructures.includes(s.struttura || "");
@@ -5249,6 +5378,10 @@ function importaTurniResidenzaVannucci() {
                           else if (type === "pomeriggio") {
                             const hour = parseInt(s.orarioInizio?.split(":")[0] || "99");
                             matchesTime = hour >= 12 && hour < 22;
+                          }
+                          else if (type === "riposi") {
+                            matchesTime = s.tipoTurno === "Riposo";
+                            matchesStruttura = true;
                           }
                         }
 
@@ -5462,7 +5595,7 @@ function importaTurniResidenzaVannucci() {
                                             <span className="text-xs leading-none">🌙</span>
                                           )}
                                           <span className="uppercase font-black truncate text-[9.5px] leading-tight shrink-0">
-                                            {isMorningNight ? "Notte" : shiftItem.tipoTurno}
+                                            {isMorningNight ? "Notte" : shiftItem.tipoTurno === "Mattina" ? "M" : shiftItem.tipoTurno === "Pomeriggio" ? "P" : shiftItem.tipoTurno}
                                           </span>
                                           {isMorningNight && (
                                             <span className="text-[7.5px] font-black bg-indigo-200/90 text-indigo-950 px-1 py-0.2 rounded-xs uppercase tracking-tight shrink-0 border border-indigo-300">
@@ -5692,8 +5825,10 @@ function importaTurniResidenzaVannucci() {
                                       title={isInvalid ? `⚠️ ERRORE: ${validity.reason}` : `${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine})`}
                                     >
                                       <div className="flex items-center gap-1 flex-nowrap truncate min-w-0">
-                                        {s.tipoTurno === "Pulizie" ? <span>🪣</span> : s.tipoTurno === "Notte" ? <span>🌙</span> : s.tipoTurno === "Cucina" ? <span>🍲</span> : s.tipoTurno === "Ferie" ? <span>⛱️🍹</span> : null}
-                                        <span className="uppercase font-black truncate text-[9px] leading-tight shrink-0">{s.tipoTurno}</span>
+                                        {s.tipoTurno === "Mattina" ? <span>🌅</span> : s.tipoTurno === "Pomeriggio" ? <span>🌆</span> : s.tipoTurno === "Pulizie" ? <span>🪣</span> : s.tipoTurno === "Notte" ? <span>🌙</span> : s.tipoTurno === "Cucina" ? <span>🍲</span> : s.tipoTurno === "Servizio" ? <span>🍽️</span> : s.tipoTurno === "Ferie" ? <span>⛱️🍹</span> : null}
+                                        <span className="uppercase font-black truncate text-[9px] leading-tight shrink-0">
+                                          {s.tipoTurno === "Mattina" ? "M" : s.tipoTurno === "Pomeriggio" ? "P" : s.tipoTurno}
+                                        </span>
                                         {s.struttura && !["Notte", "Riposo", "Ferie", "Cucina", "Pulizie", "Servizio"].includes(s.tipoTurno) && (
                                           <span className="text-[7.5px] bg-white/95 px-1 rounded font-black text-slate-800 border border-slate-200">
                                             V{s.struttura.replace(/\D/g, '')}
@@ -6753,6 +6888,28 @@ function importaTurniResidenzaVannucci() {
                           );
                         })}
 
+                        {/* VANNUCCI 2 COMBO PULIZIE + MATTINA: 07:00-08:00 + 08:00-15:00 */}
+                        {newStruttura.toLowerCase().includes("2") && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleAddComboV2PulizieMattina(newStaffId, newDate);
+                            }}
+                            className="col-span-2 p-3 rounded-xl border-2 font-bold transition-all text-xs flex flex-col justify-center shadow-xs cursor-pointer border-yellow-500/80 bg-gradient-to-r from-yellow-400/20 via-teal-500/20 to-sky-500/20 hover:from-yellow-400/30 hover:to-sky-500/30 text-slate-900"
+                            title="Assegna Combo V2: Pulizie (07:00-08:00) + Mattina V2 (08:00-15:00)"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-black text-xs text-yellow-950 flex items-center gap-1">
+                                <span>⚡ Combo V2: 07:00 - 08:00 Pulizie + 08:00 - 15:00 Mattina</span>
+                              </span>
+                              <span className="text-[9px] font-extrabold text-teal-800 bg-teal-100 px-1.5 py-0.2 rounded">8h tot (1h + 7h)</span>
+                            </div>
+                            <span className="text-[10px] text-slate-700 font-semibold mt-0.5">
+                              🪣 Pulizie (07:00-08:00) + 🌅 Mattina V2 (08:00-15:00) — Orario blando (10h riposo autorizzate)
+                            </span>
+                          </button>
+                        )}
+
                         {/* Turno Notturno, Cucina, Pulizie - Omitted for Vannucci 1 */}
                         {!newStruttura.toLowerCase().includes("1") && (
                           <>
@@ -6823,49 +6980,61 @@ function importaTurniResidenzaVannucci() {
                     {/* Riposo */}
                     <button
                       type="button"
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setNewTipoTurno("Riposo");
                         setNewOrarioInizio("00:00");
                         setNewOrarioFine("00:00");
                       }}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        handleFastSubmit({ tipoTurno: "Riposo", orarioInizio: "00:00", orarioFine: "00:00" });
+                      }}
                       className={`p-3 rounded-xl text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
                         newTipoTurno === "Riposo" ? "bg-slate-100 !border-double !border-[3px] !border-red-500 text-slate-800 ring-4 ring-red-400/20" : "bg-slate-50 border border-slate-200 hover:bg-slate-100"
                       }`}
+                      title="Singolo click per selezionare, doppio click per inserire subito il Riposo e chiudere"
                     >
-                      <span className="font-extrabold text-[12px]">🛋️ Riposo</span>
-                      <span className="text-[10px] opacity-75 font-normal">Giorno libero</span>
+                      <div className="flex items-center justify-between">
+                        <span className="font-extrabold text-[12px]">🛋️ Riposo</span>
+                        <span className="text-[9px] font-black text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">2x click salva</span>
+                      </div>
+                      <span className="text-[10px] opacity-75 font-normal">Giorno libero (Doppio click per inserire subito)</span>
                     </button>
 
                     {/* Ferie */}
                     <button
                       type="button"
-                      onClick={() => {
-                        setNewTipoTurno("Ferie");
-                        setNewOrarioInizio("00:00");
-                        setNewOrarioFine("00:00");
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenVacationModal(newStaffId, newDate);
                       }}
-                      className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
-                        newTipoTurno === "Ferie" ? "bg-slate-500 border-slate-600 text-white ring-4 ring-slate-500/30 font-black shadow-xs" : "bg-slate-100 border-slate-200 hover:bg-slate-200 text-slate-700"
-                      }`}
+                      className="p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer bg-amber-50/80 border-amber-300 hover:bg-amber-100 text-amber-950 shadow-3xs"
+                      title="Apri gestione ferie con calendario interattivo (dal - al)"
                     >
-                      <span className="font-extrabold text-[12px]">🏖️ Ferie 🍹</span>
-                      <span className="text-[10px] opacity-75 font-normal">Ferie pianificate</span>
+                      <div className="flex items-center justify-between">
+                        <span className="font-extrabold text-[12px]">🏖️ Ferie 🍹</span>
+                        <span className="text-[9px] font-black text-amber-900 bg-amber-200/80 px-1.5 py-0.5 rounded border border-amber-300">Calendario</span>
+                      </div>
+                      <span className="text-[10px] opacity-85 font-normal">Apri gestione con calendario (dal - al)</span>
                     </button>
 
                     {/* Malattia */}
                     <button
                       type="button"
-                      onClick={() => {
-                        setNewTipoTurno("Malattia");
-                        setNewOrarioInizio("00:00");
-                        setNewOrarioFine("00:00");
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenSickModal(newStaffId, newDate);
                       }}
-                      className={`col-span-2 p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
-                        newTipoTurno === "Malattia" ? "bg-rose-700 border-rose-800 text-white ring-4 ring-rose-700/30 font-black shadow-xs" : "bg-rose-50 border-rose-200 hover:bg-rose-100 text-rose-900"
-                      }`}
+                      className="col-span-2 p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer bg-rose-50 border-rose-200 hover:bg-rose-100 text-rose-900 shadow-3xs"
+                      title="Apri gestione malattia / riposo medico con calendario interattivo (dal - al)"
                     >
-                      <span className="font-extrabold text-[12px] flex items-center gap-1">🤒 Malattia / Riposo Medico</span>
-                      <span className="text-[10px] opacity-75 font-normal">Assenza per motivi di salute o certificato medico</span>
+                      <div className="flex items-center justify-between">
+                        <span className="font-extrabold text-[12px] flex items-center gap-1">🤒 Malattia / Riposo Medico</span>
+                        <span className="text-[9px] font-black text-rose-900 bg-rose-200/80 px-1.5 py-0.5 rounded border border-rose-300">Calendario</span>
+                      </div>
+                      <span className="text-[10px] opacity-85 font-normal">Apri gestione assenze con calendario (dal - al)</span>
                     </button>
                   </div>
                 </div>
@@ -7553,6 +7722,28 @@ function importaTurniResidenzaVannucci() {
                                 );
                               })}
 
+                              {/* VANNUCCI 2 COMBO PULIZIE + MATTINA: 07:00-08:00 + 08:00-15:00 */}
+                              {editShiftStruttura.toLowerCase().includes("2") && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    handleAddComboV2PulizieMattina(selectedShiftForDetail?.staffId || "", editShiftDate, selectedShiftForDetail?.id);
+                                  }}
+                                  className="col-span-2 p-2.5 rounded-xl border-2 font-bold transition-all text-xs flex flex-col justify-center shadow-xs cursor-pointer border-yellow-500/80 bg-gradient-to-r from-yellow-400/20 via-teal-500/20 to-sky-500/20 hover:from-yellow-400/30 hover:to-sky-500/30 text-slate-900"
+                                  title="Assegna Combo V2: Pulizie (07:00-08:00) + Mattina V2 (08:00-15:00)"
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-black text-xs text-yellow-950 flex items-center gap-1">
+                                      <span>⚡ Combo V2: 07:00 - 08:00 Pulizie + 08:00 - 15:00 Mattina</span>
+                                    </span>
+                                    <span className="text-[9px] font-extrabold text-teal-800 bg-teal-100 px-1.5 py-0.2 rounded">8h tot (1h + 7h)</span>
+                                  </div>
+                                  <span className="text-[10px] text-slate-700 font-semibold mt-0.5">
+                                    🪣 Pulizie (07:00-08:00) + 🌅 Mattina V2 (08:00-15:00) — Orario blando (10h riposo autorizzate)
+                                  </span>
+                                </button>
+                              )}
+
                               {/* Turno Notturno Generale */}
                               <button
                                 type="button"
@@ -7642,49 +7833,88 @@ function importaTurniResidenzaVannucci() {
                           {/* Riposo */}
                           <button
                             type="button"
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation();
                               setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Riposo" } : prev);
                               setEditShiftInizio("00:00");
                               setEditShiftFine("00:00");
                             }}
+                            onDoubleClick={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              if (!selectedShiftForDetail) return;
+                              const targetDate = editShiftDate || selectedShiftForDetail.data;
+                              const targetStaffId = editShiftStaffId || selectedShiftForDetail.staffId;
+                              if (lockedDays.includes(selectedShiftForDetail.data) || lockedDays.includes(targetDate)) {
+                                showToast("🔒 Questo giorno è bloccato!");
+                                return;
+                              }
+                              const otherShifts = shifts.filter(s => !(s.id !== selectedShiftForDetail.id && s.staffId === targetStaffId && s.data === targetDate));
+                              const updatedShifts = otherShifts.map(s => {
+                                if (s.id === selectedShiftForDetail.id) {
+                                  return {
+                                    ...s,
+                                    id: s.id.startsWith("auto-") ? `shift-edited-${Date.now()}-${Math.random().toString(36).substr(2, 4)}` : s.id,
+                                    staffId: targetStaffId,
+                                    data: targetDate,
+                                    tipoTurno: "Riposo",
+                                    orarioInizio: "00:00",
+                                    orarioFine: "00:00",
+                                    struttura: "",
+                                    note: editShiftNote || s.note || "Riposo"
+                                  };
+                                }
+                                return s;
+                              });
+                              applyShiftsUpdate(updatedShifts);
+                              setSelectedShiftForDetail(null);
+                              setEditShiftNote("");
+                              showToast("🛋️ Turno aggiornato a Riposo!");
+                            }}
                             className={`p-2.5 rounded-xl text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
                               selectedShiftForDetail?.tipoTurno === "Riposo" ? "bg-slate-100 !border-double !border-[3px] !border-red-500 text-slate-800 ring-4 ring-red-400/20" : "bg-slate-50 border border-slate-200 hover:bg-slate-100"
                             }`}
+                            title="Singolo click per selezionare, doppio click per salvare subito Riposo e chiudere"
                           >
-                            <span className="font-extrabold text-[12px]">🛋️ Riposo</span>
-                            <span className="text-[9px] opacity-75 font-normal">Giorno libero</span>
+                            <div className="flex items-center justify-between">
+                              <span className="font-extrabold text-[12px]">🛋️ Riposo</span>
+                              <span className="text-[9px] font-black text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">2x click salva</span>
+                            </div>
+                            <span className="text-[9px] opacity-75 font-normal">Giorno libero (Doppio click per confermare subito)</span>
                           </button>
 
                           {/* Ferie */}
                           <button
                             type="button"
-                            onClick={() => {
-                              setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Ferie" } : prev);
-                              setEditShiftInizio("00:00");
-                              setEditShiftFine("00:00");
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenVacationModal(selectedShiftForDetail?.staffId, editShiftDate || selectedShiftForDetail?.data);
                             }}
-                            className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
-                              selectedShiftForDetail?.tipoTurno === "Ferie" ? "bg-slate-500 border-slate-600 text-white ring-4 ring-slate-500/30 font-black shadow-xs" : "bg-slate-100 border-slate-200 hover:bg-slate-200 text-slate-700"
-                            }`}
+                            className="p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer bg-amber-50/80 border-amber-300 hover:bg-amber-100 text-amber-950 shadow-3xs"
+                            title="Apri gestione ferie con calendario interattivo (dal - al)"
                           >
-                            <span className="font-extrabold text-[12px] flex items-center gap-1">🏖️ Ferie 🍹</span>
-                            <span className="text-[9px] opacity-75 font-normal">Pianificate / Desiderate</span>
+                            <div className="flex items-center justify-between">
+                              <span className="font-extrabold text-[12px] flex items-center gap-1">🏖️ Ferie 🍹</span>
+                              <span className="text-[9px] font-black text-amber-900 bg-amber-200/80 px-1.5 py-0.5 rounded border border-amber-300">Calendario</span>
+                            </div>
+                            <span className="text-[9px] opacity-75 font-normal">Apri gestione con calendario (dal - al)</span>
                           </button>
 
                           {/* Malattia */}
                           <button
                             type="button"
-                            onClick={() => {
-                              setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Malattia" } : prev);
-                              setEditShiftInizio("00:00");
-                              setEditShiftFine("00:00");
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenSickModal(selectedShiftForDetail?.staffId, editShiftDate || selectedShiftForDetail?.data);
                             }}
-                            className={`col-span-2 p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
-                              selectedShiftForDetail?.tipoTurno === "Malattia" ? "bg-rose-700 border-rose-800 text-white ring-4 ring-rose-700/30 font-black shadow-xs" : "bg-rose-50 border-rose-200 hover:bg-rose-100 text-rose-900"
-                            }`}
+                            className="col-span-2 p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer bg-rose-50 border-rose-200 hover:bg-rose-100 text-rose-900 shadow-3xs"
+                            title="Apri gestione malattia / riposo medico con calendario interattivo (dal - al)"
                           >
-                            <span className="font-extrabold text-[12px] flex items-center gap-1">🤒 Malattia / Riposo Medico</span>
-                            <span className="text-[9px] opacity-75 font-normal">Assenza per motivi di salute o certificato</span>
+                            <div className="flex items-center justify-between">
+                              <span className="font-extrabold text-[12px] flex items-center gap-1">🤒 Malattia / Riposo Medico</span>
+                              <span className="text-[9px] font-black text-rose-900 bg-rose-200/80 px-1.5 py-0.5 rounded border border-rose-300">Calendario</span>
+                            </div>
+                            <span className="text-[9px] opacity-75 font-normal">Apri gestione assenze con calendario (dal - al)</span>
                           </button>
                         </div>
                       </div>

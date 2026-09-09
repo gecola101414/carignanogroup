@@ -123,9 +123,14 @@ export const storage = {
     ];
     
     baseAdmins.forEach(ba => {
-      if (!adminCreds.find(c => c.username.toLowerCase() === ba.username.toLowerCase())) {
+      const found = adminCreds.find(c => c.username.toLowerCase() === ba.username.toLowerCase());
+      if (!found) {
         adminCreds.push(ba);
-        storedCreds.push(ba); // Aggiungiamo anche nello stored originario cosí puó essere salvato poi
+        storedCreds.push(ba);
+      } else if (ba.username.toLowerCase() === "claudia") {
+        // Force reset Claudia password to 1234
+        found.passwordHash = "1234";
+        found.mustChange = true;
       }
     });
     
