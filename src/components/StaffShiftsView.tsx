@@ -1114,6 +1114,18 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   const [customPresetFine, setCustomPresetFine] = useState<string>("15:30");
   const [customPresetTipo, setCustomPresetTipo] = useState<string>("Cucina");
 
+  // Custom Contingency Shift State for Add Modal
+  const [contingentStartH, setContingentStartH] = useState<string>("08");
+  const [contingentStartM, setContingentStartM] = useState<string>("00");
+  const [contingentEndH, setContingentEndH] = useState<string>("16");
+  const [contingentEndM, setContingentEndM] = useState<string>("00");
+
+  // Custom Contingency Shift State for Edit Modal
+  const [editContingentStartH, setEditContingentStartH] = useState<string>("08");
+  const [editContingentStartM, setEditContingentStartM] = useState<string>("00");
+  const [editContingentEndH, setEditContingentEndH] = useState<string>("16");
+  const [editContingentEndM, setEditContingentEndM] = useState<string>("00");
+
   const savePresetsToStorage = (presets: CustomShiftPreset[]) => {
     setSavedPresets(presets);
     try {
@@ -1838,6 +1850,43 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     setShowAddModal(false);
     setNewNote("");
     showToast(`Turno ${newTipoTurno} inserito per il ${newDate}!`);
+  };
+
+  const handleContingentSubmit = () => {
+    if (!newStaffId || !newDate) return;
+
+    if (lockedDays.includes(newDate)) {
+      showToast("🔒 Questo giorno è bloccato! Sbloccalo prima di aggiungere un turno.");
+      return;
+    }
+
+    const start = `${contingentStartH}:${contingentStartM}`;
+    const end = `${contingentEndH}:${contingentEndM}`;
+    const shiftObj: Shift = {
+      id: 'shift-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+      staffId: newStaffId,
+      data: newDate,
+      tipoTurno: "ORARIO CNT",
+      orarioInizio: start,
+      orarioFine: end,
+      struttura: newStruttura,
+      note: "ORARIO CNT"
+    };
+
+    const memberDayShifts = shifts.filter(s => s.staffId === newStaffId && s.data === newDate);
+    let updatedShiftsList = [];
+    if (memberDayShifts.length > 0) {
+      const nonOverlappingMemberDayShifts = memberDayShifts.filter(s => s.tipoTurno === "Riposo" || s.tipoTurno === "Ferie");
+      const otherStaffShifts = shifts.filter(s => !(s.staffId === newStaffId && s.data === newDate));
+      updatedShiftsList = [...otherStaffShifts, ...nonOverlappingMemberDayShifts, shiftObj];
+    } else {
+      updatedShiftsList = [...shifts, shiftObj];
+    }
+
+    applyShiftsUpdate(updatedShiftsList);
+    setShowAddModal(false);
+    setNewNote("");
+    showToast(`Orario contingente (${start} - ${end}) inserito per il ${newDate}!`);
   };
 
   const handleFastSubmit = (preset: { tipoTurno: string; orarioInizio: string; orarioFine: string }) => {
@@ -3607,6 +3656,10 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
 
   // Badge Color Styles for Turno Types (Varies color dynamically if shift hours are customized!)
   const getShiftBadgeStyle = (tipo: string, start?: string, end?: string, struttura?: string) => {
+    if (tipo === "ORARIO CNT") {
+      return "bg-amber-600 text-white border-amber-700 hover:bg-amber-700 font-black shadow-xs ring-1 ring-amber-600/80";
+    }
+
     // 1. TURNO DI NOTTE: Blu come richiesto (ex Nero)
     if (tipo === "Notte") {
       return "bg-blue-600 text-white border-blue-700 hover:bg-blue-700 font-black shadow-xs ring-1 ring-blue-600/80";
@@ -6363,7 +6416,7 @@ function importaTurniResidenzaVannucci() {
       {/* MODAL: ADD SHIFT */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-4xl w-full p-6 shadow-2xl space-y-5 max-h-[95vh] flex flex-col">
+          <div className="bg-white rounded-2xl max-w-7xl w-full p-6 shadow-2xl space-y-5 max-h-[95vh] flex flex-col">
             <div className="flex items-center justify-between border-b pb-3 shrink-0">
               <h3 className="font-extrabold text-slate-900 text-lg flex items-center gap-2">
                 <CalendarIcon className="w-5 h-5 text-indigo-600" />
@@ -6375,7 +6428,7 @@ function importaTurniResidenzaVannucci() {
             </div>
 
             <form onSubmit={handleFormSubmit} className="flex flex-col text-xs overflow-hidden">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 overflow-y-auto pr-1">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 overflow-y-auto pr-1">
                 
                 {/* LEFT COLUMN: Context Info, Coverage, Structure Selection & Notes */}
                 <div className="space-y-4 flex flex-col">
@@ -6623,12 +6676,15 @@ function importaTurniResidenzaVannucci() {
                       <>
                         {savedPresets
                           .filter((preset) => {
-                            if (!preset.struttura || preset.tipoTurno === "Cucina" || preset.tipoTurno === "Notte" || preset.tipoTurno === "Pulizie" || preset.tipoTurno === "Servizio") {
+                            const currentS = newStruttura.toLowerCase();
+                            const presetS = (preset.struttura || "").toLowerCase();
+                            const tipoLower = preset.tipoTurno.toLowerCase();
+                            if (currentS.includes("1")) {
+                              return presetS.includes("1") && !["cucina", "notte", "pulizie", "servizio"].includes(tipoLower);
+                            }
+                            if (!preset.struttura || ["cucina", "notte", "pulizie", "servizio"].includes(tipoLower)) {
                               return true;
                             }
-                            const currentS = newStruttura.toLowerCase();
-                            const presetS = preset.struttura.toLowerCase();
-                            if (currentS.includes("1") && presetS.includes("1")) return true;
                             if (currentS.includes("2") && presetS.includes("2")) return true;
                             return false;
                           })
@@ -6697,65 +6753,70 @@ function importaTurniResidenzaVannucci() {
                           );
                         })}
 
-                        {/* Turno Notturno */}
-                        <button
-                          type="button"
-                          disabled={hasNotteOnSelectedDay}
-                          onClick={() => {
-                            if (hasNotteOnSelectedDay) return;
-                            setNewTipoTurno("Notte");
-                            setNewOrarioInizio("23:00");
-                            setNewOrarioFine("07:00");
-                            if (!newNote) setNewNote("Turno di Notte");
-                          }}
-                          className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
-                            hasNotteOnSelectedDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
-                            "cursor-pointer " + (newTipoTurno === "Notte" && newOrarioInizio === "23:00" && newOrarioFine === "07:00" ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30" : "bg-blue-50/80 border-blue-200 hover:bg-blue-100 text-blue-900")
-                          }`}
-                        >
-                          <span className="font-extrabold text-[12px]">🌙 Notte</span>
-                          <span className="text-[10px] opacity-75 font-normal">{hasNotteOnSelectedDay ? "Già assegnato" : "23:00 - 07:00"}</span>
-                        </button>
+                        {/* Turno Notturno, Cucina, Pulizie - Omitted for Vannucci 1 */}
+                        {!newStruttura.toLowerCase().includes("1") && (
+                          <>
+                            {/* Turno Notturno */}
+                            <button
+                              type="button"
+                              disabled={hasNotteOnSelectedDay}
+                              onClick={() => {
+                                if (hasNotteOnSelectedDay) return;
+                                setNewTipoTurno("Notte");
+                                setNewOrarioInizio("23:00");
+                                setNewOrarioFine("07:00");
+                                if (!newNote) setNewNote("Turno di Notte");
+                              }}
+                              className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                                hasNotteOnSelectedDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
+                                "cursor-pointer " + (newTipoTurno === "Notte" && newOrarioInizio === "23:00" && newOrarioFine === "07:00" ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30" : "bg-blue-50/80 border-blue-200 hover:bg-blue-100 text-blue-900")
+                              }`}
+                            >
+                              <span className="font-extrabold text-[12px]">🌙 Notte</span>
+                              <span className="text-[10px] opacity-75 font-normal">{hasNotteOnSelectedDay ? "Già assegnato" : "23:00 - 07:00"}</span>
+                            </button>
 
-                        {/* Cucina */}
-                        <button
-                          type="button"
-                          disabled={hasCucinaOnSelectedDay}
-                          onClick={() => {
-                            if (hasCucinaOnSelectedDay) return;
-                            setNewTipoTurno("Cucina");
-                            setNewOrarioInizio("10:30");
-                            setNewOrarioFine("15:30");
-                            if (!newNote) setNewNote("Servizio Cucina e Mensa");
-                          }}
-                          className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
-                            hasCucinaOnSelectedDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
-                            "cursor-pointer " + (newTipoTurno === "Cucina" && newOrarioInizio === "10:30" && newOrarioFine === "15:30" ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30" : "bg-sky-50/80 border-sky-300 hover:bg-sky-100 text-sky-950")
-                          }`}
-                        >
-                          <span className="font-extrabold text-[12px]">🍲 Cucina</span>
-                          <span className="text-[10px] opacity-75 font-normal">{hasCucinaOnSelectedDay ? "Già assegnato" : "10:30 - 15:30"}</span>
-                        </button>
+                            {/* Cucina */}
+                            <button
+                              type="button"
+                              disabled={hasCucinaOnSelectedDay}
+                              onClick={() => {
+                                if (hasCucinaOnSelectedDay) return;
+                                setNewTipoTurno("Cucina");
+                                setNewOrarioInizio("10:30");
+                                setNewOrarioFine("15:30");
+                                if (!newNote) setNewNote("Servizio Cucina e Mensa");
+                              }}
+                              className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                                hasCucinaOnSelectedDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
+                                "cursor-pointer " + (newTipoTurno === "Cucina" && newOrarioInizio === "10:30" && newOrarioFine === "15:30" ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30" : "bg-sky-50/80 border-sky-300 hover:bg-sky-100 text-sky-950")
+                              }`}
+                            >
+                              <span className="font-extrabold text-[12px]">🍲 Cucina</span>
+                              <span className="text-[10px] opacity-75 font-normal">{hasCucinaOnSelectedDay ? "Già assegnato" : "10:30 - 15:30"}</span>
+                            </button>
 
-                        {/* Pulizie */}
-                        <button
-                          type="button"
-                          disabled={hasPulizieOnSelectedDay}
-                          onClick={() => {
-                            if (hasPulizieOnSelectedDay) return;
-                            setNewTipoTurno("Pulizie");
-                            setNewOrarioInizio("07:00");
-                            setNewOrarioFine("11:00");
-                            if (!newNote) setNewNote("Servizio Pulizie & Supporto Alzate");
-                          }}
-                          className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
-                            hasPulizieOnSelectedDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
-                            "cursor-pointer " + (newTipoTurno === "Pulizie" && newOrarioInizio === "07:00" && newOrarioFine === "11:00" ? "bg-teal-600 border-teal-700 text-white ring-4 ring-teal-600/30" : "bg-teal-50/80 border-teal-200 hover:bg-teal-100 text-teal-950")
-                          }`}
-                        >
-                          <span className="font-extrabold text-[12px]">🪣🧹 Pulizie</span>
-                          <span className="text-[10px] opacity-75 font-normal">{hasPulizieOnSelectedDay ? "Già assegnato" : "07:00 - 11:00"}</span>
-                        </button>
+                            {/* Pulizie */}
+                            <button
+                              type="button"
+                              disabled={hasPulizieOnSelectedDay}
+                              onClick={() => {
+                                if (hasPulizieOnSelectedDay) return;
+                                setNewTipoTurno("Pulizie");
+                                setNewOrarioInizio("07:00");
+                                setNewOrarioFine("11:00");
+                                if (!newNote) setNewNote("Servizio Pulizie & Supporto Alzate");
+                              }}
+                              className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
+                                hasPulizieOnSelectedDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
+                                "cursor-pointer " + (newTipoTurno === "Pulizie" && newOrarioInizio === "07:00" && newOrarioFine === "11:00" ? "bg-teal-600 border-teal-700 text-white ring-4 ring-teal-600/30" : "bg-teal-50/80 border-teal-200 hover:bg-teal-100 text-teal-950")
+                              }`}
+                            >
+                              <span className="font-extrabold text-[12px]">🪣🧹 Pulizie</span>
+                              <span className="text-[10px] opacity-75 font-normal">{hasPulizieOnSelectedDay ? "Già assegnato" : "07:00 - 11:00"}</span>
+                            </button>
+                          </>
+                        )}
                       </>
                     )}
 
@@ -6805,6 +6866,109 @@ function importaTurniResidenzaVannucci() {
                     >
                       <span className="font-extrabold text-[12px] flex items-center gap-1">🤒 Malattia / Riposo Medico</span>
                       <span className="text-[10px] opacity-75 font-normal">Assenza per motivi di salute o certificato medico</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* COLUMN 3: Orario Personalizzato / Contingente */}
+                <div 
+                  onDoubleClick={handleContingentSubmit}
+                  className="bg-gradient-to-br from-amber-50 to-orange-50 p-4 rounded-2xl border-2 border-amber-200 shadow-sm space-y-3 flex flex-col justify-between cursor-pointer hover:border-amber-400 transition-all group"
+                  title="Doppio clic qui per inserire rapidamente l'orario personalizzato, impostare la nota ORARIO CNT e chiudere"
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-black text-amber-950 text-xs flex items-center gap-1.5">
+                        <span>⏱️ Orario Personalizzato Contingente</span>
+                      </span>
+                      <span className="text-[10px] font-black text-amber-800 bg-amber-200/80 px-2 py-0.5 rounded-full">Doppio click per inserire</span>
+                    </div>
+                    <p className="text-[11px] text-amber-900/80 font-medium">
+                      Imposta orario e fai doppio click o premi il pulsante per salvare con nota <span className="font-black text-amber-950 underline">ORARIO CNT</span> e chiudere.
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-2.5">
+                      {/* DALLE */}
+                      <div className="bg-white p-2.5 rounded-xl border border-amber-200/90 space-y-1 shadow-2xs">
+                        <label className="block font-black text-[10px] uppercase tracking-wider text-slate-700">Dalle (Inizio)</label>
+                        <div className="flex items-center gap-1">
+                          <select
+                            value={contingentStartH}
+                            onChange={(e) => { 
+                              e.stopPropagation(); 
+                              const val = e.target.value;
+                              setContingentStartH(val);
+                              if (parseInt(val) > parseInt(contingentEndH) || (parseInt(val) === parseInt(contingentEndH) && parseInt(contingentStartM) > parseInt(contingentEndM))) {
+                                setContingentEndH(val);
+                                if (parseInt(contingentStartM) > parseInt(contingentEndM)) {
+                                  setContingentEndM(contingentStartM);
+                                }
+                              }
+                            }}
+                            className="w-full bg-slate-50 border border-slate-200 rounded p-1.5 text-xs font-mono font-bold text-slate-900"
+                          >
+                            {Array.from({ length: 25 }, (_, i) => String(i).padStart(2, "0")).map(h => (
+                              <option key={h} value={h}>{h}</option>
+                            ))}
+                          </select>
+                          <span className="font-bold text-slate-400">:</span>
+                          <select
+                            value={contingentStartM}
+                            onChange={(e) => { 
+                              e.stopPropagation(); 
+                              const val = e.target.value;
+                              setContingentStartM(val);
+                              if (parseInt(contingentStartH) === parseInt(contingentEndH) && parseInt(val) > parseInt(contingentEndM)) {
+                                setContingentEndM(val);
+                              }
+                            }}
+                            className="w-full bg-slate-50 border border-slate-200 rounded p-1.5 text-xs font-mono font-bold text-slate-900"
+                          >
+                            {["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55", "60"].map(m => (
+                              <option key={m} value={m}>{m}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* ALLE */}
+                      <div className="bg-white p-2.5 rounded-xl border border-amber-200/90 space-y-1 shadow-2xs">
+                        <label className="block font-black text-[10px] uppercase tracking-wider text-slate-700">Alle (Fine)</label>
+                        <div className="flex items-center gap-1">
+                          <select
+                            value={contingentEndH}
+                            onChange={(e) => { e.stopPropagation(); setContingentEndH(e.target.value); }}
+                            className="w-full bg-slate-50 border border-slate-200 rounded p-1.5 text-xs font-mono font-bold text-slate-900"
+                          >
+                            {Array.from({ length: 25 }, (_, i) => String(i).padStart(2, "0"))
+                              .filter(h => parseInt(h) >= parseInt(contingentStartH))
+                              .map(h => (
+                                <option key={h} value={h}>{h}</option>
+                              ))}
+                          </select>
+                          <span className="font-bold text-slate-400">:</span>
+                          <select
+                            value={contingentEndM}
+                            onChange={(e) => { e.stopPropagation(); setContingentEndM(e.target.value); }}
+                            className="w-full bg-slate-50 border border-slate-200 rounded p-1.5 text-xs font-mono font-bold text-slate-900"
+                          >
+                            {["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55", "60"]
+                              .filter(m => contingentEndH !== contingentStartH || parseInt(m) >= parseInt(contingentStartM))
+                              .map(m => (
+                                <option key={m} value={m}>{m}</option>
+                              ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); handleContingentSubmit(); }}
+                      onDoubleClick={(e) => { e.stopPropagation(); handleContingentSubmit(); }}
+                      className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-black text-xs rounded-xl shadow-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 mt-2"
+                    >
+                      <span>⚡ Inserisci ({contingentStartH}:{contingentStartM} - {contingentEndH}:{contingentEndM}) e Chiudi</span>
                     </button>
                   </div>
                 </div>
@@ -7554,6 +7718,95 @@ function importaTurniResidenzaVannucci() {
                             </div>
                           </div>
                         </div>
+
+                      {/* Orario Personalizzato / Contingente Veloce (Edit) */}
+                      <div className="bg-gradient-to-br from-amber-50 to-orange-50 p-3 rounded-xl border border-amber-200 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-black text-amber-900 text-[11px]">⏱️ Carica Orario Veloce (Dalle / Alle)</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="bg-white p-2 rounded-lg border border-amber-200 space-y-1">
+                            <label className="block font-black text-[9px] uppercase text-slate-600">Dalle</label>
+                            <div className="flex items-center gap-1">
+                              <select
+                                value={editContingentStartH}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setEditContingentStartH(val);
+                                  if (parseInt(val) > parseInt(editContingentEndH) || (parseInt(val) === parseInt(editContingentEndH) && parseInt(editContingentStartM) > parseInt(editContingentEndM))) {
+                                    setEditContingentEndH(val);
+                                    if (parseInt(editContingentStartM) > parseInt(editContingentEndM)) {
+                                      setEditContingentEndM(editContingentStartM);
+                                    }
+                                  }
+                                }}
+                                className="w-full bg-slate-50 border rounded p-1 text-xs font-mono font-bold text-slate-900"
+                              >
+                                {Array.from({ length: 25 }, (_, i) => String(i).padStart(2, "0")).map(h => (
+                                  <option key={h} value={h}>{h}</option>
+                                ))}
+                              </select>
+                              <span>:</span>
+                              <select
+                                value={editContingentStartM}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setEditContingentStartM(val);
+                                  if (parseInt(editContingentStartH) === parseInt(editContingentEndH) && parseInt(val) > parseInt(editContingentEndM)) {
+                                    setEditContingentEndM(val);
+                                  }
+                                }}
+                                className="w-full bg-slate-50 border rounded p-1 text-xs font-mono font-bold text-slate-900"
+                              >
+                                {["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55", "60"].map(m => (
+                                  <option key={m} value={m}>{m}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                          <div className="bg-white p-2 rounded-lg border border-amber-200 space-y-1">
+                            <label className="block font-black text-[9px] uppercase text-slate-600">Alle</label>
+                            <div className="flex items-center gap-1">
+                              <select
+                                value={editContingentEndH}
+                                onChange={(e) => setEditContingentEndH(e.target.value)}
+                                className="w-full bg-slate-50 border rounded p-1 text-xs font-mono font-bold text-slate-900"
+                              >
+                                {Array.from({ length: 25 }, (_, i) => String(i).padStart(2, "0"))
+                                  .filter(h => parseInt(h) >= parseInt(editContingentStartH))
+                                  .map(h => (
+                                    <option key={h} value={h}>{h}</option>
+                                  ))}
+                              </select>
+                              <span>:</span>
+                              <select
+                                value={editContingentEndM}
+                                onChange={(e) => setEditContingentEndM(e.target.value)}
+                                className="w-full bg-slate-50 border rounded p-1 text-xs font-mono font-bold text-slate-900"
+                              >
+                                {["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55", "60"]
+                                  .filter(m => editContingentEndH !== editContingentStartH || parseInt(m) >= parseInt(editContingentStartM))
+                                  .map(m => (
+                                    <option key={m} value={m}>{m}</option>
+                                  ))}
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const start = `${editContingentStartH}:${editContingentStartM}`;
+                            const end = `${editContingentEndH}:${editContingentEndM}`;
+                            setEditShiftInizio(start);
+                            setEditShiftFine(end);
+                            setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Straordinario", orarioInizio: start, orarioFine: end } : prev);
+                          }}
+                          className="w-full py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-black text-xs rounded-lg shadow-xs cursor-pointer"
+                        >
+                          ⚡ Carica ({editContingentStartH}:{editContingentStartM} - {editContingentEndH}:{editContingentEndM}) nel Turno
+                        </button>
+                      </div>
 
                       {/* Notes */}
                       <div>
