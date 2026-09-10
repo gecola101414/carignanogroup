@@ -151,26 +151,8 @@ export function isItalianFestivo(d: Date | string): { isFestivo: boolean; label?
   return { isFestivo: false };
 }
 
-// Saturday / Prefestivo check
-export function isItalianPrefestivo(d: Date | string): { isPrefestivo: boolean; label?: string } {
-  if (!d) return { isPrefestivo: false };
-  const date = typeof d === "string" ? new Date(d.includes("T") ? d : `${d}T12:00:00`) : d;
-  if (isNaN(date.getTime())) return { isPrefestivo: false };
-
-  const dayOfWeek = date.getDay(); // 6 = Saturday
-
-  if (dayOfWeek === 6) {
-    return { isPrefestivo: true, label: "Sabato" };
-  }
-
-  // Vigilia (day before a fixed national holiday or Easter)
-  const tomorrow = new Date(date);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowFestivo = isItalianFestivo(tomorrow);
-  if (tomorrowFestivo.isFestivo && tomorrowFestivo.label !== "Domenica") {
-    return { isPrefestivo: true, label: `Vigilia (${tomorrowFestivo.label})` };
-  }
-
+// Saturday / Prefestivo check: Neutralized as per client specs (Saturdays and prefestivi are treated as normal days)
+export function isItalianPrefestivo(_d: Date | string): { isPrefestivo: boolean; label?: string } {
   return { isPrefestivo: false };
 }
 
@@ -683,25 +665,32 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     });
   };
 
-  // Real-time helper: monthly stats for shift & hour count in current month
-  const getMemberMonthlyStats = (memberId: string) => {
-    const currentMonth = currentDate.getMonth(); // 0-11
-    const currentYear = currentDate.getFullYear();
+  // Real-time helper: monthly stats for shift & hour count in current or target month
+  const getMemberMonthlyStats = (memberId: string, targetDate?: Date | string) => {
+    let targetMonth: number;
+    let targetYear: number;
+    if (targetDate) {
+      const d = typeof targetDate === "string" ? new Date(targetDate.includes("T") ? targetDate : `${targetDate}T12:00:00`) : new Date(targetDate);
+      targetMonth = d.getMonth();
+      targetYear = d.getFullYear();
+    } else {
+      targetMonth = currentDate.getMonth(); // 0-11
+      targetYear = currentDate.getFullYear();
+    }
     
-    // Filter shifts of this member that fall into the current month
+    // Filter shifts of this member that fall into the target month
     const memberShifts = shifts.filter(s => {
       if (s.staffId !== memberId) return false;
       const parts = s.data.split("-");
       if (parts.length !== 3) return false;
       const y = parseInt(parts[0], 10);
       const m = parseInt(parts[1], 10) - 1; // 0-indexed month
-      return y === currentYear && m === currentMonth;
+      return y === targetYear && m === targetMonth;
     });
 
     let shiftCount = 0;
     let totalHours = 0;
     let festiviCount = 0;
-    let prefestiviCount = 0;
 
     memberShifts.forEach(s => {
       if (s.tipoTurno === "Riposo" || s.tipoTurno === "Ferie") {
@@ -710,11 +699,9 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       
       shiftCount++;
       
-      const dateObj = new Date(s.data);
+      const dateObj = new Date(s.data.includes("T") ? s.data : `${s.data}T12:00:00`);
       if (isItalianFestivo(dateObj).isFestivo) {
         festiviCount++;
-      } else if (isItalianPrefestivo(dateObj).isPrefestivo) {
-        prefestiviCount++;
       }
 
       // Calculate hours between orarioInizio and orarioFine
@@ -739,14 +726,31 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       }
     });
 
-    return { shiftCount, totalHours: Math.round(totalHours * 10) / 10, festiviCount, prefestiviCount };
+    return { 
+      shiftCount, 
+      totalHours: Math.round(totalHours * 10) / 10, 
+      festiviCount, 
+      prefestiviCount: 0 // Prefestivi are no longer counted per client requirements
+    };
   };
 
-  // Real-time helper: weekly stats for shift & hour count in current displayed week
-  const getMemberWeeklyStats = (memberId: string) => {
-    const weekDayStrings = weekDays.map(d => formatDateYMD(d));
+  // Real-time helper: weekly stats for shift & hour count in current displayed week (or target week)
+  const getMemberWeeklyStats = (memberId: string, targetDate?: Date | string) => {
+    let weekDayStrings: string[];
+    if (targetDate) {
+      const d = typeof targetDate === "string" ? new Date(targetDate.includes("T") ? targetDate : `${targetDate}T12:00:00`) : new Date(targetDate);
+      const startOfTargetWeek = getStartOfWeek(d);
+      weekDayStrings = Array.from({ length: 7 }, (_, i) => {
+        const cur = new Date(startOfTargetWeek);
+        cur.setDate(cur.getDate() + i);
+        return formatDateYMD(cur);
+      });
+    } else {
+      // Current week: index 1 to 7 of weekDays (Monday to Sunday of this week, excluding reference Sunday at idx 0)
+      weekDayStrings = (weekDays.length >= 8 ? weekDays.slice(1) : weekDays).map(d => formatDateYMD(d));
+    }
     
-    // Filter shifts of this member that fall into the current week
+    // Filter shifts of this member that fall into the week
     const memberShifts = shifts.filter(s => s.staffId === memberId && weekDayStrings.includes(s.data));
 
     let shiftCount = 0;
@@ -781,14 +785,136 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       }
     });
 
-    return { shiftCount, totalHours: Math.round(totalHours * 10) / 10 };
+    const roundedHours = Math.round(totalHours * 10) / 10;
+
+    return { 
+      shiftCount, 
+      totalHours: roundedHours,
+      isApproaching36: roundedHours >= 32 && roundedHours <= 36,
+      isExceeding36: roundedHours > 36
+    };
   };
 
-  // Real-time helper: check if member has at least one rest day in the current week (weekDays)
-  const hasRestDayInCurrentWeek = (memberId: string) => {
-    return weekDays.some(day => {
-      const dayStr = formatDateYMD(day);
-      return shifts.some(s => s.staffId === memberId && s.data === dayStr && s.tipoTurno === "Riposo");
+  // Real-time helper: track how many weeks have passed since the staff member had a Sunday or Italian national holiday off
+  const getMemberFestiveRestStats = (memberId: string, refDate?: Date | string) => {
+    const baseDate = refDate 
+      ? (typeof refDate === "string" ? new Date(refDate.includes("T") ? refDate : `${refDate}T12:00:00`) : new Date(refDate))
+      : new Date(currentDate);
+
+    const startRefWeek = getStartOfWeek(baseDate);
+
+    let weeksCount = 0;
+    let lastRestDateStr: string | null = null;
+    let lastRestLabel: string | null = null;
+    let foundRest = false;
+
+    // Search backwards week-by-week up to 52 weeks (1 year)
+    for (let w = 0; w <= 52; w++) {
+      const monday = new Date(startRefWeek);
+      monday.setDate(monday.getDate() - (w * 7));
+      monday.setHours(12, 0, 0, 0);
+
+      const weekDaysList: Date[] = [];
+      for (let d = 0; d < 7; d++) {
+        const dayDate = new Date(monday);
+        dayDate.setDate(dayDate.getDate() + d);
+        weekDaysList.push(dayDate);
+      }
+
+      const festiveDaysInWeek = weekDaysList.filter(d => isItalianFestivo(d).isFestivo);
+      const weekYMDs = weekDaysList.map(d => formatDateYMD(d));
+      const facilityHasShiftsInWeek = shifts.some(s => weekYMDs.includes(s.data));
+
+      // If there are no shifts recorded at all in the facility for this week and it's in the past, stop traversal
+      if (!facilityHasShiftsInWeek && w > 0) {
+        break;
+      }
+
+      let hadRestOnFestiveThisWeek = false;
+
+      // Check festive days in reverse order (Sunday first)
+      for (let fIdx = festiveDaysInWeek.length - 1; fIdx >= 0; fIdx--) {
+        const fDay = festiveDaysInWeek[fIdx];
+        const fDayYMD = formatDateYMD(fDay);
+        const fInfo = isItalianFestivo(fDay);
+
+        const memberShiftsOnDay = shifts.filter(s => s.staffId === memberId && s.data === fDayYMD);
+        const hasWorkingShift = memberShiftsOnDay.some(s => s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie");
+        const hasExplicitRest = memberShiftsOnDay.some(s => s.tipoTurno === "Riposo" || s.tipoTurno === "Ferie");
+        const facilityHasShiftsOnDay = shifts.some(s => s.data === fDayYMD);
+
+        if (hasExplicitRest || (!hasWorkingShift && (facilityHasShiftsOnDay || w === 0))) {
+          hadRestOnFestiveThisWeek = true;
+          lastRestDateStr = fDayYMD;
+          lastRestLabel = fInfo.label || (fDay.getDay() === 0 ? "Domenica" : "Festivo");
+          break;
+        }
+      }
+
+      if (hadRestOnFestiveThisWeek) {
+        foundRest = true;
+        weeksCount = w;
+        break;
+      } else {
+        // Staff worked all festive days in this week
+        weeksCount = w + 1;
+      }
+    }
+
+    return {
+      weeksSinceLastFestiveRest: weeksCount,
+      isExceeding8Weeks: weeksCount > 8,
+      lastRestDateStr,
+      lastRestLabel,
+      foundRest
+    };
+  };
+
+  // Real-time helper: count vacation days taken by staff member since beginning of the year
+  const getMemberYearVacationDays = (memberId: string, yearOrDate?: number | string | Date): number => {
+    let targetYear: number;
+    if (typeof yearOrDate === "number") {
+      targetYear = yearOrDate;
+    } else if (yearOrDate) {
+      const d = typeof yearOrDate === "string" ? new Date(yearOrDate.includes("T") ? yearOrDate : `${yearOrDate}T12:00:00`) : new Date(yearOrDate);
+      targetYear = d.getFullYear();
+    } else {
+      targetYear = currentDate.getFullYear();
+    }
+
+    const ferieDates = new Set<string>();
+    shifts.forEach(s => {
+      if (s.staffId === memberId && s.tipoTurno === "Ferie") {
+        const shiftYear = parseInt(s.data.slice(0, 4), 10);
+        if (shiftYear === targetYear) {
+          ferieDates.add(s.data);
+        }
+      }
+    });
+
+    return ferieDates.size;
+  };
+
+  // Real-time helper: check if member has at least one rest day in the week (current week or week of refDate)
+  const hasRestDayInCurrentWeek = (memberId: string, refDate?: Date | string) => {
+    if (!memberId) return false;
+    let daysToCheck: string[];
+    if (refDate) {
+      const d = typeof refDate === "string" ? new Date(refDate + "T12:00:00") : new Date(refDate);
+      const startOfWeek = getStartOfWeek(d);
+      daysToCheck = [];
+      for (let i = 0; i < 7; i++) {
+        const cur = new Date(startOfWeek);
+        cur.setDate(cur.getDate() + i);
+        daysToCheck.push(formatDateYMD(cur));
+      }
+    } else {
+      // Current visible week (skip index 0 if it's previous sunday)
+      daysToCheck = weekDays.map(day => formatDateYMD(day));
+    }
+
+    return daysToCheck.some(dayStr => {
+      return shifts.some(s => s.staffId === memberId && s.data === dayStr && (s.tipoTurno === "Riposo" || s.tipoTurno === "Ferie"));
     });
   };
 
@@ -5099,7 +5225,7 @@ function importaTurniResidenzaVannucci() {
             <table id="weekly-schedule-table" className={`w-full text-left border-collapse ${isFullScreen ? "table-fixed min-w-0" : "min-w-[1150px] sm:min-w-[1300px]"}`}>
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-xs font-extrabold text-slate-700">
-                  <th className={`border-r border-slate-200 sticky top-0 left-0 z-40 bg-slate-100 shadow-xs ${isFullScreen ? "w-[15%] min-w-0 p-2.5" : "w-48 min-w-[190px] p-4"}`}>
+                  <th className={`border-r border-slate-200 sticky top-0 left-0 z-40 bg-slate-100 shadow-xs ${isFullScreen ? "w-[17%] min-w-[210px] p-2.5" : "w-56 min-w-[220px] p-4"}`}>
                     <span className="md:hidden">Operatore</span>
                     <span className="hidden md:inline">Operatore / Ruolo</span>
                   </th>
@@ -5171,19 +5297,15 @@ function importaTurniResidenzaVannucci() {
                           )}
                           {(() => {
                             const festivo = isItalianFestivo(day);
-                            const prefestivo = isItalianPrefestivo(day);
                             let weekdayColor = "text-indigo-600/90";
                             let dateColor = isToday ? "text-indigo-800" : "text-slate-800";
                             if (festivo.isFestivo) {
                               weekdayColor = "text-red-600";
                               dateColor = isToday ? "text-red-700" : "text-red-600";
-                            } else if (prefestivo.isPrefestivo) {
-                              weekdayColor = "text-orange-500";
-                              dateColor = isToday ? "text-orange-700" : "text-orange-600";
                             }
                             return (
                               <>
-                                <span className={`uppercase text-[10px] sm:text-[11px] font-black tracking-wider flex items-center gap-1 justify-center ${weekdayColor}`} title={festivo.isFestivo ? festivo.label : prefestivo.isPrefestivo ? prefestivo.label : undefined}>
+                                <span className={`uppercase text-[10px] sm:text-[11px] font-black tracking-wider flex items-center gap-1 justify-center ${weekdayColor}`} title={festivo.isFestivo ? festivo.label : undefined}>
                                   {getFullWeekdayName(day)}
                                 </span>
                                 <div 
@@ -5193,7 +5315,7 @@ function importaTurniResidenzaVannucci() {
                                       ? "bg-indigo-600 text-white border-indigo-700 shadow-sm" 
                                       : "bg-white text-slate-800 border-slate-200/90 shadow-2xs"
                                   }`} 
-                                  title={festivo.isFestivo ? festivo.label : prefestivo.isPrefestivo ? prefestivo.label : `${day.getDate()} ${getFullMonthName(day)} ${day.getFullYear()}`}
+                                  title={festivo.isFestivo ? festivo.label : `${day.getDate()} ${getFullMonthName(day)} ${day.getFullYear()}`}
                                 >
                                   <span className={`text-sm sm:text-base font-black ${isToday ? "text-white" : dateColor}`}>
                                     {day.getDate()}
@@ -5263,7 +5385,9 @@ function importaTurniResidenzaVannucci() {
                     
                     {/* Member Details Cell - Click to edit staff card */}
                     <td 
-                      className={`p-3 border-r border-slate-200 sticky left-0 z-10 backdrop-blur-xs shadow-xs transition-all group/staff ${
+                      className={`border-r border-slate-200 sticky left-0 z-10 backdrop-blur-xs shadow-xs transition-all group/staff ${
+                        isFullScreen ? "w-[17%] min-w-[210px] p-2.5" : "w-56 min-w-[220px] p-3"
+                      } ${
                         hoveredStaffId === member.id 
                           ? 'bg-indigo-50/95 ring-2 ring-indigo-500 border-indigo-400 shadow-sm' 
                           : 'bg-white/95'
@@ -5277,7 +5401,7 @@ function importaTurniResidenzaVannucci() {
                       }}
                       title={isStaffRole ? `${member.nome} ${member.cognome} - ${member.ruolo}` : "Clicca per modificare la scheda e gli orari predefiniti"}
                     >
-                      <div className="flex flex-col space-y-1.5">
+                      <div className="flex flex-col space-y-2">
                         <div className="flex items-center gap-2.5">
                           <div
                             className={`w-8 h-8 rounded-full flex items-center justify-center font-extrabold text-white text-xs shadow-xs shrink-0 transition-transform ${
@@ -5294,48 +5418,124 @@ function importaTurniResidenzaVannucci() {
                               <span>{member.nome} {member.cognome}</span>
                               {!isStaffRole && <Edit3 className="w-3 h-3 text-slate-400 opacity-0 group-hover/staff:opacity-100 transition-opacity" />}
                             </div>
-                            <div className="text-[10px] text-slate-500 truncate hidden md:block">{member.ruolo}</div>
+                            <div className="text-[11px] text-slate-500 truncate hidden md:block">{member.ruolo}</div>
                           </div>
                         </div>
 
-                        {/* Real-time stats display in weekly view: separated weekly and monthly to prevent confusion */}
-                        <div className="flex flex-col gap-1 mt-1.5 pt-1.5 border-t border-slate-100">
-                          {/* WEEKLY HOURS & SHIFTS (PROMINENT) */}
-                          <div className="flex flex-wrap items-center gap-1">
-                            <span className="text-[9px] font-black bg-amber-50 hover:bg-amber-100/80 text-amber-800 px-1.5 py-0.5 rounded border border-amber-200/80 flex items-center gap-0.5 shadow-2xs" title="Ore lavorate nella settimana visualizzata">
-                              ⏱️ Sett: {getMemberWeeklyStats(member.id).totalHours} ore ({getMemberWeeklyStats(member.id).shiftCount}T)
-                            </span>
-                          </div>
-                          
-                          {/* MONTHLY HOURS & REST DAYS */}
-                          <div className="flex flex-wrap items-center gap-1">
-                            <span className="text-[9px] font-bold bg-indigo-50/80 text-indigo-700 px-1 rounded border border-indigo-100" title="Turni effettuati nel mese">
-                              Mese: {getMemberMonthlyStats(member.id).shiftCount}T
-                            </span>
-                            <span className="text-[9px] font-bold bg-emerald-50/80 text-emerald-700 px-1 rounded border border-emerald-100" title="Ore lavorate nel mese">
-                              {getMemberMonthlyStats(member.id).totalHours} ore
-                            </span>
-                            {getMemberMonthlyStats(member.id).festiviCount > 0 && (
-                              <span className="text-[9px] font-bold bg-red-50 text-red-700 px-1 rounded border border-red-100" title="Turni festivi nel mese">
-                                Fest: {getMemberMonthlyStats(member.id).festiviCount}
-                              </span>
-                            )}
-                            {getMemberMonthlyStats(member.id).prefestiviCount > 0 && (
-                              <span className="text-[9px] font-bold bg-orange-50 text-orange-700 px-1 rounded border border-orange-100" title="Turni prefestivi nel mese">
-                                Prefest: {getMemberMonthlyStats(member.id).prefestiviCount}
-                              </span>
-                            )}
-                            {hasRestDayInCurrentWeek(member.id) ? (
-                              <span className="text-[9px] font-bold bg-sky-50 text-sky-700 px-1 rounded border border-sky-100 flex items-center gap-0.5" title="Giorno di riposo presente nella settimana corrente">
-                                🛋️ Riposo OK
-                              </span>
-                            ) : (
-                              <span className="text-[9px] font-bold bg-rose-50 text-rose-700 px-1 rounded border border-rose-100 flex items-center gap-0.5 animate-pulse" title="NESSUN riposo pianificato nella settimana corrente!">
-                                ⚠️ No Riposo
-                              </span>
-                            )}
-                          </div>
-                        </div>
+                        {/* Real-time stats: riposo settimanale, ore settimanali e settimane dall'ultimo festivo/domenica di riposo (caratteri maggiorati del 30%) */}
+                        {(() => {
+                          const weeklyStats = getMemberWeeklyStats(member.id);
+                          const festiveStats = getMemberFestiveRestStats(member.id);
+                          const hasRiposo = hasRestDayInCurrentWeek(member.id);
+
+                          return (
+                            <div className="flex flex-col gap-1.5 pt-2 border-t border-slate-200/80 text-xs">
+                              {/* 1. RIPOSO SETTIMANALE */}
+                              <div>
+                                {hasRiposo ? (
+                                  <div 
+                                    className="bg-emerald-50 text-emerald-900 border border-emerald-300/90 rounded-md px-2 py-1 font-semibold flex items-center justify-between shadow-3xs"
+                                    title="Giorno di riposo (o ferie) programmato nella settimana corrente"
+                                  >
+                                    <span className="flex items-center gap-1 text-[11.5px] text-emerald-800">
+                                      <span>🛋️</span>
+                                      <span>Riposo sett:</span>
+                                    </span>
+                                    <span className="bg-emerald-600 text-white font-black text-[10.5px] px-1.5 py-0.5 rounded shadow-3xs">
+                                      OK
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <div 
+                                    className="bg-rose-50 text-rose-900 border border-rose-300 ring-1 ring-rose-400 rounded-md px-2 py-1 font-semibold animate-pulse flex items-center justify-between shadow-3xs"
+                                    title="NESSUN riposo pianificato nella settimana corrente!"
+                                  >
+                                    <span className="flex items-center gap-1 text-[11.5px] text-rose-800">
+                                      <span>⚠️</span>
+                                      <span>Riposo sett:</span>
+                                    </span>
+                                    <span className="bg-rose-600 text-white font-black text-[10.5px] px-1.5 py-0.5 rounded shadow-3xs">
+                                      NO
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* 2. ORE NELLA SETTIMANA CON AUTOMATISMO >36h E VICINO A 36h */}
+                              <div>
+                                {weeklyStats.isExceeding36 ? (
+                                  <div 
+                                    className="bg-rose-100 text-rose-900 border border-rose-300 ring-2 ring-rose-500 rounded-md px-2 py-1 font-black animate-pulse flex items-center justify-between shadow-xs"
+                                    title={`SUPERAMENTO LIMITE! ${weeklyStats.totalHours} ore settimanali (limite 36 ore). Lampeggia di rosso.`}
+                                  >
+                                    <span className="flex items-center gap-1 text-[11.5px] text-rose-900 font-extrabold">
+                                      <span>🚨</span>
+                                      <span>Ore sett:</span>
+                                    </span>
+                                    <div className="flex items-center gap-1">
+                                      <span className="underline font-black text-[13px]">{weeklyStats.totalHours}h</span>
+                                      <span className="text-[9.5px] bg-rose-600 text-white px-1.5 py-0.5 rounded font-black">&gt;36h</span>
+                                    </div>
+                                  </div>
+                                ) : weeklyStats.isApproaching36 ? (
+                                  <div 
+                                    className="bg-amber-50 text-amber-950 border border-amber-300 rounded-md px-2 py-1 font-bold flex items-center justify-between shadow-2xs"
+                                    title={`Attenzione: le ore settimanali si avvicinano al limite contrattuale di 36 ore (${weeklyStats.totalHours} ore)`}
+                                  >
+                                    <span className="flex items-center gap-1 text-[11.5px] text-amber-900 font-bold">
+                                      <span>⚠️</span>
+                                      <span>Ore sett:</span>
+                                    </span>
+                                    <span className="font-extrabold text-[12.5px] text-amber-950">{weeklyStats.totalHours}h / 36h</span>
+                                  </div>
+                                ) : (
+                                  <div 
+                                    className="bg-slate-100 text-slate-800 border border-slate-200/90 rounded-md px-2 py-1 font-medium flex items-center justify-between"
+                                    title={`Ore lavorate nella settimana corrente: ${weeklyStats.totalHours} ore (${weeklyStats.shiftCount} turni)`}
+                                  >
+                                    <span className="flex items-center gap-1 text-slate-600 font-semibold text-[11.5px]">
+                                      <span>⏱️</span>
+                                      <span>Ore sett:</span>
+                                    </span>
+                                    <span className="font-black text-slate-900 text-[12.5px]">{weeklyStats.totalHours}h</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* 3. SETTIMANE DALL'ULTIMA VOLTA CHE HA AVUTO DOMENICA O FESTIVO DI RIPOSO */}
+                              <div>
+                                {festiveStats.isExceeding8Weeks ? (
+                                  <div 
+                                    className="bg-rose-100 text-rose-900 border border-rose-300 ring-2 ring-rose-500 rounded-md px-2 py-1 font-black animate-pulse flex items-center justify-between shadow-xs"
+                                    title={`ATTENZIONE: Superate le 8 settimane senza riposo festivo o domenicale! (${festiveStats.weeksSinceLastFestiveRest} settimane senza riposo festivo). Lampeggia di rosso.`}
+                                  >
+                                    <span className="flex items-center gap-1 text-[11.5px] text-rose-900 font-extrabold">
+                                      <span>🚨</span>
+                                      <span>Riposo fest:</span>
+                                    </span>
+                                    <div className="flex items-center gap-1">
+                                      <span className="underline font-black text-[13px]">{festiveStats.weeksSinceLastFestiveRest} sett.</span>
+                                      <span className="text-[9.5px] bg-rose-600 text-white px-1.5 py-0.5 rounded font-black">&gt;8s</span>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div 
+                                    className="bg-slate-50 text-slate-700 border border-slate-200/90 rounded-md px-2 py-1 font-medium flex items-center justify-between"
+                                    title={festiveStats.lastRestDateStr ? `Ultimo riposo festivo: ${festiveStats.lastRestLabel || "Festivo"} (${festiveStats.lastRestDateStr})` : "Riposo festivo recente"}
+                                  >
+                                    <span className="flex items-center gap-1 text-slate-500 font-semibold text-[11.5px]">
+                                      <span>🛋️</span>
+                                      <span>Riposo fest:</span>
+                                    </span>
+                                    <span className="font-black text-slate-800 text-[12px]">
+                                      {festiveStats.weeksSinceLastFestiveRest === 0 ? "Questa sett." : `${festiveStats.weeksSinceLastFestiveRest} sett. fa`}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </td>
 
@@ -6005,7 +6205,7 @@ function importaTurniResidenzaVannucci() {
                   {monthDays.map((day, idx) => {
                     const dateYMD = formatDateYMD(day);
                     const isToday = dateYMD === todayStr;
-                    const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                    const isFestivoDay = isItalianFestivo(day).isFestivo;
                     const isDragOver = dragOverTargetDate === dateYMD;
                     const isHolding = holdingDayDate === dateYMD;
                     const dayShiftsCount = shifts.filter(s => s.data === dateYMD).length;
@@ -6038,8 +6238,8 @@ function importaTurniResidenzaVannucci() {
                             ? "bg-amber-200 text-amber-950 animate-pulse"
                             : isToday
                             ? "bg-white text-indigo-950 border-indigo-400 border-b-4 opacity-100"
-                            : isWeekend
-                            ? "bg-amber-50 text-amber-950 opacity-100"
+                            : isFestivoDay
+                            ? "bg-red-50/70 text-red-950 opacity-100"
                             : "bg-slate-50 hover:bg-slate-100 opacity-100"
                         }`}
                         title={`Giorno ${day.getDate()} ${getFullMonthName(day)} (${dayShiftsCount} turni).\n\n${isDayComplete(dateYMD) ? "✅ Giornata completa" : "❌ Mancanti:\n- " + getMissingShiftsForDay(dateYMD).join("\n- ")}\n\nTrascina per spostare o duplicare l'intero giorno.`}
@@ -6051,25 +6251,21 @@ function importaTurniResidenzaVannucci() {
 
                         {(() => {
                           const festivo = isItalianFestivo(day);
-                          const prefestivo = isItalianPrefestivo(day);
                           let weekdayColor = "text-slate-400 group-hover/mhead:text-indigo-600";
                           let dateColor = isToday ? "text-white bg-indigo-600" : "text-slate-800";
                           
                           if (festivo.isFestivo) {
                             weekdayColor = "text-red-500 group-hover/mhead:text-red-600";
                             dateColor = isToday ? "text-white bg-red-600" : "text-red-600";
-                          } else if (prefestivo.isPrefestivo) {
-                            weekdayColor = "text-orange-400 group-hover/mhead:text-orange-500";
-                            dateColor = isToday ? "text-white bg-orange-500" : "text-orange-600";
                           }
 
                           return (
                             <>
-                              <div className={`text-[8px] font-black uppercase flex items-center justify-center gap-0.5 ${weekdayColor}`} title={festivo.isFestivo ? festivo.label : prefestivo.isPrefestivo ? prefestivo.label : undefined}>
+                              <div className={`text-[8px] font-black uppercase flex items-center justify-center gap-0.5 ${weekdayColor}`} title={festivo.isFestivo ? festivo.label : undefined}>
                                 {day.toLocaleDateString("it-IT", { weekday: "narrow" })}
                               </div>
 
-                              <div className={`text-[10px] sm:text-xs font-black my-0.5 ${dateColor} ${isToday ? "rounded-full w-4 h-4 sm:w-5 sm:h-5 mx-auto flex items-center justify-center shadow-2xs" : ""}`} title={festivo.isFestivo ? festivo.label : prefestivo.isPrefestivo ? prefestivo.label : undefined}>
+                              <div className={`text-[10px] sm:text-xs font-black my-0.5 ${dateColor} ${isToday ? "rounded-full w-4 h-4 sm:w-5 sm:h-5 mx-auto flex items-center justify-center shadow-2xs" : ""}`} title={festivo.isFestivo ? festivo.label : undefined}>
                                 {day.getDate()}
                               </div>
                             </>
@@ -6161,11 +6357,6 @@ function importaTurniResidenzaVannucci() {
                                 🔴 {getMemberMonthlyStats(member.id).festiviCount} festivi
                               </span>
                             )}
-                            {getMemberMonthlyStats(member.id).prefestiviCount > 0 && (
-                              <span className="text-[8px] text-orange-700 bg-orange-50/85 px-1 py-0.2 rounded border border-orange-100 whitespace-nowrap">
-                                🟠 {getMemberMonthlyStats(member.id).prefestiviCount} prefest.
-                              </span>
-                            )}
                           </div>
                         </div>
                       </div>
@@ -6176,7 +6367,7 @@ function importaTurniResidenzaVannucci() {
                       const dateYMD = formatDateYMD(day);
                       const cellKey = `${member.id}_${dateYMD}`;
                       const isToday = dateYMD === todayStr;
-                      const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                      const isFestivoDay = isItalianFestivo(day).isFestivo;
                       const isDragOverCell = dragOverCellKey === cellKey;
                       const dayShifts = shifts.filter(s => s.staffId === member.id && s.data === dateYMD);
 
@@ -6218,8 +6409,8 @@ function importaTurniResidenzaVannucci() {
                               ? "bg-indigo-50/40"
                               : isToday
                               ? "bg-indigo-50/40"
-                              : isWeekend
-                              ? "bg-amber-50/20"
+                              : isFestivoDay
+                              ? "bg-red-50/20"
                               : ""
                           }`}
                           title={lockedDays.includes(dateYMD) ? `🔒 ${member.nome}: Giorno Bloccato` : `${member.nome}: ${dayShifts.length ? dayShifts.map(s => `${s.tipoTurno} (${s.orarioInizio}-${s.orarioFine})`).join(", ") : "Nessun turno"}.`}
@@ -6567,84 +6758,106 @@ function importaTurniResidenzaVannucci() {
                 
                 {/* LEFT COLUMN: Context Info, Coverage, Structure Selection & Notes */}
                 <div className="space-y-4 flex flex-col">
-                  {/* Informazione Operatore */}
-                  <div className="bg-indigo-600/5 border border-indigo-500/20 p-3.5 rounded-2xl flex items-center justify-between shadow-3xs shrink-0">
-                    <div>
-                      <span className="text-[10px] font-black uppercase tracking-widest text-indigo-700 block mb-0.5">Operatore Selezionato</span>
-                      <span className="text-lg font-extrabold text-indigo-950 block leading-none">
-                        {staff.find(st => st.id === newStaffId) ? `${staff.find(st => st.id === newStaffId)?.nome} ${staff.find(st => st.id === newStaffId)?.cognome}` : "Operatore"}
-                      </span>
-                    </div>
-                    <div className="w-10 h-10 rounded-full bg-indigo-600 text-white font-black flex items-center justify-center text-sm border-2 border-white shadow-sm uppercase shrink-0 ml-2">
-                      {(() => {
-                        const activeStaff = staff.find(st => st.id === newStaffId);
-                        return activeStaff ? `${activeStaff.nome.charAt(0)}${activeStaff.cognome.charAt(0)}` : "OP";
-                      })()}
-                    </div>
-                  </div>
+                  {/* Informazione Operatore con Statistiche */}
+                  {(() => {
+                    const activeStaff = staff.find(st => st.id === newStaffId);
+                    const weeklyStats = newStaffId ? getMemberWeeklyStats(newStaffId, newDate) : null;
+                    const festiveStats = newStaffId ? getMemberFestiveRestStats(newStaffId, newDate) : null;
+                    const monthlyStats = newStaffId ? getMemberMonthlyStats(newStaffId, newDate) : null;
+                    const ferieDaysYear = newStaffId ? getMemberYearVacationDays(newStaffId, newDate) : 0;
 
-                  {/* Situazione Grafica del Giorno */}
-                  <div className="bg-slate-900 text-white p-3.5 rounded-2xl shadow-md border border-slate-700 flex flex-col gap-2 shrink-0">
-                    <div className="flex items-center justify-between border-b border-slate-700/50 pb-2">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400">Situazione Copertura</span>
-                        <span className="text-xs font-black text-slate-100 tracking-wide bg-slate-800 px-2.5 py-0.5 rounded-lg border border-slate-700">{formatItalianVerbalDate(newDate).toUpperCase()}</span>
-                      </div>
-                      {(() => {
-                        const cov = getDayCoverageDetails(newDate);
-                        return cov.isComplete ? (
-                          <span className="bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full text-[10px] font-black flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3" /> OK
-                          </span>
-                        ) : (
-                          <span className="bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full text-[10px] font-black flex items-center gap-1">
-                            <AlertCircle className="w-3 h-3" /> {cov.totalCovered}/{cov.totalRequired}
-                          </span>
-                        );
-                      })()}
-                    </div>
-
-                    {(() => {
-                      const cov = getDayCoverageDetails(newDate);
-                      const renderMiniChip = (slotId: string, icon: string) => {
-                        const slot = cov.mandatorySlots.find(s => s.id === slotId) || cov.extraSlots.find(s => s.id === slotId);
-                        if (!slot) return null;
-                        const isCovered = slot.isCovered;
-                        return (
-                          <div key={slotId} className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-[10px] font-bold truncate ${
-                            isCovered ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300" : "bg-rose-500/10 border-rose-500/40 text-rose-300"
-                          }`}>
-                            <span>{icon}</span>
-                            <span className={isCovered ? "text-white truncate" : "opacity-50"}>
-                              {isCovered ? slot.assignedStaff[0]?.nome : "-"}
+                    return (
+                      <div className="bg-indigo-600/5 border border-indigo-500/20 p-3.5 rounded-2xl flex flex-col gap-2.5 shadow-3xs shrink-0">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-indigo-700 block mb-0.5">Operatore Selezionato</span>
+                            <span className="text-lg font-extrabold text-indigo-950 block leading-none">
+                              {activeStaff ? `${activeStaff.nome} ${activeStaff.cognome}` : "Operatore"}
+                            </span>
+                            <span className="text-xs font-semibold text-slate-500 block mt-1 uppercase tracking-wide">
+                              💼 {activeStaff?.ruolo || "Staff"}
                             </span>
                           </div>
-                        );
-                      };
-
-                      return (
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="space-y-1.5">
-                            <div className="flex items-center gap-1 font-black text-[9px] text-indigo-400 uppercase tracking-tighter opacity-70">🏠 Strutture</div>
-                            <div className="grid grid-cols-1 gap-1">
-                              <div className="flex gap-1">{renderMiniChip("v1_m", "🌅")} {renderMiniChip("v1_p", "🌆")}</div>
-                              <div className="flex gap-1">{renderMiniChip("v2_m", "🌅")} {renderMiniChip("v2_p", "🌆")}</div>
-                              <div className="flex gap-1">{renderMiniChip("v4_m", "🌅")} {renderMiniChip("v4_p", "🌆")}</div>
-                            </div>
-                          </div>
-                          <div className="space-y-1.5">
-                            <div className="flex items-center gap-1 font-black text-[9px] text-indigo-400 uppercase tracking-tighter opacity-70">⚙️ Servizi</div>
-                            <div className="grid grid-cols-1 gap-1">
-                              {renderMiniChip("notte", "🌙")}
-                              {renderMiniChip("cucina", "🍲")}
-                              {renderMiniChip("alzate", "🪣")}
-                              {renderMiniChip("pulizie", "🧹")}
-                            </div>
+                          <div className="w-10 h-10 rounded-full bg-indigo-600 text-white font-black flex items-center justify-center text-sm border-2 border-white shadow-sm uppercase shrink-0 ml-2">
+                            {activeStaff ? `${activeStaff.nome.charAt(0)}${activeStaff.cognome.charAt(0)}` : "OP"}
                           </div>
                         </div>
-                      );
-                    })()}
-                  </div>
+
+                        {/* Riepilogo Ore Settimanali, Festività e Statistiche Sotto il Nome */}
+                        {activeStaff && weeklyStats && festiveStats && monthlyStats && (
+                          <div className="pt-2 border-t border-indigo-100/80 space-y-1.5 text-xs">
+                            {/* Riga 1: Ore Settimanali con automatismo >36h / vicino 36h */}
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-slate-600 font-semibold text-[11px] flex items-center gap-1">
+                                <span>⏱️</span> Ore della settimana:
+                              </span>
+                              {weeklyStats.isExceeding36 ? (
+                                <span className="bg-rose-100 text-rose-800 border border-rose-300 ring-2 ring-rose-500 px-2 py-0.5 rounded-md font-black text-[11px] animate-pulse flex items-center gap-1" title="Superamento limite 36 ore!">
+                                  <span>🚨 {weeklyStats.totalHours} ore (&gt;36h)</span>
+                                </span>
+                              ) : weeklyStats.isApproaching36 ? (
+                                <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-md font-extrabold text-[11px] flex items-center gap-1" title="Ore settimanali vicine al limite di 36 ore">
+                                  <span>⚠️ {weeklyStats.totalHours} ore / 36h</span>
+                                </span>
+                              ) : (
+                                <span className="bg-white text-slate-800 border border-slate-200 px-2 py-0.5 rounded-md font-extrabold text-[11px]">
+                                  {weeklyStats.totalHours} ore ({weeklyStats.shiftCount} turni)
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Riga 2: Settimane dall'ultima domenica o festivo a riposo con automatismo >8 settimane */}
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-slate-600 font-semibold text-[11px] flex items-center gap-1">
+                                <span>🛋️</span> Settimane dall'ultimo festivo a riposo:
+                              </span>
+                              {festiveStats.isExceeding8Weeks ? (
+                                <span className="bg-rose-100 text-rose-800 border border-rose-300 ring-2 ring-rose-500 px-2 py-0.5 rounded-md font-black text-[11px] animate-pulse flex items-center gap-1" title="Superate 8 settimane senza riposo festivo o domenicale!">
+                                  <span>🚨 {festiveStats.weeksSinceLastFestiveRest} settimane (&gt;8 sett.)</span>
+                                </span>
+                              ) : (
+                                <span className="bg-white text-slate-800 border border-slate-200 px-2 py-0.5 rounded-md font-bold text-[11px]" title={festiveStats.lastRestDateStr ? `Ultimo riposo festivo: ${festiveStats.lastRestLabel} (${festiveStats.lastRestDateStr})` : undefined}>
+                                  {festiveStats.weeksSinceLastFestiveRest === 0 ? "Questa settimana" : `${festiveStats.weeksSinceLastFestiveRest} sett. fa`}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Riga 3: Riposo Settimanale */}
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-slate-600 font-semibold text-[11px] flex items-center gap-1">
+                                <span>🛋️</span> Riposo settimanale:
+                              </span>
+                              {hasRestDayInCurrentWeek(newStaffId, newDate) ? (
+                                <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-md font-black text-[11px] flex items-center gap-1">
+                                  <span>✅ OK</span>
+                                </span>
+                              ) : (
+                                <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-md font-bold text-[11px] flex items-center gap-1">
+                                  <span>⚠️ Assente</span>
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Riga 4: Dati Mensili & Ferie Annuali */}
+                            <div className="grid grid-cols-3 gap-1.5 pt-1 text-center">
+                              <div className="bg-white/80 border border-indigo-100 rounded-lg p-1.5 shadow-3xs">
+                                <span className="text-[10px] text-slate-500 font-medium block">Turni nel mese</span>
+                                <span className="text-xs font-black text-indigo-900">{monthlyStats.shiftCount} turni</span>
+                              </div>
+                              <div className="bg-white/80 border border-indigo-100 rounded-lg p-1.5 shadow-3xs">
+                                <span className="text-[10px] text-slate-500 font-medium block">Festivi del mese</span>
+                                <span className="text-xs font-black text-red-700">{monthlyStats.festiviCount} festivi</span>
+                              </div>
+                              <div className="bg-white/80 border border-indigo-100 rounded-lg p-1.5 shadow-3xs">
+                                <span className="text-[10px] text-slate-500 font-medium block">Ferie quest'anno</span>
+                                <span className="text-xs font-black text-emerald-700">{ferieDaysYear} gg</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Scelta Struttura */}
                   <div className="space-y-2 shrink-0">
@@ -6792,7 +7005,7 @@ function importaTurniResidenzaVannucci() {
                                   ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400"
                                   : "cursor-pointer border-lime-500/80 bg-gradient-to-r from-lime-500/20 via-emerald-500/20 to-teal-500/20 hover:from-lime-500/30 hover:to-teal-500/30 text-slate-900"
                               }`}
-                              title={disabled ? `Turno Servizio già assegnato a ${otherStaffName}` : "Assegna Mattina V4 (08:00-15:00) + Servizio (17:00-20:00)"}
+                              title={disabled ? `Turno Pom. (17:00-20:00) già assegnato a ${otherStaffName}` : "Assegna Mattina V4 (08:00-15:00) + Pom. (17:00-20:00)"}
                             >
                               <div className="flex items-center justify-between">
                                 <span className="font-black text-xs text-lime-950 flex items-center gap-1">
@@ -6801,7 +7014,7 @@ function importaTurniResidenzaVannucci() {
                                 <span className="text-[9px] font-extrabold text-violet-800 bg-violet-100 px-1.5 py-0.2 rounded">10h tot (7h + 3h)</span>
                               </div>
                               <span className="text-[10px] text-slate-700 font-semibold mt-0.5">
-                                {disabled ? `⚠️ Servizio serale già assegnato a ${otherStaffName}` : "🌅 Mattina V4 (08:00-15:00) + 🍽️ Servizio Pomeridiano (17:00-20:00)"}
+                                {disabled ? `⚠️ Turno Pom. serale già assegnato a ${otherStaffName}` : "🌅 Mattina V4 (08:00-15:00) + 🍽️ Pom. (17:00-20:00)"}
                               </span>
                             </button>
                           );
@@ -7447,21 +7660,104 @@ function importaTurniResidenzaVannucci() {
                     
                     {/* LEFT COLUMN: Context Info */}
                     <div className="space-y-4">
-                      {/* Informazione Operatore */}
-                      <div className="bg-indigo-600/10 border-2 border-indigo-500/30 p-4 rounded-2xl flex items-center justify-between shadow-xs">
-                        <div>
-                          <span className="text-[10px] font-black uppercase tracking-widest text-indigo-700 block mb-1">Collaboratore Individuato</span>
-                          <span className="text-xl font-extrabold text-indigo-950 block leading-none">
-                            {mem ? `${mem.nome} ${mem.cognome}` : "Operatore"}
-                          </span>
-                          <span className="text-xs font-semibold text-slate-500 block mt-1 uppercase tracking-wide">
-                            💼 {mem?.ruolo || "Staff"}
-                          </span>
-                        </div>
-                        <div className="w-12 h-12 rounded-full bg-indigo-600 text-white font-black flex items-center justify-center text-base border-2 border-white shadow-md uppercase shrink-0 ml-2">
-                          {mem ? `${mem.nome.charAt(0)}${mem.cognome.charAt(0)}` : "OP"}
-                        </div>
-                      </div>
+                      {/* Informazione Operatore con Statistiche */}
+                      {(() => {
+                        const targetStaffId = editShiftStaffId || selectedShiftForDetail.staffId;
+                        const targetDate = editShiftDate || selectedShiftForDetail.data;
+                        const weeklyStats = targetStaffId ? getMemberWeeklyStats(targetStaffId, targetDate) : null;
+                        const festiveStats = targetStaffId ? getMemberFestiveRestStats(targetStaffId, targetDate) : null;
+                        const monthlyStats = targetStaffId ? getMemberMonthlyStats(targetStaffId, targetDate) : null;
+                        const ferieDaysYear = targetStaffId ? getMemberYearVacationDays(targetStaffId, targetDate) : 0;
+
+                        return (
+                          <div className="bg-indigo-600/10 border-2 border-indigo-500/30 p-4 rounded-2xl flex flex-col gap-2.5 shadow-xs">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <span className="text-[10px] font-black uppercase tracking-widest text-indigo-700 block mb-1">Collaboratore Individuato</span>
+                                <span className="text-xl font-extrabold text-indigo-950 block leading-none">
+                                  {mem ? `${mem.nome} ${mem.cognome}` : "Operatore"}
+                                </span>
+                                <span className="text-xs font-semibold text-slate-500 block mt-1 uppercase tracking-wide">
+                                  💼 {mem?.ruolo || "Staff"}
+                                </span>
+                              </div>
+                              <div className="w-12 h-12 rounded-full bg-indigo-600 text-white font-black flex items-center justify-center text-base border-2 border-white shadow-md uppercase shrink-0 ml-2">
+                                {mem ? `${mem.nome.charAt(0)}${mem.cognome.charAt(0)}` : "OP"}
+                              </div>
+                            </div>
+
+                            {/* Statistiche Real-time Sotto il Nome */}
+                            {mem && weeklyStats && festiveStats && monthlyStats && (
+                              <div className="pt-2 border-t border-indigo-200/60 space-y-1.5 text-xs">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="text-slate-600 font-semibold text-[11px] flex items-center gap-1">
+                                    <span>⏱️</span> Ore della settimana:
+                                  </span>
+                                  {weeklyStats.isExceeding36 ? (
+                                    <span className="bg-rose-100 text-rose-800 border border-rose-300 ring-2 ring-rose-500 px-2 py-0.5 rounded-md font-black text-[11px] animate-pulse flex items-center gap-1">
+                                      <span>🚨 {weeklyStats.totalHours} ore (&gt;36h)</span>
+                                    </span>
+                                  ) : weeklyStats.isApproaching36 ? (
+                                    <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-md font-extrabold text-[11px]">
+                                      <span>⚠️ {weeklyStats.totalHours} ore / 36h</span>
+                                    </span>
+                                  ) : (
+                                    <span className="bg-white text-slate-800 border border-slate-200 px-2 py-0.5 rounded-md font-extrabold text-[11px]">
+                                      {weeklyStats.totalHours} ore ({weeklyStats.shiftCount} turni)
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="text-slate-600 font-semibold text-[11px] flex items-center gap-1">
+                                    <span>🛋️</span> Settimane dall'ultimo festivo:
+                                  </span>
+                                  {festiveStats.isExceeding8Weeks ? (
+                                    <span className="bg-rose-100 text-rose-800 border border-rose-300 ring-2 ring-rose-500 px-2 py-0.5 rounded-md font-black text-[11px] animate-pulse flex items-center gap-1">
+                                      <span>🚨 {festiveStats.weeksSinceLastFestiveRest} settimane (&gt;8 sett.)</span>
+                                    </span>
+                                  ) : (
+                                    <span className="bg-white text-slate-800 border border-slate-200 px-2 py-0.5 rounded-md font-bold text-[11px]">
+                                      {festiveStats.weeksSinceLastFestiveRest === 0 ? "Questa settimana" : `${festiveStats.weeksSinceLastFestiveRest} sett. fa`}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Riposo Settimanale */}
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="text-slate-600 font-semibold text-[11px] flex items-center gap-1">
+                                    <span>🛋️</span> Riposo settimanale:
+                                  </span>
+                                  {hasRestDayInCurrentWeek(targetStaffId, targetDate) ? (
+                                    <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-md font-black text-[11px] flex items-center gap-1">
+                                      <span>✅ OK</span>
+                                    </span>
+                                  ) : (
+                                    <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-md font-bold text-[11px] flex items-center gap-1">
+                                      <span>⚠️ Assente</span>
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="grid grid-cols-3 gap-1.5 pt-1 text-center">
+                                  <div className="bg-white/80 border border-indigo-100 rounded-lg p-1.5 shadow-3xs">
+                                    <span className="text-[10px] text-slate-500 font-medium block">Turni nel mese</span>
+                                    <span className="text-xs font-black text-indigo-900">{monthlyStats.shiftCount} turni</span>
+                                  </div>
+                                  <div className="bg-white/80 border border-indigo-100 rounded-lg p-1.5 shadow-3xs">
+                                    <span className="text-[10px] text-slate-500 font-medium block">Festivi del mese</span>
+                                    <span className="text-xs font-black text-red-700">{monthlyStats.festiviCount} festivi</span>
+                                  </div>
+                                  <div className="bg-white/80 border border-indigo-100 rounded-lg p-1.5 shadow-3xs">
+                                    <span className="text-[10px] text-slate-500 font-medium block">Ferie quest'anno</span>
+                                    <span className="text-xs font-black text-emerald-700">{ferieDaysYear} gg</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                       {/* Data del Turno */}
                       <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-2xl text-center shadow-3xs">
