@@ -7132,14 +7132,6 @@ function importaTurniResidenzaVannucci() {
                                     {preset.subtitle || `${preset.orarioInizio} - ${preset.orarioFine}`}
                                   </span>
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleRemovePreset(preset.id, e)}
-                                  className="absolute top-1.5 right-1.5 p-1 rounded-md opacity-60 hover:opacity-100 hover:bg-rose-600 hover:text-white text-rose-500 bg-white/80 shadow-3xs transition-all cursor-pointer z-10"
-                                  title="Rimuovi questo preset orario"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
                               </div>
                             );
                           })}
@@ -7154,6 +7146,9 @@ function importaTurniResidenzaVannucci() {
                             const tipoLower = preset.tipoTurno.toLowerCase();
                             if (currentS.includes("1")) {
                               return presetS.includes("1") && !["cucina", "notte", "pulizie", "servizio"].includes(tipoLower);
+                            }
+                            if (currentS.includes("2")) {
+                              return presetS.includes("2") && !["cucina", "notte", "pulizie", "servizio"].includes(tipoLower);
                             }
                             if (!preset.struttura || ["cucina", "notte", "pulizie", "servizio"].includes(tipoLower)) {
                               return true;
@@ -7218,15 +7213,6 @@ function importaTurniResidenzaVannucci() {
                                   <span className="text-[10px] opacity-75 font-normal truncate">
                                     {preset.subtitle || `${preset.orarioInizio} - ${preset.orarioFine}`}
                                   </span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleRemovePreset(preset.id, e)}
-                                  className="absolute top-1.5 right-1.5 p-1 rounded-md opacity-60 hover:opacity-100 hover:bg-rose-600 hover:text-white text-rose-500 bg-white/80 shadow-3xs transition-all cursor-pointer z-10"
-                                  title="Rimuovi questo preset orario"
-                                >
-                                  <Trash2 className="w-3 h-3" />
                                 </button>
                               </div>
                             );
@@ -8108,14 +8094,6 @@ function importaTurniResidenzaVannucci() {
                                           {preset.subtitle || `${preset.orarioInizio} - ${preset.orarioFine}`}
                                         </span>
                                       </button>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => handleRemovePreset(preset.id, e)}
-                                        className="absolute top-1.5 right-1.5 p-1 rounded-md opacity-60 hover:opacity-100 hover:bg-rose-600 hover:text-white text-rose-500 bg-white/80 shadow-3xs transition-all cursor-pointer z-10"
-                                        title="Rimuovi questo preset orario"
-                                      >
-                                        <Trash2 className="w-3 h-3" />
-                                      </button>
                                     </div>
                                   );
                                 })}
@@ -8130,6 +8108,9 @@ function importaTurniResidenzaVannucci() {
                                   const tipoLower = preset.tipoTurno.toLowerCase();
                                   if (currentS.includes("1")) {
                                     return presetS.includes("1") && !["cucina", "notte", "pulizie", "servizio"].includes(tipoLower);
+                                  }
+                                  if (currentS.includes("2")) {
+                                    return presetS.includes("2") && !["cucina", "notte", "pulizie", "servizio"].includes(tipoLower);
                                   }
                                   if (!preset.struttura || ["cucina", "notte", "pulizie", "servizio"].includes(tipoLower)) {
                                     return true;
@@ -8194,14 +8175,6 @@ function importaTurniResidenzaVannucci() {
                                         <span className="text-[9px] opacity-75 font-normal truncate">
                                           {preset.subtitle || `${preset.orarioInizio} - ${preset.orarioFine}`}
                                         </span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => handleRemovePreset(preset.id, e)}
-                                        className="absolute top-1.5 right-1.5 p-1 rounded-md opacity-60 hover:opacity-100 hover:bg-rose-600 hover:text-white text-rose-500 bg-white/80 shadow-3xs transition-all cursor-pointer z-10"
-                                        title="Rimuovi questo preset orario"
-                                      >
-                                        <Trash2 className="w-3 h-3" />
                                       </button>
                                     </div>
                                   );
