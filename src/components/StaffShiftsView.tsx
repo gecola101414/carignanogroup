@@ -2954,6 +2954,77 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     }
   };
 
+  const handleFastEditSubmit = (tipo: string, inizio: string, fine: string) => {
+    if (!selectedShiftForDetail || !onUpdateShifts) return;
+
+    const targetDate = editShiftDate || selectedShiftForDetail.data;
+    const targetStaffId = editShiftStaffId || selectedShiftForDetail.staffId;
+
+    if (lockedDays.includes(selectedShiftForDetail.data) || lockedDays.includes(targetDate)) {
+      showToast("🔒 Questo giorno è bloccato! Sbloccalo prima di modificare il turno.");
+      return;
+    }
+
+    let updatedShifts: Shift[];
+
+    if (tipo === "Notte" || inizio === "23:00") {
+      const dObj = new Date(targetDate);
+      dObj.setDate(dObj.getDate() + 1);
+      const nextDateStr = dObj.toISOString().split("T")[0];
+
+      if (lockedDays.includes(nextDateStr)) {
+        showToast("🔒 Il giorno successivo è bloccato! Impossibile completare il turno notturno.");
+        return;
+      }
+
+      const structToUse = (editShiftStruttura || selectedShiftForDetail.struttura || "");
+      const { shiftDay1, shiftDay2 } = handleAddNightShift(targetStaffId, targetDate, structToUse, editShiftNote || "Turno di Notte");
+      
+      const otherShifts = shifts.filter(s => {
+        if (s.id === selectedShiftForDetail.id) return false;
+        if (s.staffId === targetStaffId) {
+          if (s.data === targetDate && (s.orarioInizio === "23:00" || s.tipoTurno === "Riposo" || s.tipoTurno === "Ferie")) {
+            return false;
+          }
+          if (s.data === nextDateStr && (s.orarioInizio === "00:00" || s.tipoTurno === "Riposo" || s.tipoTurno === "Ferie")) {
+            return false;
+          }
+        }
+        return true;
+      });
+
+      updatedShifts = [...otherShifts, shiftDay1, shiftDay2];
+      applyShiftsUpdate(updatedShifts);
+      setSelectedShiftForDetail(null);
+      setEditShiftNote("");
+      showToast("⚡ Turno di Notte caricato con doppio click!");
+      return;
+    }
+
+    updatedShifts = shifts.map(s => {
+      if (s.id === selectedShiftForDetail.id) {
+        const isComune = ["Notte", "Riposo", "Ferie", "Cucina", "Pulizie", "Servizio"].includes(tipo);
+        return {
+          ...s,
+          id: s.id.startsWith("auto-") ? `shift-edited-${Date.now()}-${Math.random().toString(36).substr(2, 4)}` : s.id,
+          staffId: targetStaffId,
+          data: targetDate,
+          tipoTurno: tipo,
+          orarioInizio: inizio,
+          orarioFine: fine,
+          struttura: isComune ? "" : (editShiftStruttura || s.struttura),
+          note: editShiftNote || s.note
+        };
+      }
+      return s;
+    });
+
+    applyShiftsUpdate(updatedShifts);
+    setSelectedShiftForDetail(null);
+    setEditShiftNote("");
+    showToast(`✅ Turno aggiornato a ${tipo} (${inizio}-${fine}) con doppio click!`);
+  };
+
   // Save Shift Details from Modal (Edit Shift Date/Staff/Times)
   const handleSaveShiftEdit = () => {
     if (!selectedShiftForDetail || !onUpdateShifts) return;
@@ -6044,9 +6115,7 @@ function importaTurniResidenzaVannucci() {
                                 })()
                               ) : (
                                 dayShifts.sort((a, b) => {
-                                  if (a.tipoTurno === "Alzate") return 1;
-                                  if (b.tipoTurno === "Alzate") return -1;
-                                  return 0;
+                                  return (a.orarioInizio || "00:00").localeCompare(b.orarioInizio || "00:00");
                                 }).map(s => {
                                   const validity = checkShiftValidity(s);
                                   const isInvalid = !validity.valid && !isReferenceDay;
@@ -7177,10 +7246,15 @@ function importaTurniResidenzaVannucci() {
                                 setNewOrarioFine("07:00");
                                 if (!newNote) setNewNote("Turno di Notte");
                               }}
+                              onDoubleClick={() => {
+                                if (hasNotteOnSelectedDay) return;
+                                handleFastSubmit({ tipoTurno: "Notte", orarioInizio: "23:00", orarioFine: "07:00" });
+                              }}
                               className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
                                 hasNotteOnSelectedDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
                                 "cursor-pointer " + (newTipoTurno === "Notte" && newOrarioInizio === "23:00" && newOrarioFine === "07:00" ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30" : "bg-blue-50/80 border-blue-200 hover:bg-blue-100 text-blue-900")
                               }`}
+                              title={hasNotteOnSelectedDay ? "Già assegnato" : "Singolo click seleziona, Doppio click salva subito"}
                             >
                               <span className="font-extrabold text-[12px]">🌙 Notte</span>
                               <span className="text-[10px] opacity-75 font-normal">{hasNotteOnSelectedDay ? "Già assegnato" : "23:00 - 07:00"}</span>
@@ -7197,10 +7271,15 @@ function importaTurniResidenzaVannucci() {
                                 setNewOrarioFine("15:30");
                                 if (!newNote) setNewNote("Servizio Cucina e Mensa");
                               }}
+                              onDoubleClick={() => {
+                                if (hasCucinaOnSelectedDay) return;
+                                handleFastSubmit({ tipoTurno: "Cucina", orarioInizio: "10:30", orarioFine: "15:30" });
+                              }}
                               className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
                                 hasCucinaOnSelectedDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
                                 "cursor-pointer " + (newTipoTurno === "Cucina" && newOrarioInizio === "10:30" && newOrarioFine === "15:30" ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30" : "bg-sky-50/80 border-sky-300 hover:bg-sky-100 text-sky-950")
                               }`}
+                              title={hasCucinaOnSelectedDay ? "Già assegnato" : "Singolo click seleziona, Doppio click salva subito"}
                             >
                               <span className="font-extrabold text-[12px]">🍲 Cucina</span>
                               <span className="text-[10px] opacity-75 font-normal">{hasCucinaOnSelectedDay ? "Già assegnato" : "10:30 - 15:30"}</span>
@@ -7217,10 +7296,15 @@ function importaTurniResidenzaVannucci() {
                                 setNewOrarioFine("11:00");
                                 if (!newNote) setNewNote("Servizio Pulizie & Supporto Alzate");
                               }}
+                              onDoubleClick={() => {
+                                if (hasPulizieOnSelectedDay) return;
+                                handleFastSubmit({ tipoTurno: "Pulizie", orarioInizio: "07:00", orarioFine: "11:00" });
+                              }}
                               className={`p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
                                 hasPulizieOnSelectedDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
                                 "cursor-pointer " + (newTipoTurno === "Pulizie" && newOrarioInizio === "07:00" && newOrarioFine === "11:00" ? "bg-teal-600 border-teal-700 text-white ring-4 ring-teal-600/30" : "bg-teal-50/80 border-teal-200 hover:bg-teal-100 text-teal-950")
                               }`}
+                              title={hasPulizieOnSelectedDay ? "Già assegnato" : "Singolo click seleziona, Doppio click salva subito"}
                             >
                               <span className="font-extrabold text-[12px]">🪣🧹 Pulizie</span>
                               <span className="text-[10px] opacity-75 font-normal">{hasPulizieOnSelectedDay ? "Già assegnato" : "07:00 - 11:00"}</span>
@@ -7285,12 +7369,15 @@ function importaTurniResidenzaVannucci() {
                           setNewOrarioFine("15:30");
                           if (!newNote) setNewNote("Servizio Cucina e Mensa");
                         }}
+                        onDoubleClick={() => {
+                          handleFastSubmit({ tipoTurno: "Cucina", orarioInizio: "10:30", orarioFine: "15:30" });
+                        }}
                         className={`p-2.5 rounded-xl border-2 transition-all text-[10px] font-black hover:bg-sky-100 cursor-pointer flex flex-col items-center justify-center gap-1 shadow-sm text-center leading-tight ${
                           newTipoTurno === "Cucina" && newOrarioInizio === "10:30" && newOrarioFine === "15:30"
                             ? "border-sky-600 bg-sky-600 text-white ring-4 ring-sky-600/30"
                             : "border-sky-500 bg-sky-50 text-sky-950"
                         }`}
-                        title="Seleziona turno Cucina"
+                        title="Seleziona turno Cucina (Doppio click per inserire subito)"
                       >
                         <span>🍲 Cucina</span>
                         <span className="text-[9px] font-bold opacity-80">10:30-15:30</span>
@@ -7306,6 +7393,10 @@ function importaTurniResidenzaVannucci() {
                           setNewOrarioFine("07:00");
                           if (!newNote) setNewNote("Turno di Notte");
                         }}
+                        onDoubleClick={() => {
+                          if (hasNotteOnSelectedDay) return;
+                          handleFastSubmit({ tipoTurno: "Notte", orarioInizio: "23:00", orarioFine: "07:00" });
+                        }}
                         className={`p-2.5 rounded-xl border-2 transition-all text-[10px] font-black hover:bg-blue-100 cursor-pointer flex flex-col items-center justify-center gap-1 shadow-sm text-center leading-tight ${
                           hasNotteOnSelectedDay
                             ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400"
@@ -7313,7 +7404,7 @@ function importaTurniResidenzaVannucci() {
                             ? "border-blue-600 bg-blue-600 text-white ring-4 ring-blue-600/30"
                             : "border-blue-500 bg-blue-50 text-blue-950"
                         }`}
-                        title={hasNotteOnSelectedDay ? "Già assegnato per oggi" : "Seleziona turno di Notte (genera split 23-24 e 00-07)"}
+                        title={hasNotteOnSelectedDay ? "Già assegnato per oggi" : "Seleziona turno di Notte (Doppio click per inserire subito)"}
                       >
                         <span>🌙 Notte</span>
                         <span className="text-[9px] font-bold opacity-80">23:00-07:00</span>
@@ -8065,6 +8156,10 @@ function importaTurniResidenzaVannucci() {
                                             setEditShiftNote("Supporto Alzata (Jolly)");
                                           }
                                         }}
+                                        onDoubleClick={() => {
+                                          if (!validity.valid) return;
+                                          handleFastEditSubmit(preset.tipoTurno, preset.orarioInizio, preset.orarioFine);
+                                        }}
                                         disabled={!validity.valid}
                                         title={validity.reason || `${preset.label} (${preset.orarioInizio} - ${preset.orarioFine})`}
                                         className={`w-full p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center relative ${
@@ -8126,11 +8221,15 @@ function importaTurniResidenzaVannucci() {
                                       setEditShiftFine("07:00");
                                       if (!editShiftNote) setEditShiftNote("Turno di Notte");
                                     }}
+                                    onDoubleClick={() => {
+                                      if (hasNotteOnEditDay) return;
+                                      handleFastEditSubmit("Notte", "23:00", "07:00");
+                                    }}
                                     className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
                                       hasNotteOnEditDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
                                       "cursor-pointer " + (selectedShiftForDetail?.tipoTurno === "Notte" && editShiftInizio === "23:00" && editShiftFine === "07:00" ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30" : "bg-blue-50/80 border-blue-200 hover:bg-blue-100 text-blue-900")
                                     }`}
-                                    title={hasNotteOnEditDay ? "Turno Notte già assegnato per questo giorno" : "Clicca per selezionare il turno Notte"}
+                                    title={hasNotteOnEditDay ? "Turno Notte già assegnato" : "Singolo click seleziona, Doppio click salva subito"}
                                   >
                                     <span className="font-extrabold text-[12px]">🌙 Notte</span>
                                     <span className="text-[9px] opacity-75 font-normal">{hasNotteOnEditDay ? "Già assegnato" : "23:00 - 07:00"}</span>
@@ -8147,11 +8246,15 @@ function importaTurniResidenzaVannucci() {
                                       setEditShiftFine("15:30");
                                       if (!editShiftNote) setEditShiftNote("Servizio Cucina e Mensa");
                                     }}
+                                    onDoubleClick={() => {
+                                      if (hasCucinaOnEditDay) return;
+                                      handleFastEditSubmit("Cucina", "10:30", "15:30");
+                                    }}
                                     className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
                                       hasCucinaOnEditDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
                                       "cursor-pointer " + (selectedShiftForDetail?.tipoTurno === "Cucina" && editShiftInizio === "10:30" && editShiftFine === "15:30" ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30" : "bg-sky-50/80 border-sky-200 hover:bg-sky-100 text-sky-900")
                                     }`}
-                                    title={hasCucinaOnEditDay ? "Turno Cucina già assegnato per questo giorno" : "Clicca per selezionare il turno Cucina"}
+                                    title={hasCucinaOnEditDay ? "Turno Cucina già assegnato" : "Singolo click seleziona, Doppio click salva subito"}
                                   >
                                     <span className="font-extrabold text-[12px]">🍲 Cucina</span>
                                     <span className="text-[9px] opacity-75 font-normal">{hasCucinaOnEditDay ? "Già assegnato" : "10:30 - 15:30"}</span>
@@ -8168,11 +8271,15 @@ function importaTurniResidenzaVannucci() {
                                       setEditShiftFine("11:00");
                                       if (!editShiftNote) setEditShiftNote("Servizio Pulizie & Supporto Alzate");
                                     }}
+                                    onDoubleClick={() => {
+                                      if (hasPulizieOnEditDay) return;
+                                      handleFastEditSubmit("Pulizie", "07:00", "11:00");
+                                    }}
                                     className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
                                       hasPulizieOnEditDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
                                       "cursor-pointer " + (selectedShiftForDetail?.tipoTurno === "Pulizie" && editShiftInizio === "07:00" && editShiftFine === "11:00" ? "bg-teal-600 border-teal-700 text-white ring-4 ring-teal-600/30" : "bg-teal-50/80 border-teal-200 hover:bg-teal-100 text-teal-950")
                                     }`}
-                                    title={hasPulizieOnEditDay ? "Turno Pulizie già assegnato per questo giorno" : "Clicca per selezionare il turno Pulizie"}
+                                    title={hasPulizieOnEditDay ? "Turno Pulizie già assegnato" : "Singolo click seleziona, Doppio click salva subito"}
                                   >
                                     <span className="font-extrabold text-[12px] flex items-center gap-1">🪣🧹 Pulizie</span>
                                     <span className="text-[9px] opacity-75 font-normal">{hasPulizieOnEditDay ? "Già assegnato" : "07:00 - 11:00"}</span>
@@ -8189,11 +8296,15 @@ function importaTurniResidenzaVannucci() {
                                       setEditShiftFine("20:00");
                                       if (!editShiftNote) setEditShiftNote("Servizio Pomeridiano");
                                     }}
+                                    onDoubleClick={() => {
+                                      if (hasServizioOnEditDay) return;
+                                      handleFastEditSubmit("Servizio", "17:00", "20:00");
+                                    }}
                                     className={`p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center ${
                                       hasServizioOnEditDay ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400" :
                                       "cursor-pointer " + (selectedShiftForDetail?.tipoTurno === "Servizio" && editShiftInizio === "17:00" && editShiftFine === "20:00" ? "bg-violet-600 border-violet-700 text-white ring-4 ring-violet-600/30" : "bg-violet-50/80 border-violet-200 hover:bg-violet-100 text-violet-950")
                                     }`}
-                                    title={hasServizioOnEditDay ? "Turno Servizio già assegnato per questo giorno" : "Clicca per selezionare il turno Servizio"}
+                                    title={hasServizioOnEditDay ? "Turno Servizio già assegnato" : "Singolo click seleziona, Doppio click salva subito"}
                                   >
                                     <span className="font-extrabold text-[12px] flex items-center gap-1">🍽️ Servizio</span>
                                     <span className="text-[9px] opacity-75 font-normal">{hasServizioOnEditDay ? "Già assegnato" : "17:00 - 20:00"}</span>
@@ -8226,12 +8337,15 @@ function importaTurniResidenzaVannucci() {
                               setEditShiftFine("15:30");
                               if (!editShiftNote) setEditShiftNote("Servizio Cucina e Mensa");
                             }}
+                            onDoubleClick={() => {
+                              handleFastEditSubmit("Cucina", "10:30", "15:30");
+                            }}
                             className={`p-2.5 rounded-xl border-2 transition-all text-[10px] font-black hover:bg-sky-100 cursor-pointer flex flex-col items-center justify-center gap-1 shadow-sm text-center leading-tight ${
                               selectedShiftForDetail?.tipoTurno === "Cucina" && editShiftInizio === "10:30" && editShiftFine === "15:30"
                                 ? "border-sky-600 bg-sky-600 text-white ring-4 ring-sky-500/30"
                                 : "border-sky-500 bg-sky-50 text-sky-950"
                             }`}
-                            title="Seleziona Cucina"
+                            title="Seleziona Cucina (Doppio click per inserire subito)"
                           >
                             <span>🍲 Cucina</span>
                             <span className="text-[9px] font-bold opacity-80">10:30-15:30</span>
@@ -8247,6 +8361,10 @@ function importaTurniResidenzaVannucci() {
                               setEditShiftFine("07:00");
                               if (!editShiftNote) setEditShiftNote("Turno di Notte");
                             }}
+                            onDoubleClick={() => {
+                              if (hasNotteOnEditDay) return;
+                              handleFastEditSubmit("Notte", "23:00", "07:00");
+                            }}
                             className={`p-2.5 rounded-xl border-2 transition-all text-[10px] font-black hover:bg-blue-100 cursor-pointer flex flex-col items-center justify-center gap-1 shadow-sm text-center leading-tight ${
                               hasNotteOnEditDay
                                 ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400"
@@ -8254,7 +8372,7 @@ function importaTurniResidenzaVannucci() {
                                 ? "border-blue-600 bg-blue-600 text-white ring-4 ring-blue-600/30"
                                 : "border-blue-500 bg-blue-50 text-blue-950"
                             }`}
-                            title={hasNotteOnEditDay ? "Già assegnato per oggi" : "Seleziona Notte"}
+                            title={hasNotteOnEditDay ? "Già assegnato per oggi" : "Seleziona Notte (Doppio click per inserire subito)"}
                           >
                             <span>🌙 Notte</span>
                             <span className="text-[9px] font-bold opacity-80">23:00-07:00</span>
