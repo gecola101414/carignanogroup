@@ -848,7 +848,8 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
         const hasExplicitRest = memberShiftsOnDay.some(s => s.tipoTurno === "Riposo" || s.tipoTurno === "Ferie");
         const facilityHasShiftsOnDay = shifts.some(s => s.data === fDayYMD);
 
-        if (hasExplicitRest || (!hasWorkingShift && (facilityHasShiftsOnDay || w === 0))) {
+        // Se la domenica è vuota (nessun turno, nessun riposo), non considerarla come riposo festivo
+        if (hasExplicitRest || (memberShiftsOnDay.length > 0 && !hasWorkingShift && (facilityHasShiftsOnDay || w === 0))) {
           hadRestOnFestiveThisWeek = true;
           lastRestDateStr = fDayYMD;
           lastRestLabel = fInfo.label || (fDay.getDay() === 0 ? "Domenica" : "Festivo");
@@ -2218,6 +2219,41 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   };
 
   // Special Combo for Vannucci 4: Morning (07:00-14:00 or 08:00-15:00) + Servizio (17:00-20:00)
+  // Add Pulizie (Alzata 07-08 + Pulizie 08-11)
+  const handleAddPulizieSplitV1 = (staffId: string, dateStr: string, shiftIdToIgnore?: string) => {
+    const newAlzataShift: Shift = {
+      id: `auto-${Date.now()}-1`,
+      staffId: staffId,
+      data: dateStr,
+      tipoTurno: "Alzate",
+      orarioInizio: "07:00",
+      orarioFine: "08:00",
+      struttura: "Vannucci 1",
+      note: "Supporto Alzata"
+    };
+
+    const newPulizieShift: Shift = {
+      id: `auto-${Date.now()}-2`,
+      staffId: staffId,
+      data: dateStr,
+      tipoTurno: "Pulizie",
+      orarioInizio: "08:00",
+      orarioFine: "11:00",
+      struttura: "Vannucci 1",
+      note: "Servizio Pulizie"
+    };
+
+    const updatedShifts = shifts
+      .filter(s => s.id !== shiftIdToIgnore)
+      .filter(s => !(s.staffId === staffId && s.data === dateStr && (s.tipoTurno === "Alzate" || s.tipoTurno === "Pulizie")))
+      .concat([newAlzataShift, newPulizieShift]);
+
+    applyShiftsUpdate(updatedShifts);
+    setSelectedShiftForDetail(null);
+    setEditShiftNote("");
+    showToast("✅ Turno Pulizie (07:00-11:00) aggiunto!");
+  };
+
   const handleAddComboV4Servizio = (staffId: string, dateStr: string, morningStart: "07:00" | "08:00", morningEnd: "14:00" | "15:00", shiftIdToIgnore?: string) => {
     if (!staffId || !dateStr) return;
 
@@ -6960,14 +6996,15 @@ function importaTurniResidenzaVannucci() {
                 </div>
 
                 {/* RIGHT COLUMN: Presets & Special Statuses (Riposo, Ferie, Malattia) */}
-                <div className="space-y-3 flex flex-col">
+                <div className="space-y-4 flex flex-col">
                   <div className="flex items-center justify-between shrink-0">
                     <label className="block font-black text-slate-700 tracking-wide uppercase text-[10px]">
                       Seleziona Turno o Stato
                     </label>
                   </div>
 
-                    <div className="grid grid-cols-2 gap-2.5">
+                  {/* RIGA 1: PRESET ORARI */}
+                  <div className="grid grid-cols-2 gap-2.5">
                     {newStruttura.toLowerCase().includes("4") ? (
                       <>
                         {/* VANNUCCI 4 ONLY: Presets 08:15-15:20 and 15:20-22:00 */}
@@ -6976,171 +7013,71 @@ function importaTurniResidenzaVannucci() {
                           .map((preset) => {
                             const isSelected = newTipoTurno === preset.tipoTurno && newOrarioInizio === preset.orarioInizio && newOrarioFine === preset.orarioFine;
                             const validity = checkPotentialShiftValidity(newStaffId, newDate, preset.tipoTurno, newStruttura, preset.orarioInizio, preset.orarioFine);
+                            const isJolly = preset.id === "preset-v2-alzata-7-8" || preset.tipoTurno === "Alzate" || (preset.orarioInizio === "07:00" && preset.orarioFine === "08:00");
 
                             return (
-                              <div key={preset.id} className="relative group/preset">
+                              <div key={preset.id} className={`relative group/preset ${isJolly ? "col-span-2" : ""}`}>
                                 <button
-                                 type="button"
-                                 onDoubleClick={() => {
-                                   if (!validity.valid) return;
-                                   handleFastSubmit(preset);
-                                 }}
-                                 onClick={() => {
-                                   if (!validity.valid) return;
-                                   setNewTipoTurno(preset.tipoTurno);
-                                   setNewOrarioInizio(preset.orarioInizio);
-                                   setNewOrarioFine(preset.orarioFine);
-                                 }}
-                                 disabled={!validity.valid}
-                                 title={validity.reason || `${preset.label} (${preset.orarioInizio} - ${preset.orarioFine})`}
-                                 className={`w-full p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center relative ${
-                                   !validity.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
-                                   "cursor-pointer " + (isSelected
-                                     ? "bg-lime-400 border-lime-500 text-lime-950 ring-4 ring-lime-400/25 shadow-sm"
-                                     : "bg-lime-50/60 border-lime-200 hover:bg-lime-100 text-lime-950")
-                                 }`}
+                                  type="button"
+                                  onClick={() => {
+                                    if (!validity.valid) return;
+                                    setNewTipoTurno(preset.tipoTurno);
+                                    setNewOrarioInizio(preset.orarioInizio);
+                                    setNewOrarioFine(preset.orarioFine);
+                                    if (preset.tipoTurno === "Cucina" && !newNote) {
+                                      setNewNote("Servizio Cucina e Mensa");
+                                    } else if (isJolly && !newNote) {
+                                      setNewNote("Supporto Alzata (Jolly)");
+                                    }
+                                  }}
+                                  disabled={!validity.valid}
+                                  title={validity.reason || `${preset.label} (${preset.orarioInizio} - ${preset.orarioFine})`}
+                                  className={`w-full p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center relative ${
+                                    !validity.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
+                                    "cursor-pointer " + (isSelected
+                                      ? isJolly
+                                        ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/30"
+                                        : preset.tipoTurno === "Pulizie"
+                                        ? "bg-teal-600 border-teal-700 text-white ring-4 ring-teal-600/30"
+                                        : preset.tipoTurno === "Cucina"
+                                        ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30"
+                                        : preset.tipoTurno === "Notte"
+                                        ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30"
+                                        : "bg-lime-400 border-lime-500 text-lime-950 ring-4 ring-lime-400/25"
+                                      : isJolly
+                                      ? "bg-amber-50/90 border-amber-300 hover:bg-amber-100 text-amber-950 shadow-2xs"
+                                      : preset.tipoTurno === "Pulizie"
+                                      ? "bg-teal-50/80 border-teal-200 hover:bg-teal-100 text-teal-950"
+                                      : preset.tipoTurno === "Cucina"
+                                      ? "bg-sky-50/80 border-sky-300 hover:bg-sky-100 text-sky-950"
+                                      : preset.tipoTurno === "Notte"
+                                      ? "bg-blue-50 border-blue-200 hover:bg-blue-100 text-blue-900"
+                                      : "bg-slate-50 border-slate-200 hover:bg-slate-100")
+                                  }`}
                                 >
-                                  <span className="font-extrabold text-[12px] truncate pr-1">{preset.label}</span>
-                                  <span className="text-[10px] opacity-75 font-normal truncate">
+                                  <span className="font-extrabold text-[12px] truncate pr-5 flex items-center justify-between">
+                                    <span>{preset.label}</span>
+                                    {isJolly && <span className="text-[9px] bg-orange-200/90 text-orange-950 px-1.5 py-0.2 rounded font-black">JOLLY • NO 11H</span>}
+                                  </span>
+                                  <span className="text-[9px] opacity-75 font-normal truncate">
                                     {preset.subtitle || `${preset.orarioInizio} - ${preset.orarioFine}`}
                                   </span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleRemovePreset(preset.id, e)}
+                                  className="absolute top-1.5 right-1.5 p-1 rounded-md opacity-60 hover:opacity-100 hover:bg-rose-600 hover:text-white text-rose-500 bg-white/80 shadow-3xs transition-all cursor-pointer z-10"
+                                  title="Rimuovi questo preset orario"
+                                >
+                                  <Trash2 className="w-3 h-3" />
                                 </button>
                               </div>
                             );
                           })}
-
-                        {/* VANNUCCI 4 COMBO SERVIZIO: 08:00-15:00 + 17:00-20:00 */}
-                        {(() => {
-                          const otherServizio = shifts.find(s => s.data === newDate && s.tipoTurno === "Servizio" && s.staffId !== newStaffId);
-                          const disabled = !!otherServizio;
-                          const otherStaffName = otherServizio ? staff.find(st => st.id === otherServizio.staffId)?.nome || "un altro operatore" : "";
-
-                          return (
-                            <button
-                              type="button"
-                              disabled={disabled}
-                              onClick={() => {
-                                if (disabled) return;
-                                handleAddComboV4Servizio(newStaffId, newDate, "08:00", "15:00");
-                              }}
-                              className={`col-span-2 p-3 rounded-xl border-2 font-bold transition-all text-xs flex flex-col justify-center shadow-xs ${
-                                disabled
-                                  ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400"
-                                  : "cursor-pointer border-lime-500/80 bg-gradient-to-r from-lime-500/20 via-emerald-500/20 to-teal-500/20 hover:from-lime-500/30 hover:to-teal-500/30 text-slate-900"
-                              }`}
-                              title={disabled ? `Turno Pom. (17:00-20:00) già assegnato a ${otherStaffName}` : "Assegna Mattina V4 (08:00-15:00) + Pom. (17:00-20:00)"}
-                            >
-                              <div className="flex items-center justify-between">
-                                <span className="font-black text-xs text-lime-950 flex items-center gap-1">
-                                  <span>⚡ Combo V4: 08:00 - 15:00 + 17:00 - 20:00</span>
-                                </span>
-                                <span className="text-[9px] font-extrabold text-violet-800 bg-violet-100 px-1.5 py-0.2 rounded">10h tot (7h + 3h)</span>
-                              </div>
-                              <span className="text-[10px] text-slate-700 font-semibold mt-0.5">
-                                {disabled ? `⚠️ Turno Pom. serale già assegnato a ${otherStaffName}` : "🌅 Mattina V4 (08:00-15:00) + 🍽️ Pom. (17:00-20:00)"}
-                              </span>
-                            </button>
-                          );
-                        })()}
-                      </>
-                    ) : newStruttura.toLowerCase().includes("2") ? (
-                      <>
-                        {/* VANNUCCI 2 ONLY: Exactly 5 official presets (08-14, 14-21, 08-15, 15-21, and Jolly Alzata 07-08) */}
-                        {[
-                          {
-                            id: "preset-v2-8-14",
-                            label: "🌅 08:00-14:00",
-                            tipoTurno: "Mattina",
-                            orarioInizio: "08:00",
-                            orarioFine: "14:00",
-                            subtitle: "08:00 - 14:00",
-                            isJolly: false
-                          },
-                          {
-                            id: "preset-v2-14-21",
-                            label: "🌆 14:00-21:00",
-                            tipoTurno: "Pomeriggio",
-                            orarioInizio: "14:00",
-                            orarioFine: "21:00",
-                            subtitle: "14:00 - 21:00",
-                            isJolly: false
-                          },
-                          {
-                            id: "preset-v2-8-15",
-                            label: "🌅 08:00-15:00",
-                            tipoTurno: "Mattina",
-                            orarioInizio: "08:00",
-                            orarioFine: "15:00",
-                            subtitle: "08:00 - 15:00",
-                            isJolly: false
-                          },
-                          {
-                            id: "preset-v2-15-21",
-                            label: "🌆 15:00-21:00",
-                            tipoTurno: "Pomeriggio",
-                            orarioInizio: "15:00",
-                            orarioFine: "21:00",
-                            subtitle: "15:00 - 21:00",
-                            isJolly: false
-                          },
-                          {
-                            id: "preset-v2-alzata-7-8",
-                            label: "⏰🃏 Alzata (07:00-08:00)",
-                            tipoTurno: "Alzate",
-                            orarioInizio: "07:00",
-                            orarioFine: "08:00",
-                            subtitle: "Orario Jolly • Sempre inseribile (senza vincolo 11h)",
-                            isJolly: true
-                          }
-                        ].map((preset) => {
-                          const isSelected = newTipoTurno === preset.tipoTurno && newOrarioInizio === preset.orarioInizio && newOrarioFine === preset.orarioFine;
-                          const validity = checkPotentialShiftValidity(newStaffId, newDate, preset.tipoTurno, newStruttura, preset.orarioInizio, preset.orarioFine);
-                          const isJolly = preset.isJolly;
-
-                          return (
-                            <div key={preset.id} className={`relative group/preset ${isJolly ? "col-span-2" : ""}`}>
-                              <button
-                                type="button"
-                                onDoubleClick={() => {
-                                  if (!validity.valid) return;
-                                  handleFastSubmit(preset);
-                                }}
-                                onClick={() => {
-                                  if (!validity.valid) return;
-                                  setNewTipoTurno(preset.tipoTurno);
-                                  setNewOrarioInizio(preset.orarioInizio);
-                                  setNewOrarioFine(preset.orarioFine);
-                                  if (isJolly && !newNote) {
-                                    setNewNote("Supporto Alzata (Jolly)");
-                                  }
-                                }}
-                                disabled={!validity.valid}
-                                title={validity.reason || `${preset.label} (${preset.orarioInizio} - ${preset.orarioFine})`}
-                                className={`w-full p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center relative ${
-                                  !validity.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
-                                  "cursor-pointer " + (isSelected
-                                    ? isJolly
-                                      ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/30"
-                                      : "bg-yellow-400 border-yellow-500 text-yellow-950 ring-4 ring-yellow-400/25"
-                                    : isJolly
-                                    ? "bg-orange-50/90 border-orange-300 hover:bg-orange-100 text-orange-950 shadow-2xs"
-                                    : "bg-slate-50 border-slate-200 hover:bg-slate-100")
-                                }`}
-                              >
-                                <span className="font-extrabold text-[12px] truncate pr-1 flex items-center justify-between">
-                                  <span>{preset.label}</span>
-                                  {isJolly && <span className="text-[9px] bg-orange-200/90 text-orange-950 px-1.5 py-0.2 rounded font-black">JOLLY • NO 11H</span>}
-                                </span>
-                                <span className="text-[10px] opacity-75 font-normal truncate">
-                                  {preset.subtitle}
-                                </span>
-                              </button>
-                            </div>
-                          );
-                        })}
                       </>
                     ) : (
                       <>
+                        {/* NORMAL PRESETS */}
                         {savedPresets
                           .filter((preset) => {
                             const currentS = newStruttura.toLowerCase();
@@ -7155,77 +7092,76 @@ function importaTurniResidenzaVannucci() {
                             return false;
                           })
                           .map((preset) => {
-                          const isSelected = newTipoTurno === preset.tipoTurno && newOrarioInizio === preset.orarioInizio && newOrarioFine === preset.orarioFine;
-                          const validity = checkPotentialShiftValidity(newStaffId, newDate, preset.tipoTurno, newStruttura, preset.orarioInizio, preset.orarioFine);
-                          const isJolly = preset.id === "preset-v2-alzata-7-8" || preset.tipoTurno === "Alzate" || (preset.orarioInizio === "07:00" && preset.orarioFine === "08:00");
+                            const isSelected = newTipoTurno === preset.tipoTurno && newOrarioInizio === preset.orarioInizio && newOrarioFine === preset.orarioFine;
+                            const validity = checkPotentialShiftValidity(newStaffId, newDate, preset.tipoTurno, newStruttura, preset.orarioInizio, preset.orarioFine);
+                            const isJolly = preset.id === "preset-v2-alzata-7-8" || preset.tipoTurno === "Alzate" || (preset.orarioInizio === "07:00" && preset.orarioFine === "08:00");
 
-                          return (
-                            <div key={preset.id} className={`relative group/preset ${isJolly ? "col-span-2" : ""}`}>
-                              <button
-                                type="button"
-                                onDoubleClick={() => {
-                                  if (!validity.valid) return;
-                                  handleFastSubmit(preset);
-                                }}
-                                onClick={() => {
-                                  if (!validity.valid) return;
-                                  setNewTipoTurno(preset.tipoTurno);
-                                  setNewOrarioInizio(preset.orarioInizio);
-                                  setNewOrarioFine(preset.orarioFine);
-                                  if (preset.tipoTurno === "Cucina" && !newNote) {
-                                    setNewNote("Servizio Cucina e Mensa");
-                                  } else if (isJolly && !newNote) {
-                                    setNewNote("Supporto Alzata (Jolly)");
-                                  }
-                                }}
-                                disabled={!validity.valid}
-                                title={validity.reason || `${preset.label} (${preset.orarioInizio} - ${preset.orarioFine})`}
-                                className={`w-full p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center relative ${
-                                  !validity.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
-                                  "cursor-pointer " + (isSelected
-                                    ? isJolly
-                                      ? "bg-amber-500 border-amber-600 text-white ring-4 ring-amber-500/30"
+                            return (
+                              <div key={preset.id} className={`relative group/preset ${isJolly ? "col-span-2" : ""}`}>
+                                <button
+                                  type="button"
+                                  onDoubleClick={() => {
+                                    if (!validity.valid) return;
+                                    handleFastSubmit(preset);
+                                  }}
+                                  onClick={() => {
+                                    if (!validity.valid) return;
+                                    setNewTipoTurno(preset.tipoTurno);
+                                    setNewOrarioInizio(preset.orarioInizio);
+                                    setNewOrarioFine(preset.orarioFine);
+                                    if (preset.tipoTurno === "Cucina" && !newNote) {
+                                      setNewNote("Servizio Cucina e Mensa");
+                                    } else if (isJolly && !newNote) {
+                                      setNewNote("Supporto Alzata (Jolly)");
+                                    }
+                                  }}
+                                  disabled={!validity.valid}
+                                  title={validity.reason || `${preset.label} (${preset.orarioInizio} - ${preset.orarioFine})`}
+                                  className={`w-full p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center relative ${
+                                    !validity.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
+                                    "cursor-pointer " + (isSelected
+                                      ? isJolly
+                                        ? "bg-amber-500 border-amber-600 text-white ring-4 ring-amber-500/30"
+                                        : preset.tipoTurno === "Pulizie"
+                                        ? "bg-teal-600 border-teal-700 text-white ring-4 ring-teal-600/30"
+                                        : preset.tipoTurno === "Cucina"
+                                        ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30"
+                                        : preset.tipoTurno === "Notte"
+                                        ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30"
+                                        : newStruttura === "Vannucci 1" || newStruttura === "Struttura 1"
+                                        ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
+                                        : "bg-lime-400 border-lime-500 text-lime-950 ring-4 ring-lime-400/25"
+                                      : isJolly
+                                      ? "bg-amber-50/90 border-amber-300 hover:bg-amber-100 text-amber-950 shadow-2xs"
                                       : preset.tipoTurno === "Pulizie"
-                                      ? "bg-teal-600 border-teal-700 text-white ring-4 ring-teal-600/30"
+                                      ? "bg-teal-50/80 border-teal-200 hover:bg-teal-100 text-teal-950"
                                       : preset.tipoTurno === "Cucina"
-                                      ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30"
+                                      ? "bg-sky-50/80 border-sky-300 hover:bg-sky-100 text-sky-950"
                                       : preset.tipoTurno === "Notte"
-                                      ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30"
-                                      : newStruttura === "Vannucci 1" || newStruttura === "Struttura 1"
-                                      ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
-                                      : "bg-lime-400 border-lime-500 text-lime-950 ring-4 ring-lime-400/25"
-                                    : isJolly
-                                    ? "bg-amber-50/90 border-amber-300 hover:bg-amber-100 text-amber-950 shadow-2xs"
-                                    : preset.tipoTurno === "Pulizie"
-                                    ? "bg-teal-50/80 border-teal-200 hover:bg-teal-100 text-teal-950"
-                                    : preset.tipoTurno === "Cucina"
-                                    ? "bg-sky-50/80 border-sky-300 hover:bg-sky-100 text-sky-950"
-                                    : preset.tipoTurno === "Notte"
-                                    ? "bg-blue-50 border-blue-200 hover:bg-blue-100 text-blue-900"
-                                    : "bg-slate-50 border-slate-200 hover:bg-slate-100")
-                                }`}
-                              >
-                                <span className="font-extrabold text-[12px] truncate pr-5 flex items-center justify-between">
-                                  <span>{preset.label}</span>
-                                  {isJolly && <span className="text-[9px] bg-amber-200/90 text-amber-950 px-1.5 py-0.2 rounded font-black">JOLLY • NO 11H</span>}
-                                </span>
-                                <span className="text-[10px] opacity-75 font-normal truncate">
-                                  {preset.subtitle || `${preset.orarioInizio} - ${preset.orarioFine}`}
-                                </span>
-                              </button>
+                                      ? "bg-blue-50 border-blue-200 hover:bg-blue-100 text-blue-900"
+                                      : "bg-slate-50 border-slate-200 hover:bg-slate-100")
+                                  }`}
+                                >
+                                  <span className="font-extrabold text-[12px] truncate pr-5 flex items-center justify-between">
+                                    <span>{preset.label}</span>
+                                    {isJolly && <span className="text-[9px] bg-amber-200/90 text-amber-950 px-1.5 py-0.2 rounded font-black">JOLLY • NO 11H</span>}
+                                  </span>
+                                  <span className="text-[10px] opacity-75 font-normal truncate">
+                                    {preset.subtitle || `${preset.orarioInizio} - ${preset.orarioFine}`}
+                                  </span>
+                                </button>
 
-                              {/* Trash Button to Remove Preset */}
-                              <button
-                                type="button"
-                                onClick={(e) => handleRemovePreset(preset.id, e)}
-                                className="absolute top-1.5 right-1.5 p-1 rounded-md opacity-60 hover:opacity-100 hover:bg-rose-600 hover:text-white text-rose-500 bg-white/80 shadow-3xs transition-all cursor-pointer z-10"
-                                title="Rimuovi questo preset orario"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            </div>
-                          );
-                        })}
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleRemovePreset(preset.id, e)}
+                                  className="absolute top-1.5 right-1.5 p-1 rounded-md opacity-60 hover:opacity-100 hover:bg-rose-600 hover:text-white text-rose-500 bg-white/80 shadow-3xs transition-all cursor-pointer z-10"
+                                  title="Rimuovi questo preset orario"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            );
+                          })}
 
                         {/* Turno Notturno, Cucina, Pulizie - Omitted for Vannucci 1 and Vannucci 2 */}
                         {!newStruttura.toLowerCase().includes("1") && !newStruttura.toLowerCase().includes("2") && (
@@ -7293,7 +7229,68 @@ function importaTurniResidenzaVannucci() {
                         )}
                       </>
                     )}
+                  </div>
 
+                  {/* RIGA 2: DUE TURNI NUOVI (ONLY FOR VANNUCCI 1) */}
+                  {newStruttura.toLowerCase().includes("1") && (
+                    <div className="grid grid-cols-2 gap-2.5 mt-1 pt-2.5 border-t border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!newStaffId || !newDate) return;
+                          if (lockedDays.includes(newDate)) {
+                            showToast("🔒 Questo giorno è bloccato!");
+                            return;
+                          }
+                          const newAlzataShift: Shift = {
+                            id: `auto-${Date.now()}-1`,
+                            staffId: newStaffId,
+                            data: newDate,
+                            tipoTurno: "Alzate",
+                            orarioInizio: "07:00",
+                            orarioFine: "08:00",
+                            struttura: "Vannucci 1",
+                            note: "Supporto Alzata"
+                          };
+                          const newPulizieShift: Shift = {
+                            id: `auto-${Date.now()}-2`,
+                            staffId: newStaffId,
+                            data: newDate,
+                            tipoTurno: "Pulizie",
+                            orarioInizio: "08:00",
+                            orarioFine: "11:00",
+                            struttura: "Vannucci 1",
+                            note: "Servizio Pulizie"
+                          };
+                          const updatedShifts = shifts
+                            .filter(s => !(s.staffId === newStaffId && s.data === newDate && (s.tipoTurno === "Alzate" || s.tipoTurno === "Pulizie")))
+                            .concat([newAlzataShift, newPulizieShift]);
+                          applyShiftsUpdate(updatedShifts);
+                          setShowAddModal(false);
+                          setNewNote("");
+                          showToast("✅ Turno Pulizie (07:00-11:00) aggiunto!");
+                        }}
+                        className="p-3 rounded-xl border-2 border-teal-500 bg-teal-50 text-teal-950 text-xs font-bold hover:bg-teal-100 cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+                      >
+                        🪣 Pulizie (07:00-11:00)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewTipoTurno("Cucina");
+                          setNewOrarioInizio("10:30");
+                          setNewOrarioFine("15:30");
+                          if (!newNote) setNewNote("Servizio Cucina e Mensa");
+                        }}
+                        className="p-3 rounded-xl border-2 border-sky-500 bg-sky-50 text-sky-950 text-xs font-bold hover:bg-sky-100 cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+                      >
+                        🍲 Cucina (10:30-15:30)
+                      </button>
+                    </div>
+                  )}
+
+                  {/* RIGA 3: RIPOSO E FERIE */}
+                  <div className="grid grid-cols-2 gap-2.5 mt-1 pt-2.5 border-t border-slate-200">
                     {/* Riposo */}
                     <button
                       type="button"
@@ -7336,15 +7333,17 @@ function importaTurniResidenzaVannucci() {
                       </div>
                       <span className="text-[10px] opacity-85 font-normal">Apri gestione con calendario (dal - al)</span>
                     </button>
+                  </div>
 
-                    {/* Malattia */}
+                  {/* RIGA 4: MALATTIA */}
+                  <div className="mt-1">
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         handleOpenSickModal(newStaffId, newDate);
                       }}
-                      className="col-span-2 p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer bg-rose-50 border-rose-200 hover:bg-rose-100 text-rose-900 shadow-3xs"
+                      className="w-full p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer bg-rose-50 border-rose-200 hover:bg-rose-100 text-rose-900 shadow-3xs"
                       title="Apri gestione malattia / riposo medico con calendario interattivo (dal - al)"
                     >
                       <div className="flex items-center justify-between">
@@ -7949,7 +7948,7 @@ function importaTurniResidenzaVannucci() {
                           </label>
                         </div>
 
-                        {/* Preset Buttons Grid */}
+                        {/* RIGA 1: Preset Buttons Grid */}
                         <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
                           {editShiftStruttura.toLowerCase().includes("4") ? (
                             <>
@@ -7976,182 +7975,31 @@ function importaTurniResidenzaVannucci() {
                                           !validity.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
                                           "cursor-pointer " + (isSelected
                                             ? "bg-lime-400 border-lime-500 text-lime-950 ring-4 ring-lime-400/25"
-                                            : "bg-lime-50/60 border-lime-200 hover:bg-lime-100 text-lime-950")
+                                            : "bg-slate-50 border-slate-200 hover:bg-slate-100")
                                         }`}
                                       >
-                                        <span className="font-extrabold text-[12px] truncate pr-1">{preset.label}</span>
+                                        <span className="font-extrabold text-[12px] truncate pr-5">
+                                          {preset.label}
+                                        </span>
                                         <span className="text-[9px] opacity-75 font-normal truncate">
                                           {preset.subtitle || `${preset.orarioInizio} - ${preset.orarioFine}`}
                                         </span>
                                       </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => handleRemovePreset(preset.id, e)}
+                                        className="absolute top-1.5 right-1.5 p-1 rounded-md opacity-60 hover:opacity-100 hover:bg-rose-600 hover:text-white text-rose-500 bg-white/80 shadow-3xs transition-all cursor-pointer z-10"
+                                        title="Rimuovi questo preset orario"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
                                     </div>
                                   );
                                 })}
-
-                              {/* V4 COMBO 1: 07:00-14:00 + 17:00-20:00 */}
-                              {(() => {
-                                const staffId = selectedShiftForDetail?.staffId || "";
-                                const otherServizio = shifts.find(s => s.data === editShiftDate && s.tipoTurno === "Servizio" && s.staffId !== staffId);
-                                const disabled = !!otherServizio;
-                                const otherStaffName = otherServizio ? staff.find(st => st.id === otherServizio.staffId)?.nome || "un altro operatore" : "";
-
-                                return (
-                                  <button
-                                    type="button"
-                                    disabled={disabled}
-                                    onClick={() => {
-                                      if (disabled) return;
-                                      handleAddComboV4Servizio(staffId, editShiftDate, "07:00", "14:00", selectedShiftForDetail?.id);
-                                    }}
-                                    className={`col-span-2 p-2.5 rounded-xl border-2 font-bold transition-all text-xs flex flex-col justify-center shadow-xs ${
-                                      disabled
-                                        ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400"
-                                        : "cursor-pointer border-lime-500/80 bg-gradient-to-r from-lime-500/15 via-emerald-500/15 to-violet-500/15 hover:from-lime-500/25 hover:to-violet-500/25 text-slate-900"
-                                    }`}
-                                    title={disabled ? `Turno Servizio già assegnato a ${otherStaffName}` : "Assegna Mattina V4 (07:00-14:00) + Servizio (17:00-20:00)"}
-                                  >
-                                    <div className="flex items-center justify-between">
-                                      <span className="font-black text-xs text-lime-950 flex items-center gap-1">
-                                        <span>⚡ Combo V4: 07:00 - 14:00 + 17:00 - 20:00</span>
-                                      </span>
-                                      <span className="text-[9px] font-extrabold text-violet-800 bg-violet-100 px-1.5 py-0.2 rounded">10h tot (7h + 3h)</span>
-                                    </div>
-                                    <span className="text-[10px] text-slate-700 font-semibold mt-0.5">
-                                      {disabled ? `⚠️ Servizio serale già assegnato a ${otherStaffName}` : "🌅 Mattina V4 (07-14) + 🍽️ Servizio Pomeridiano (17-20)"}
-                                    </span>
-                                  </button>
-                                );
-                              })()}
-
-                              {/* V4 COMBO 2: 08:00-15:00 + 17:00-20:00 */}
-                              {(() => {
-                                const staffId = selectedShiftForDetail?.staffId || "";
-                                const otherServizio = shifts.find(s => s.data === editShiftDate && s.tipoTurno === "Servizio" && s.staffId !== staffId);
-                                const disabled = !!otherServizio;
-                                const otherStaffName = otherServizio ? staff.find(st => st.id === otherServizio.staffId)?.nome || "un altro operatore" : "";
-
-                                return (
-                                  <button
-                                    type="button"
-                                    disabled={disabled}
-                                    onClick={() => {
-                                      if (disabled) return;
-                                      handleAddComboV4Servizio(staffId, editShiftDate, "08:00", "15:00", selectedShiftForDetail?.id);
-                                    }}
-                                    className={`col-span-2 p-2.5 rounded-xl border-2 font-bold transition-all text-xs flex flex-col justify-center shadow-xs ${
-                                      disabled
-                                        ? "opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400"
-                                        : "cursor-pointer border-lime-500/80 bg-gradient-to-r from-lime-500/15 via-emerald-500/15 to-violet-500/15 hover:from-lime-500/25 hover:to-violet-500/25 text-slate-900"
-                                    }`}
-                                    title={disabled ? `Turno Servizio già assegnato a ${otherStaffName}` : "Assegna Mattina V4 (08:00-15:00) + Servizio (17:00-20:00)"}
-                                  >
-                                    <div className="flex items-center justify-between">
-                                      <span className="font-black text-xs text-lime-950 flex items-center gap-1">
-                                        <span>⚡ Combo V4: 08:00 - 15:00 + 17:00 - 20:00</span>
-                                      </span>
-                                      <span className="text-[9px] font-extrabold text-violet-800 bg-violet-100 px-1.5 py-0.2 rounded">10h tot (7h + 3h)</span>
-                                    </div>
-                                    <span className="text-[10px] text-slate-700 font-semibold mt-0.5">
-                                      {disabled ? `⚠️ Servizio serale già assegnato a ${otherStaffName}` : "🌅 Mattina V4 (08-15) + 🍽️ Servizio Pomeridiano (17-20)"}
-                                    </span>
-                                  </button>
-                                );
-                              })()}
-                            </>
-                          ) : editShiftStruttura.toLowerCase().includes("2") ? (
-                            <>
-                              {/* VANNUCCI 2 ONLY: Exactly 5 official presets (08-14, 14-21, 08-15, 15-21, and Jolly Alzata 07-08) */}
-                              {[
-                                {
-                                  id: "preset-v2-8-14",
-                                  label: "🌅 08:00-14:00",
-                                  tipoTurno: "Mattina",
-                                  orarioInizio: "08:00",
-                                  orarioFine: "14:00",
-                                  subtitle: "08:00 - 14:00",
-                                  isJolly: false
-                                },
-                                {
-                                  id: "preset-v2-14-21",
-                                  label: "🌆 14:00-21:00",
-                                  tipoTurno: "Pomeriggio",
-                                  orarioInizio: "14:00",
-                                  orarioFine: "21:00",
-                                  subtitle: "14:00 - 21:00",
-                                  isJolly: false
-                                },
-                                {
-                                  id: "preset-v2-8-15",
-                                  label: "🌅 08:00-15:00",
-                                  tipoTurno: "Mattina",
-                                  orarioInizio: "08:00",
-                                  orarioFine: "15:00",
-                                  subtitle: "08:00 - 15:00",
-                                  isJolly: false
-                                },
-                                {
-                                  id: "preset-v2-15-21",
-                                  label: "🌆 15:00-21:00",
-                                  tipoTurno: "Pomeriggio",
-                                  orarioInizio: "15:00",
-                                  orarioFine: "21:00",
-                                  subtitle: "15:00 - 21:00",
-                                  isJolly: false
-                                },
-                                {
-                                  id: "preset-v2-alzata-7-8",
-                                  label: "⏰🃏 Alzata (07:00-08:00)",
-                                  tipoTurno: "Alzate",
-                                  orarioInizio: "07:00",
-                                  orarioFine: "08:00",
-                                  subtitle: "Orario Jolly • Sempre inseribile (senza vincolo 11h)",
-                                  isJolly: true
-                                }
-                              ].map((preset) => {
-                                const isSelected = selectedShiftForDetail?.tipoTurno === preset.tipoTurno && editShiftInizio === preset.orarioInizio && editShiftFine === preset.orarioFine;
-                                const validity = checkPotentialShiftValidity(selectedShiftForDetail?.staffId || "", editShiftDate, preset.tipoTurno, editShiftStruttura, preset.orarioInizio, preset.orarioFine, selectedShiftForDetail?.id);
-                                const isJolly = preset.isJolly;
-
-                                return (
-                                  <div key={preset.id} className={`relative group/preset ${isJolly ? "col-span-2" : ""}`}>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        if (!validity.valid) return;
-                                        setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: preset.tipoTurno } : prev);
-                                        setEditShiftInizio(preset.orarioInizio);
-                                        setEditShiftFine(preset.orarioFine);
-                                        if (isJolly && !editShiftNote) {
-                                          setEditShiftNote("Supporto Alzata (Jolly)");
-                                        }
-                                      }}
-                                      disabled={!validity.valid}
-                                      title={validity.reason || `${preset.label} (${preset.orarioInizio} - ${preset.orarioFine})`}
-                                      className={`w-full p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center relative ${
-                                        !validity.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
-                                        "cursor-pointer " + (isSelected
-                                          ? isJolly
-                                            ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/30"
-                                            : "bg-yellow-400 border-yellow-500 text-yellow-950 ring-4 ring-yellow-400/25"
-                                          : isJolly
-                                          ? "bg-orange-50/90 border-orange-300 hover:bg-orange-100 text-orange-950 shadow-2xs"
-                                          : "bg-slate-50 border-slate-200 hover:bg-slate-100")
-                                      }`}
-                                    >
-                                      <span className="font-extrabold text-[12px] truncate pr-1 flex items-center justify-between">
-                                        <span>{preset.label}</span>
-                                        {isJolly && <span className="text-[9px] bg-orange-200/90 text-orange-950 px-1.5 py-0.2 rounded font-black">JOLLY • NO 11H</span>}
-                                      </span>
-                                      <span className="text-[9px] opacity-75 font-normal truncate">
-                                        {preset.subtitle}
-                                      </span>
-                                    </button>
-                                  </div>
-                                );
-                              })}
                             </>
                           ) : (
                             <>
+                              {/* NORMAL PRESETS */}
                               {savedPresets
                                 .filter((preset) => {
                                   const currentS = editShiftStruttura.toLowerCase();
@@ -8166,73 +8014,71 @@ function importaTurniResidenzaVannucci() {
                                   return false;
                                 })
                                 .map((preset) => {
-                                const isSelected = selectedShiftForDetail?.tipoTurno === preset.tipoTurno && editShiftInizio === preset.orarioInizio && editShiftFine === preset.orarioFine;
-                                const validity = checkPotentialShiftValidity(selectedShiftForDetail?.staffId || "", editShiftDate, preset.tipoTurno, editShiftStruttura, preset.orarioInizio, preset.orarioFine, selectedShiftForDetail?.id);
-                                const isJolly = preset.id === "preset-v2-alzata-7-8" || preset.tipoTurno === "Alzate" || (preset.orarioInizio === "07:00" && preset.orarioFine === "08:00");
+                                  const isSelected = selectedShiftForDetail?.tipoTurno === preset.tipoTurno && editShiftInizio === preset.orarioInizio && editShiftFine === preset.orarioFine;
+                                  const validity = checkPotentialShiftValidity(selectedShiftForDetail?.staffId || "", editShiftDate, preset.tipoTurno, editShiftStruttura, preset.orarioInizio, preset.orarioFine, selectedShiftForDetail?.id);
+                                  const isJolly = preset.id === "preset-v2-alzata-7-8" || preset.tipoTurno === "Alzate" || (preset.orarioInizio === "07:00" && preset.orarioFine === "08:00");
 
-                                return (
-                                  <div key={preset.id} className={`relative group/preset ${isJolly ? "col-span-2" : ""}`}>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        if (!validity.valid) return;
-                                        setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: preset.tipoTurno } : prev);
-                                        setEditShiftInizio(preset.orarioInizio);
-                                        setEditShiftFine(preset.orarioFine);
-                                        if (preset.tipoTurno === "Cucina" && !editShiftNote) {
-                                          setEditShiftNote("Servizio Cucina e Mensa");
-                                        } else if (isJolly && !editShiftNote) {
-                                          setEditShiftNote("Supporto Alzata (Jolly)");
-                                        }
-                                      }}
-                                      disabled={!validity.valid}
-                                      title={validity.reason || `${preset.label} (${preset.orarioInizio} - ${preset.orarioFine})`}
-                                      className={`w-full p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center relative ${
-                                        !validity.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
-                                        "cursor-pointer " + (isSelected
-                                          ? isJolly
-                                            ? "bg-amber-500 border-amber-600 text-white ring-4 ring-amber-500/30"
+                                  return (
+                                    <div key={preset.id} className={`relative group/preset ${isJolly ? "col-span-2" : ""}`}>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (!validity.valid) return;
+                                          setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: preset.tipoTurno } : prev);
+                                          setEditShiftInizio(preset.orarioInizio);
+                                          setEditShiftFine(preset.orarioFine);
+                                          if (preset.tipoTurno === "Cucina" && !editShiftNote) {
+                                            setEditShiftNote("Servizio Cucina e Mensa");
+                                          } else if (isJolly && !editShiftNote) {
+                                            setEditShiftNote("Supporto Alzata (Jolly)");
+                                          }
+                                        }}
+                                        disabled={!validity.valid}
+                                        title={validity.reason || `${preset.label} (${preset.orarioInizio} - ${preset.orarioFine})`}
+                                        className={`w-full p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center relative ${
+                                          !validity.valid ? "opacity-50 cursor-not-allowed bg-slate-100 border-slate-200" :
+                                          "cursor-pointer " + (isSelected
+                                            ? isJolly
+                                              ? "bg-amber-500 border-amber-600 text-white ring-4 ring-amber-500/30"
+                                              : preset.tipoTurno === "Pulizie"
+                                              ? "bg-teal-600 border-teal-700 text-white ring-4 ring-teal-600/30"
+                                              : preset.tipoTurno === "Cucina"
+                                              ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30"
+                                              : preset.tipoTurno === "Notte"
+                                              ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30"
+                                              : editShiftStruttura === "Vannucci 1" || editShiftStruttura === "Struttura 1"
+                                              ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
+                                              : "bg-lime-400 border-lime-500 text-lime-950 ring-4 ring-lime-400/25"
+                                            : isJolly
+                                            ? "bg-amber-50/90 border-amber-300 hover:bg-amber-100 text-amber-950 shadow-2xs"
                                             : preset.tipoTurno === "Pulizie"
-                                            ? "bg-teal-600 border-teal-700 text-white ring-4 ring-teal-600/30"
+                                            ? "bg-teal-50/80 border-teal-200 hover:bg-teal-100 text-teal-950"
                                             : preset.tipoTurno === "Cucina"
-                                            ? "bg-sky-500 border-sky-600 text-white ring-4 ring-sky-500/30"
+                                            ? "bg-sky-50/80 border-sky-300 hover:bg-sky-100 text-sky-950"
                                             : preset.tipoTurno === "Notte"
-                                            ? "bg-blue-600 border-blue-700 text-white ring-4 ring-blue-600/30"
-                                            : editShiftStruttura === "Vannucci 1" || editShiftStruttura === "Struttura 1"
-                                            ? "bg-orange-500 border-orange-600 text-white ring-4 ring-orange-500/20"
-                                            : "bg-lime-400 border-lime-500 text-lime-950 ring-4 ring-lime-400/25"
-                                          : isJolly
-                                          ? "bg-amber-50/90 border-amber-300 hover:bg-amber-100 text-amber-950 shadow-2xs"
-                                          : preset.tipoTurno === "Pulizie"
-                                          ? "bg-teal-50/80 border-teal-200 hover:bg-teal-100 text-teal-950"
-                                          : preset.tipoTurno === "Cucina"
-                                          ? "bg-sky-50/80 border-sky-300 hover:bg-sky-100 text-sky-950"
-                                          : preset.tipoTurno === "Notte"
-                                          ? "bg-blue-50 border-blue-200 hover:bg-blue-100 text-blue-900"
-                                          : "bg-slate-50 border-slate-200 hover:bg-slate-100")
-                                      }`}
-                                    >
-                                      <span className="font-extrabold text-[12px] truncate pr-5 flex items-center justify-between">
-                                        <span>{preset.label}</span>
-                                        {isJolly && <span className="text-[9px] bg-orange-200/90 text-orange-950 px-1.5 py-0.2 rounded font-black">JOLLY • NO 11H</span>}
-                                      </span>
-                                      <span className="text-[9px] opacity-75 font-normal truncate">
-                                        {preset.subtitle || `${preset.orarioInizio} - ${preset.orarioFine}`}
-                                      </span>
-                                    </button>
-
-                                    {/* Trash Button to Remove Preset */}
-                                    <button
-                                      type="button"
-                                      onClick={(e) => handleRemovePreset(preset.id, e)}
-                                      className="absolute top-1.5 right-1.5 p-1 rounded-md opacity-60 hover:opacity-100 hover:bg-rose-600 hover:text-white text-rose-500 bg-white/80 shadow-3xs transition-all cursor-pointer z-10"
-                                      title="Rimuovi questo preset orario"
-                                    >
-                                      <Trash2 className="w-3 h-3" />
-                                    </button>
-                                  </div>
-                                );
-                              })}
+                                            ? "bg-blue-50 border-blue-200 hover:bg-blue-100 text-blue-900"
+                                            : "bg-slate-50 border-slate-200 hover:bg-slate-100")
+                                        }`}
+                                      >
+                                        <span className="font-extrabold text-[12px] truncate pr-5 flex items-center justify-between">
+                                          <span>{preset.label}</span>
+                                          {isJolly && <span className="text-[9px] bg-amber-200/90 text-amber-950 px-1.5 py-0.2 rounded font-black">JOLLY • NO 11H</span>}
+                                        </span>
+                                        <span className="text-[9px] opacity-75 font-normal truncate">
+                                          {preset.subtitle || `${preset.orarioInizio} - ${preset.orarioFine}`}
+                                        </span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => handleRemovePreset(preset.id, e)}
+                                        className="absolute top-1.5 right-1.5 p-1 rounded-md opacity-60 hover:opacity-100 hover:bg-rose-600 hover:text-white text-rose-500 bg-white/80 shadow-3xs transition-all cursor-pointer z-10"
+                                        title="Rimuovi questo preset orario"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  );
+                                })}
 
                               {/* Turno Notturno, Cucina, Pulizie, Servizio - Omitted for Vannucci 1 and Vannucci 2 */}
                               {!editShiftStruttura.toLowerCase().includes("1") && !editShiftStruttura.toLowerCase().includes("2") && (
@@ -8324,94 +8170,124 @@ function importaTurniResidenzaVannucci() {
                               )}
                             </>
                           )}
+                        </div>
+                      </div>
 
-                          {/* Riposo */}
+                      {/* RIGA 2: DUE TURNI NUOVI (ONLY FOR VANNUCCI 1) */}
+                      {editShiftStruttura.toLowerCase().includes("1") && (
+                        <div className="grid grid-cols-2 gap-2 mt-1 pt-2.5 border-t border-slate-200">
                           <button
                             type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Riposo" } : prev);
-                              setEditShiftInizio("00:00");
-                              setEditShiftFine("00:00");
-                            }}
-                            onDoubleClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              if (!selectedShiftForDetail) return;
-                              const targetDate = editShiftDate || selectedShiftForDetail.data;
-                              const targetStaffId = editShiftStaffId || selectedShiftForDetail.staffId;
-                              if (lockedDays.includes(selectedShiftForDetail.data) || lockedDays.includes(targetDate)) {
-                                showToast("🔒 Questo giorno è bloccato!");
-                                return;
-                              }
-                              const otherShifts = shifts.filter(s => !(s.id !== selectedShiftForDetail.id && s.staffId === targetStaffId && s.data === targetDate));
-                              const updatedShifts = otherShifts.map(s => {
-                                if (s.id === selectedShiftForDetail.id) {
-                                  return {
-                                    ...s,
-                                    id: s.id.startsWith("auto-") ? `shift-edited-${Date.now()}-${Math.random().toString(36).substr(2, 4)}` : s.id,
-                                    staffId: targetStaffId,
-                                    data: targetDate,
-                                    tipoTurno: "Riposo",
-                                    orarioInizio: "00:00",
-                                    orarioFine: "00:00",
-                                    struttura: "",
-                                    note: editShiftNote || s.note || "Riposo"
-                                  };
-                                }
-                                return s;
-                              });
-                              applyShiftsUpdate(updatedShifts);
-                              setSelectedShiftForDetail(null);
-                              setEditShiftNote("");
-                              showToast("🛋️ Turno aggiornato a Riposo!");
-                            }}
-                            className={`p-2.5 rounded-xl text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
-                              selectedShiftForDetail?.tipoTurno === "Riposo" ? "bg-slate-100 !border-double !border-[3px] !border-red-500 text-slate-800 ring-4 ring-red-400/20" : "bg-slate-50 border border-slate-200 hover:bg-slate-100"
-                            }`}
-                            title="Singolo click per selezionare, doppio click per salvare subito Riposo e chiudere"
+                            onClick={() => handleAddPulizieSplitV1(selectedShiftForDetail?.staffId || "", editShiftDate, selectedShiftForDetail?.id)}
+                            className="p-3 rounded-xl border-2 border-teal-500 bg-teal-50 text-teal-950 text-xs font-bold hover:bg-teal-100 cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
                           >
-                            <div className="flex items-center justify-between">
-                              <span className="font-extrabold text-[12px]">🛋️ Riposo</span>
-                              <span className="text-[9px] font-black text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">2x click salva</span>
-                            </div>
-                            <span className="text-[9px] opacity-75 font-normal">Giorno libero (Doppio click per confermare subito)</span>
+                            🪣 Pulizie (07:00-11:00)
                           </button>
-
-                          {/* Ferie */}
                           <button
                             type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenVacationModal(selectedShiftForDetail?.staffId, editShiftDate || selectedShiftForDetail?.data);
+                            onClick={() => {
+                              setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Cucina" } : prev);
+                              setEditShiftInizio("10:30");
+                              setEditShiftFine("15:30");
+                              if (!editShiftNote) setEditShiftNote("Servizio Cucina e Mensa");
                             }}
-                            className="p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer bg-amber-50/80 border-amber-300 hover:bg-amber-100 text-amber-950 shadow-3xs"
-                            title="Apri gestione ferie con calendario interattivo (dal - al)"
+                            className="p-3 rounded-xl border-2 border-sky-500 bg-sky-50 text-sky-950 text-xs font-bold hover:bg-sky-100 cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
                           >
-                            <div className="flex items-center justify-between">
-                              <span className="font-extrabold text-[12px] flex items-center gap-1">🏖️ Ferie 🍹</span>
-                              <span className="text-[9px] font-black text-amber-900 bg-amber-200/80 px-1.5 py-0.5 rounded border border-amber-300">Calendario</span>
-                            </div>
-                            <span className="text-[9px] opacity-75 font-normal">Apri gestione con calendario (dal - al)</span>
-                          </button>
-
-                          {/* Malattia */}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenSickModal(selectedShiftForDetail?.staffId, editShiftDate || selectedShiftForDetail?.data);
-                            }}
-                            className="col-span-2 p-2.5 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer bg-rose-50 border-rose-200 hover:bg-rose-100 text-rose-900 shadow-3xs"
-                            title="Apri gestione malattia / riposo medico con calendario interattivo (dal - al)"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="font-extrabold text-[12px] flex items-center gap-1">🤒 Malattia / Riposo Medico</span>
-                              <span className="text-[9px] font-black text-rose-900 bg-rose-200/80 px-1.5 py-0.5 rounded border border-rose-300">Calendario</span>
-                            </div>
-                            <span className="text-[9px] opacity-75 font-normal">Apri gestione assenze con calendario (dal - al)</span>
+                            🍲 Cucina (10:30-15:30)
                           </button>
                         </div>
+                      )}
+
+                      {/* RIGA 3: RIPOSO E FERIE */}
+                      <div className="grid grid-cols-2 gap-2.5 mt-1 pt-2.5 border-t border-slate-200">
+                        {/* Riposo */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Riposo" } : prev);
+                            setEditShiftInizio("00:00");
+                            setEditShiftFine("00:00");
+                          }}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            if (!selectedShiftForDetail) return;
+                            const targetDate = editShiftDate || selectedShiftForDetail.data;
+                            const targetStaffId = editShiftStaffId || selectedShiftForDetail.staffId;
+                            if (lockedDays.includes(selectedShiftForDetail.data) || lockedDays.includes(targetDate)) {
+                              showToast("🔒 Questo giorno è bloccato!");
+                              return;
+                            }
+                            const otherShifts = shifts.filter(s => !(s.id !== selectedShiftForDetail.id && s.staffId === targetStaffId && s.data === targetDate));
+                            const updatedShifts = otherShifts.map(s => {
+                              if (s.id === selectedShiftForDetail.id) {
+                                return {
+                                  ...s,
+                                  id: s.id.startsWith("auto-") ? `shift-edited-${Date.now()}-${Math.random().toString(36).substr(2, 4)}` : s.id,
+                                  staffId: targetStaffId,
+                                  data: targetDate,
+                                  tipoTurno: "Riposo",
+                                  orarioInizio: "00:00",
+                                  orarioFine: "00:00",
+                                  struttura: "",
+                                  note: editShiftNote || s.note || "Riposo"
+                                };
+                              }
+                              return s;
+                            });
+                            applyShiftsUpdate(updatedShifts);
+                            setSelectedShiftForDetail(null);
+                            setEditShiftNote("");
+                            showToast("🛋️ Turno aggiornato a Riposo!");
+                          }}
+                          className={`p-3 rounded-xl text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
+                            selectedShiftForDetail?.tipoTurno === "Riposo" ? "bg-slate-100 !border-double !border-[3px] !border-red-500 text-slate-800 ring-4 ring-red-400/20" : "bg-slate-50 border border-slate-200 hover:bg-slate-100"
+                          }`}
+                          title="Singolo click per selezionare, doppio click per salvare subito Riposo e chiudere"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-extrabold text-[12px]">🛋️ Riposo</span>
+                            <span className="text-[9px] font-black text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">2x click salva</span>
+                          </div>
+                          <span className="text-[9px] opacity-75 font-normal">Giorno libero (Doppio click per confermare subito)</span>
+                        </button>
+
+                        {/* Ferie */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenVacationModal(selectedShiftForDetail?.staffId, editShiftDate || selectedShiftForDetail?.data);
+                          }}
+                          className="p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer bg-amber-50/80 border-amber-300 hover:bg-amber-100 text-amber-950 shadow-3xs"
+                          title="Apri gestione ferie con calendario interattivo (dal - al)"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-extrabold text-[12px] flex items-center gap-1">🏖️ Ferie 🍹</span>
+                            <span className="text-[9px] font-black text-amber-900 bg-amber-200/80 px-1.5 py-0.5 rounded border border-amber-300">Calendario</span>
+                          </div>
+                          <span className="text-[9px] opacity-75 font-normal">Apri gestione con calendario (dal - al)</span>
+                        </button>
+                      </div>
+
+                      {/* RIGA 4: MALATTIA */}
+                      <div className="mt-1">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenSickModal(selectedShiftForDetail?.staffId, editShiftDate || selectedShiftForDetail?.data);
+                          }}
+                          className="w-full p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer bg-rose-50 border-rose-200 hover:bg-rose-100 text-rose-900 shadow-3xs"
+                          title="Apri gestione malattia / riposo medico con calendario interattivo (dal - al)"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-extrabold text-[12px] flex items-center gap-1">🤒 Malattia / Riposo Medico</span>
+                            <span className="text-[9px] font-black text-rose-900 bg-rose-200/80 px-1.5 py-0.5 rounded border border-rose-300">Calendario</span>
+                          </div>
+                          <span className="text-[9px] opacity-75 font-normal">Apri gestione assenze con calendario (dal - al)</span>
+                        </button>
                       </div>
                     </div>
 
