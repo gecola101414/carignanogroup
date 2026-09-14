@@ -3513,9 +3513,9 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     shiftIdToIgnore?: string,
     note?: string
   ): { valid: boolean; reason?: string } => {
-    if (tipoTurno === "Riposo" || tipoTurno === "Ferie") return { valid: true };
+    if (tipoTurno === "Riposo" || tipoTurno === "Ferie" || tipoTurno === "ORARIO CNT") return { valid: true };
     // Tutti i turni combo sono sempre autorizzati e rispettano le regole a prescindere
-    if (note && note.toLowerCase().includes("combo")) return { valid: true };
+    if (note && (note.toLowerCase().includes("combo") || note.toLowerCase().includes("cnt"))) return { valid: true };
 
     // 0. New rule: Only one global night shift starting at 23:00, Cucina, or Pulizie per day
     if (tipoTurno === "Notte" && inizio === "23:00") {
@@ -4011,6 +4011,20 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
 
   // Badge Color Styles for Turno Types (Varies color dynamically if shift hours are customized!)
   const getShiftBadgeStyle = (tipo: string, start?: string, end?: string, struttura?: string) => {
+    // 4. STRUTTURE COLORI DIVERSI (per Mattina, Pomeriggio, Reperibilità, ecc.)
+    // Spostato prima di ORARIO CNT per permettere l'override del colore della struttura
+    const normStruttura = struttura || "";
+    if (normStruttura === "Vannucci 1" || normStruttura === "Struttura 1") {
+      // Arancione vivo per V1
+      return "bg-orange-500 text-white border-orange-600 hover:bg-orange-600 font-bold shadow-2xs ring-1 ring-orange-500/60";
+    } else if (normStruttura === "Vannucci 2" || normStruttura === "Struttura 2") {
+      // Giallo intenso per V2
+      return "bg-yellow-400 text-yellow-950 border-yellow-500 hover:bg-yellow-500 font-bold shadow-2xs ring-1 ring-yellow-500/50";
+    } else if (normStruttura === "Vannucci 4" || normStruttura === "Struttura 4") {
+      // Verde chiaro
+      return "bg-lime-300 text-lime-950 border-lime-400 hover:bg-lime-400 font-bold shadow-2xs ring-1 ring-lime-400/50";
+    }
+
     if (tipo === "ORARIO CNT") {
       return "bg-amber-600 text-white border-amber-700 hover:bg-amber-700 font-black shadow-xs ring-1 ring-amber-600/80";
     }
@@ -4057,19 +4071,6 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     // 3. RIPOSO: Grigio chiaro con bordo a doppia linea sottile rosso
     if (tipo === "Riposo") {
       return "bg-slate-100 text-slate-800 !border-double !border-[3px] !border-red-500 hover:bg-slate-200 font-bold";
-    }
-
-    // 4. STRUTTURE COLORI DIVERSI (per Mattina, Pomeriggio, Reperibilità, ecc.)
-    const normStruttura = struttura || "";
-    if (normStruttura === "Vannucci 1" || normStruttura === "Struttura 1") {
-      // Arancione vivo per V1 (richiesto da committenza)
-      return "bg-orange-500 text-white border-orange-600 hover:bg-orange-600 font-bold shadow-2xs ring-1 ring-orange-500/60";
-    } else if (normStruttura === "Vannucci 2" || normStruttura === "Struttura 2") {
-      // Giallo intenso per V2 (richiesto da committenza)
-      return "bg-yellow-400 text-yellow-950 border-yellow-500 hover:bg-yellow-500 font-bold shadow-2xs ring-1 ring-yellow-500/50";
-    } else if (normStruttura === "Vannucci 4" || normStruttura === "Struttura 4") {
-      // Verde chiaro
-      return "bg-lime-300 text-lime-950 border-lime-400 hover:bg-lime-400 font-bold shadow-2xs ring-1 ring-lime-400/50";
     }
 
     // 5. FALLBACK IN ASSENZA DI STRUTTURA SPECIFICATA

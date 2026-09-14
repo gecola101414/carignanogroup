@@ -616,6 +616,22 @@ export default function App() {
             alert("La password di CLAUDIA è stata reimpostata a '1234'.");
           }
         }}
+        onResetBeppePassword={() => {
+          if (confirm("Vuoi azzerare la password di BEPPE al valore predefinito '1234'?")) {
+            const updatedCreds = credentials.map(c => {
+              if (c.username.toLowerCase() === 'beppe') {
+                return {
+                  ...c,
+                  passwordHash: "1234",
+                  mustChange: true
+                };
+              }
+              return c;
+            });
+            handleUpdateCredentials(updatedCreds);
+            alert("La password di BEPPE è stata reimpostata a '1234'.");
+          }
+        }}
         onResetAllPasswords={() => {
           if (confirm("Attenzione: Vuoi reimpostare le password di tutti gli utenti al valore predefinito '1234'? Al prossimo accesso, a ciascuno verrà chiesto di crearne una nuova.")) {
             const updatedCreds = credentials.map(c => {

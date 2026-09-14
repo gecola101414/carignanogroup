@@ -45,6 +45,7 @@ interface SidebarProps {
   onLogout: () => void;
   onResetAllPasswords?: () => void;
   onResetClaudiaPassword?: () => void;
+  onResetBeppePassword?: () => void;
   isSuperAdmin?: boolean;
 }
 
@@ -99,6 +100,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout,
   onResetAllPasswords,
   onResetClaudiaPassword,
+  onResetBeppePassword,
   isSuperAdmin
 }) => {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -362,6 +364,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
           >
             <UserCheck className="w-3.5 h-3.5" />
             {!isCollapsed && <span>Azzera Password</span>}
+          </button>
+        )}
+        {isSuperAdmin && onResetBeppePassword && (
+          <button
+            onClick={onResetBeppePassword}
+            title="Azzera password a Beppe (a 1234)"
+            className="flex w-full items-center justify-center gap-1.5 py-2 px-2.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-xl text-xs font-semibold border border-blue-500/30 transition-all cursor-pointer mb-2"
+          >
+            <UserCheck className="w-3.5 h-3.5" />
+            {!isCollapsed && <span>Azzera Password Beppe</span>}
           </button>
         )}
         {isSuperAdmin && onResetClaudiaPassword && (
