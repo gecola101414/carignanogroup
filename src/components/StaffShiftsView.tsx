@@ -340,6 +340,24 @@ export const INITIAL_SHIFT_PRESETS: CustomShiftPreset[] = [
     orarioFine: "20:00",
     struttura: "Vannucci 4",
     isDefault: true
+  },
+  {
+    id: "preset-v4-8-14",
+    label: "🌅 08:00-14:00",
+    tipoTurno: "Mattina",
+    orarioInizio: "08:00",
+    orarioFine: "14:00",
+    struttura: "Vannucci 4",
+    isDefault: true
+  },
+  {
+    id: "preset-v4-14-20",
+    label: "🌆 14:00-20:00",
+    tipoTurno: "Pomeriggio",
+    orarioInizio: "14:00",
+    orarioFine: "20:00",
+    struttura: "Vannucci 4",
+    isDefault: true
   }
 ];
 
@@ -958,7 +976,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     // 6. Alzate (Almeno 2 turni che partono alle 07:00 tra V1, V2 e Pulizie 07:00-11:00)
     const shiftsAt7 = dayShifts.filter(s => 
       s.orarioInizio === "07:00" || 
-      s.tipoTurno === "Pulizie" ||
+      (s.tipoTurno === "Pulizie" && s.orarioInizio === "07:00") ||
       (s.note && s.note.toLowerCase().includes("alzat"))
     );
     if (shiftsAt7.length < 2) {
@@ -1008,7 +1026,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     // Shifts starting at 07:00 for Alzate
     const shiftsAt7 = dayShifts.filter(s => 
       s.orarioInizio === "07:00" || 
-      s.tipoTurno === "Pulizie" ||
+      (s.tipoTurno === "Pulizie" && s.orarioInizio === "07:00") ||
       (s.note && s.note.toLowerCase().includes("alzat"))
     );
     const isAlzateCovered = shiftsAt7.length >= 2;
@@ -1235,8 +1253,8 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // Filter out obsolete presets (e.g. old V2 07-15, 07-14, pulizie v2, cucina v2, or old V4)
-          const obsoleteIds = new Set(["preset-v4-15-20", "preset-v2-7-15", "preset-v2-7-14"]);
+          // Filter out obsolete presets (e.g. old V2 07-15, 07-14, pulizie v2, cucina v2)
+          const obsoleteIds = new Set(["preset-v2-7-15", "preset-v2-7-14"]);
           const filtered = parsed.filter((p: CustomShiftPreset) => {
             if (obsoleteIds.has(p.id)) return false;
             // Purge any V2 preset with Cucina, Notte, Pulizie, Servizio
@@ -2219,34 +2237,23 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
   };
 
   // Special Combo for Vannucci 4: Morning (07:00-14:00 or 08:00-15:00) + Servizio (17:00-20:00)
-  // Add Pulizie (Alzata 07-08 + Pulizie 08-11)
+  // Add Pulizie (07:00-11:00) - No longer split
   const handleAddPulizieSplitV1 = (staffId: string, dateStr: string, shiftIdToIgnore?: string) => {
-    const newAlzataShift: Shift = {
+    const newPulizieShift: Shift = {
       id: `auto-${Date.now()}-1`,
       staffId: staffId,
       data: dateStr,
-      tipoTurno: "Alzate",
-      orarioInizio: "07:00",
-      orarioFine: "08:00",
-      struttura: "Vannucci 1",
-      note: "Supporto Alzata"
-    };
-
-    const newPulizieShift: Shift = {
-      id: `auto-${Date.now()}-2`,
-      staffId: staffId,
-      data: dateStr,
       tipoTurno: "Pulizie",
-      orarioInizio: "08:00",
+      orarioInizio: "07:00",
       orarioFine: "11:00",
       struttura: "Vannucci 1",
-      note: "Servizio Pulizie"
+      note: "Servizio Pulizie & Supporto Alzate"
     };
 
     const updatedShifts = shifts
       .filter(s => s.id !== shiftIdToIgnore)
-      .filter(s => !(s.staffId === staffId && s.data === dateStr && (s.tipoTurno === "Alzate" || s.tipoTurno === "Pulizie")))
-      .concat([newAlzataShift, newPulizieShift]);
+      .filter(s => !(s.staffId === staffId && s.data === dateStr && s.tipoTurno === "Pulizie"))
+      .concat([newPulizieShift]);
 
     applyShiftsUpdate(updatedShifts);
     setSelectedShiftForDetail(null);
@@ -3673,8 +3680,8 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     // Exemption: continuous night shift (e.g. 23:00-24:00 on prev day and 00:00-07:00 today)
     const isNightContinuation = (tipoTurno === "Notte" && inizio === "00:00" && prevShifts.some(s => s.tipoTurno === "Notte" && (s.orarioFine === "24:00" || s.orarioFine === "00:00" || s.orarioInizio === "23:00")));
 
-    // Orario Jolly Alzata: 07:00 - 08:00 (si può sempre inserire anche se non rispetta le 11 ore)
-    const isAlzataJolly = (inizio === "07:00" && fine === "08:00") || tipoTurno === "Alzate" || tipoTurno === "Alzata" || (tipoTurno === "Pulizie" && inizio === "07:00" && fine === "08:00");
+    // Orario Jolly Alzata: 07:00 - 08:00 o Pulizie che parte alle 07:00 (si può sempre inserire anche se non rispetta le 11 ore)
+    const isAlzataJolly = (inizio === "07:00" && fine === "08:00") || tipoTurno === "Alzate" || tipoTurno === "Alzata" || (tipoTurno === "Pulizie" && inizio === "07:00");
     const requiredRestPrev = isAlzataJolly ? 0 : 11 * 60;
 
     if (!isNightContinuation && !isAlzataJolly && lastEndTimeMin > 0 && (nextStartAbsoluteMin - lastEndTimeMin) < requiredRestPrev) {
@@ -4019,6 +4026,9 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       return "bg-orange-500 text-white border-orange-600 hover:bg-orange-600 font-bold shadow-2xs ring-1 ring-orange-500/60";
     } else if (normStruttura === "Vannucci 2" || normStruttura === "Struttura 2") {
       // Giallo intenso per V2
+      if (start === "07:00" && end === "08:00") {
+        return "bg-yellow-400 text-yellow-950 !border-orange-600 !border-[3px] hover:bg-yellow-500 font-bold shadow-2xs ring-1 ring-yellow-500/50";
+      }
       return "bg-yellow-400 text-yellow-950 border-yellow-500 hover:bg-yellow-500 font-bold shadow-2xs ring-1 ring-yellow-500/50";
     } else if (normStruttura === "Vannucci 4" || normStruttura === "Struttura 4") {
       // Verde chiaro
@@ -4308,6 +4318,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
                           else if (s.tipoTurno === "Riposo") { boxClass = "shift-box-riposo"; icon = "🛋️"; }
 
                           const structClass = s.struttura === "Vannucci 1" ? "struct-v1" : s.struttura === "Vannucci 2" ? "struct-v2" : "struct-v4";
+                          const isV2Alzata = (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2") && s.orarioInizio === "07:00" && s.orarioFine === "08:00";
                           const labelText = activeShifts.length > 1 && (s.tipoTurno === "Mattina" || s.tipoTurno === "Pomeriggio")
                             ? (s.tipoTurno === "Mattina" ? "M" : "P")
                             : s.tipoTurno;
@@ -4319,7 +4330,9 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
                                 ${s.tipoTurno !== "Ferie" && s.tipoTurno !== "Riposo" ? `<span class="shift-hours">${s.orarioInizio}-${s.orarioFine}</span>` : ''}
                               </div>
                               ${s.struttura && !["Notte", "Riposo", "Ferie", "Cucina", "Pulizie", "Servizio"].includes(s.tipoTurno) ? `
-                                <div class="struct-tag ${structClass}">Vannucci ${s.struttura.replace(/\D/g, '')}</div>
+                                <div class="struct-tag ${structClass}" style="${isV2Alzata ? 'border: 3px solid #ea580c !important;' : ''}">
+                                  Vannucci ${s.struttura.replace(/\D/g, '')}${isV2Alzata ? ' <span style="color: #ea580c;">→ 1</span>' : ''}
+                                </div>
                               ` : ''}
                             </div>
                           `;
@@ -6092,7 +6105,7 @@ function importaTurniResidenzaVannucci() {
                                               {(s.struttura === "Vannucci 1" || s.struttura === "Struttura 1") ? (
                                                 <span>Vannucci <strong className="text-[11px] font-black text-orange-600 leading-none">1</strong></span>
                                               ) : (s.struttura === "Vannucci 2" || s.struttura === "Struttura 2") ? (
-                                                <span>Vannucci <strong className="text-[11px] font-black text-yellow-600 leading-none">2</strong></span>
+                                                <span>Vannucci <strong className="text-[11px] font-black text-yellow-600 leading-none">2</strong>{(s.orarioInizio === "07:00" && s.orarioFine === "08:00") && <span className="text-orange-600 ml-0.5">→ 1</span>}</span>
                                               ) : (
                                                 <span>Vannucci <strong className="text-[11px] font-black text-emerald-600 leading-none">4</strong></span>
                                               )}
@@ -6160,7 +6173,7 @@ function importaTurniResidenzaVannucci() {
                                         </span>
                                         {s.struttura && !["Notte", "Riposo", "Ferie", "Cucina", "Pulizie", "Servizio"].includes(s.tipoTurno) && (
                                           <span className="text-[7.5px] bg-white/95 px-1 rounded font-black text-slate-800 border border-slate-200">
-                                            V{s.struttura.replace(/\D/g, '')}
+                                            V{s.struttura.replace(/\D/g, '')}{(s.struttura === "Vannucci 2" || s.struttura === "Struttura 2") && s.orarioInizio === "07:00" && s.orarioFine === "08:00" && <span className="text-orange-600 ml-0.5">→ 1</span>}
                                           </span>
                                         )}
                                       </div>
@@ -7083,7 +7096,7 @@ function importaTurniResidenzaVannucci() {
                           .map((preset) => {
                             const isSelected = newTipoTurno === preset.tipoTurno && newOrarioInizio === preset.orarioInizio && newOrarioFine === preset.orarioFine;
                             const validity = checkPotentialShiftValidity(newStaffId, newDate, preset.tipoTurno, newStruttura, preset.orarioInizio, preset.orarioFine);
-                            const isJolly = preset.id === "preset-v2-alzata-7-8" || preset.tipoTurno === "Alzate" || (preset.orarioInizio === "07:00" && preset.orarioFine === "08:00");
+                            const isJolly = preset.id === "preset-v2-alzata-7-8" || preset.tipoTurno === "Alzate" || (preset.orarioInizio === "07:00" && preset.orarioFine === "08:00") || (preset.tipoTurno === "Pulizie" && preset.orarioInizio === "07:00");
 
                             return (
                               <div key={preset.id} className={`relative group/preset ${isJolly ? "col-span-2" : ""}`}>
@@ -7159,7 +7172,7 @@ function importaTurniResidenzaVannucci() {
                           .map((preset) => {
                             const isSelected = newTipoTurno === preset.tipoTurno && newOrarioInizio === preset.orarioInizio && newOrarioFine === preset.orarioFine;
                             const validity = checkPotentialShiftValidity(newStaffId, newDate, preset.tipoTurno, newStruttura, preset.orarioInizio, preset.orarioFine);
-                            const isJolly = preset.id === "preset-v2-alzata-7-8" || preset.tipoTurno === "Alzate" || (preset.orarioInizio === "07:00" && preset.orarioFine === "08:00");
+                            const isJolly = preset.id === "preset-v2-alzata-7-8" || preset.tipoTurno === "Alzate" || (preset.orarioInizio === "07:00" && preset.orarioFine === "08:00") || (preset.tipoTurno === "Pulizie" && preset.orarioInizio === "07:00");
 
                             return (
                               <div key={preset.id} className={`relative group/preset ${isJolly ? "col-span-2" : ""}`}>
@@ -7313,36 +7326,26 @@ function importaTurniResidenzaVannucci() {
                             showToast("🔒 Questo giorno è bloccato!");
                             return;
                           }
-                          const newAlzataShift: Shift = {
+                          const newPulizieShift: Shift = {
                             id: `auto-${Date.now()}-1`,
                             staffId: newStaffId,
                             data: newDate,
-                            tipoTurno: "Alzate",
-                            orarioInizio: "07:00",
-                            orarioFine: "08:00",
-                            struttura: "Vannucci 1",
-                            note: "Supporto Alzata"
-                          };
-                          const newPulizieShift: Shift = {
-                            id: `auto-${Date.now()}-2`,
-                            staffId: newStaffId,
-                            data: newDate,
                             tipoTurno: "Pulizie",
-                            orarioInizio: "08:00",
+                            orarioInizio: "07:00",
                             orarioFine: "11:00",
                             struttura: "Vannucci 1",
-                            note: "Servizio Pulizie"
+                            note: "Servizio Pulizie & Supporto Alzate"
                           };
                           const updatedShifts = shifts
-                            .filter(s => !(s.staffId === newStaffId && s.data === newDate && (s.tipoTurno === "Alzate" || s.tipoTurno === "Pulizie")))
-                            .concat([newAlzataShift, newPulizieShift]);
+                            .filter(s => !(s.staffId === newStaffId && s.data === newDate && s.tipoTurno === "Pulizie"))
+                            .concat([newPulizieShift]);
                           applyShiftsUpdate(updatedShifts);
                           setShowAddModal(false);
                           setNewNote("");
                           showToast("✅ Turno Pulizie (07:00-11:00) aggiunto!");
                         }}
                         className="p-2.5 rounded-xl border-2 border-teal-500 bg-teal-50 text-teal-950 text-[10px] font-black hover:bg-teal-100 cursor-pointer flex flex-col items-center justify-center gap-1 shadow-sm text-center leading-tight"
-                        title="Clicca per inserire il turno sdoppiato Pulizie (07:00-11:00)"
+                        title="Clicca per inserire il turno Pulizie (07:00-11:00)"
                       >
                         <span>🪣 Pulizie</span>
                         <span className="text-[9px] font-bold opacity-80">07:00-11:00</span>
@@ -8121,7 +8124,7 @@ function importaTurniResidenzaVannucci() {
                                 .map((preset) => {
                                   const isSelected = selectedShiftForDetail?.tipoTurno === preset.tipoTurno && editShiftInizio === preset.orarioInizio && editShiftFine === preset.orarioFine;
                                   const validity = checkPotentialShiftValidity(selectedShiftForDetail?.staffId || "", editShiftDate, preset.tipoTurno, editShiftStruttura, preset.orarioInizio, preset.orarioFine, selectedShiftForDetail?.id);
-                                  const isJolly = preset.id === "preset-v2-alzata-7-8" || preset.tipoTurno === "Alzate" || (preset.orarioInizio === "07:00" && preset.orarioFine === "08:00");
+                                  const isJolly = preset.id === "preset-v2-alzata-7-8" || preset.tipoTurno === "Alzate" || (preset.orarioInizio === "07:00" && preset.orarioFine === "08:00") || (preset.tipoTurno === "Pulizie" && preset.orarioInizio === "07:00");
 
                                   return (
                                     <div key={preset.id} className={`relative group/preset ${isJolly ? "col-span-2" : ""}`}>
@@ -8297,7 +8300,7 @@ function importaTurniResidenzaVannucci() {
                             type="button"
                             onClick={() => handleAddPulizieSplitV1(selectedShiftForDetail?.staffId || "", editShiftDate, selectedShiftForDetail?.id)}
                             className="p-2.5 rounded-xl border-2 border-teal-500 bg-teal-50 text-teal-950 text-[10px] font-black hover:bg-teal-100 cursor-pointer flex flex-col items-center justify-center gap-1 shadow-sm text-center leading-tight"
-                            title="Sdoppia in Alzata + Pulizie"
+                            title="Inserisci Pulizie (07:00-11:00)"
                           >
                             <span>🪣 Pulizie</span>
                             <span className="text-[9px] font-bold opacity-80">07:00-11:00</span>
