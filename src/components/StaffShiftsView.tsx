@@ -813,9 +813,72 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     return { 
       shiftCount, 
       totalHours: roundedHours,
-      isApproaching36: roundedHours >= 32 && roundedHours <= 36,
-      isExceeding36: roundedHours > 36
+      isApproaching38: roundedHours >= 34 && roundedHours <= 38,
+      isExceeding38: roundedHours > 38,
+      isApproaching36: roundedHours >= 34 && roundedHours <= 38,
+      isExceeding36: roundedHours > 38
     };
+  };
+
+  // Helper to count consecutive working days without rest or ferie
+  // If refDate is specified: counts consecutive working days up to and including refDate (0 if refDate has no work shift or is rest/ferie).
+  // If refDate is omitted: returns the maximum consecutive working days reached by the member in the current visible week.
+  const getConsecutiveWorkingDays = (memberId: string, refDate?: Date | string) => {
+    if (!memberId) return 0;
+
+    if (refDate) {
+      const baseDate = typeof refDate === "string" 
+        ? new Date(refDate.includes("T") ? refDate : `${refDate}T12:00:00`) 
+        : new Date(refDate);
+      const baseStr = formatDateYMD(baseDate);
+
+      const baseDayShifts = shifts.filter(s => s.staffId === memberId && s.data === baseStr);
+      const hasWorkingToday = baseDayShifts.some(s => s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie");
+      const hasRestToday = baseDayShifts.some(s => s.tipoTurno === "Riposo" || s.tipoTurno === "Ferie");
+
+      if (hasRestToday || !hasWorkingToday) {
+        return 0;
+      }
+
+      let consecutive = 1;
+      for (let i = 1; i <= 30; i++) {
+        const d = new Date(baseDate);
+        d.setDate(d.getDate() - i);
+        const dStr = formatDateYMD(d);
+
+        const dayShifts = shifts.filter(s => s.staffId === memberId && s.data === dStr);
+        const hasWorkingShift = dayShifts.some(s => s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie");
+        const hasRestOrFerie = dayShifts.some(s => s.tipoTurno === "Riposo" || s.tipoTurno === "Ferie");
+
+        if (hasRestOrFerie || !hasWorkingShift) {
+          break;
+        }
+        consecutive++;
+      }
+      return consecutive;
+    } else {
+      // Current displayed week: calculate consecutive working days across each day of current week
+      const currentWeekDaysList = weekDays.length >= 8 ? weekDays.slice(1) : weekDays;
+      let maxConsecutive = 0;
+      currentWeekDaysList.forEach(d => {
+        const dStr = formatDateYMD(d);
+        const count = getConsecutiveWorkingDays(memberId, dStr);
+        if (count > maxConsecutive) {
+          maxConsecutive = count;
+        }
+      });
+      return maxConsecutive;
+    }
+  };
+
+  // Helper to check what consecutive working days would be if a working shift is added on targetDateStr
+  const getConsecutiveWorkingDaysIfAdded = (memberId: string, targetDateStr: string) => {
+    if (!memberId || !targetDateStr) return 0;
+    const prevDate = new Date(targetDateStr.includes("T") ? targetDateStr : `${targetDateStr}T12:00:00`);
+    prevDate.setDate(prevDate.getDate() - 1);
+    const prevDateStr = formatDateYMD(prevDate);
+    const prevConsecutive = getConsecutiveWorkingDays(memberId, prevDateStr);
+    return prevConsecutive + 1;
   };
 
   // Real-time helper: track how many weeks have passed since the staff member had a Sunday or Italian national holiday off
@@ -887,7 +950,8 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
 
     return {
       weeksSinceLastFestiveRest: weeksCount,
-      isExceeding8Weeks: weeksCount > 8,
+      isExceeding7Weeks: weeksCount >= 7,
+      isExceeding8Weeks: weeksCount >= 7,
       lastRestDateStr,
       lastRestLabel,
       foundRest
@@ -2389,7 +2453,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       s.tipoTurno !== "Riposo" && 
       s.tipoTurno !== "Ferie" && 
       s.tipoTurno !== "Mattina" && 
-      s.tipoTurno !== "Pomeriggio"
+      s.tipoTurno !== "Servizio"
     );
 
     const shift1: Shift = {
@@ -2397,21 +2461,21 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
       staffId,
       data: dateStr,
       tipoTurno: "Mattina",
-      orarioInizio: "08:15",
-      orarioFine: "15:20",
+      orarioInizio: "08:00",
+      orarioFine: "15:00",
       struttura: "Vannucci 4",
-      note: "Turno Mattina V4"
+      note: "Mattina V4 (Combo)"
     };
 
     const shift2: Shift = {
-      id: `shift-v4-p-${Date.now() + 1}-${Math.random().toString(36).substr(2, 4)}`,
+      id: `shift-v4-srv-${Date.now() + 1}-${Math.random().toString(36).substr(2, 4)}`,
       staffId,
       data: dateStr,
-      tipoTurno: "Pomeriggio",
-      orarioInizio: "15:20",
-      orarioFine: "22:00",
+      tipoTurno: "Servizio",
+      orarioInizio: "17:00",
+      orarioFine: "20:00",
       struttura: "Vannucci 4",
-      note: "Turno Pomeriggio V4 (Combo)"
+      note: "Servizio V4 (Combo)"
     };
 
     const updated = [...existingFiltered, ...nonConflictingSameDay, shift1, shift2];
@@ -2420,7 +2484,7 @@ export const StaffShiftsView: React.FC<StaffShiftsViewProps> = ({
     if (selectedShiftForDetail) setSelectedShiftForDetail(null);
     setNewNote("");
     const staffName = staff.find(st => st.id === staffId)?.nome || "Operatore";
-    showToast(`⚡ Caricato Combo V4 (08:15-15:20 + 15:20-22:00) per ${staffName}!`);
+    showToast(`⚡ Caricato Combo V4 per ${staffName}: 🌅 Mattina 08:00-15:00 + 🍽️ Servizio 17:00-20:00!`);
   };
 
   // Delete Single Shift with Undo
@@ -5562,51 +5626,54 @@ function importaTurniResidenzaVannucci() {
                           </div>
                         </div>
 
-                        {/* Real-time stats: riposo settimanale, ore settimanali e settimane dall'ultimo festivo/domenica di riposo (caratteri maggiorati del 30%) */}
+                        {/* Real-time stats: riposo settimanale (regola 6 turni), ore settimanali e settimane dall'ultimo festivo/domenica di riposo */}
                         {(() => {
                           const weeklyStats = getMemberWeeklyStats(member.id);
                           const festiveStats = getMemberFestiveRestStats(member.id);
-                          const hasRiposo = hasRestDayInCurrentWeek(member.id);
+                          const consecutiveDays = getConsecutiveWorkingDays(member.id);
+                          const isExceedingConsecutive = consecutiveDays >= 7;
+                          const isExceedingFestive = festiveStats.isExceeding7Weeks || festiveStats.weeksSinceLastFestiveRest >= 7;
 
                           return (
                             <div className="flex flex-col gap-1.5 pt-2 border-t border-slate-200/80 text-xs">
-                              {/* 1. RIPOSO SETTIMANALE */}
+                              {/* 1. RIPOSO (REGOLA 6 TURNI: OK FINO A 6, LAMPEGGIA AL 7° TURNO SENZA RIPOSO) */}
                               <div>
-                                {hasRiposo ? (
+                                {isExceedingConsecutive ? (
                                   <div 
-                                    className="bg-emerald-50 text-emerald-900 border border-emerald-300/90 rounded-md px-2 py-1 font-semibold flex items-center justify-between shadow-3xs"
-                                    title="Giorno di riposo (o ferie) programmato nella settimana corrente"
+                                    className="bg-rose-100 text-rose-900 border border-rose-300 ring-2 ring-rose-500 rounded-md px-2 py-1 font-black animate-pulse flex items-center justify-between shadow-xs"
+                                    title={`ATTENZIONE: Raggiunti o superati i 7 turni consecutivi dall'ultimo riposo! (${consecutiveDays} turni consecutivi). Lampeggia di rosso.`}
                                   >
-                                    <span className="flex items-center gap-1 text-[11.5px] text-emerald-800">
-                                      <span>🛋️</span>
-                                      <span>Riposo sett:</span>
+                                    <span className="flex items-center gap-1 text-[11.5px] text-rose-900 font-extrabold">
+                                      <span>🚨</span>
+                                      <span>Riposo:</span>
                                     </span>
-                                    <span className="bg-emerald-600 text-white font-black text-[10.5px] px-1.5 py-0.5 rounded shadow-3xs">
-                                      OK
-                                    </span>
+                                    <div className="flex items-center gap-1">
+                                      <span className="underline font-black text-[12.5px]">{consecutiveDays} turni</span>
+                                      <span className="text-[9.5px] bg-rose-600 text-white px-1.5 py-0.5 rounded font-black">&gt;6t</span>
+                                    </div>
                                   </div>
                                 ) : (
                                   <div 
-                                    className="bg-rose-50 text-rose-900 border border-rose-300 ring-1 ring-rose-400 rounded-md px-2 py-1 font-semibold animate-pulse flex items-center justify-between shadow-3xs"
-                                    title="NESSUN riposo pianificato nella settimana corrente!"
+                                    className="bg-emerald-50 text-emerald-900 border border-emerald-300/90 rounded-md px-2 py-1 font-semibold flex items-center justify-between shadow-3xs"
+                                    title={`Riposo regolare: ${consecutiveDays} turni dall'ultimo riposo (max 6 turni consecutivi prima del riposo obbligatorio).`}
                                   >
-                                    <span className="flex items-center gap-1 text-[11.5px] text-rose-800">
-                                      <span>⚠️</span>
-                                      <span>Riposo sett:</span>
+                                    <span className="flex items-center gap-1 text-[11.5px] text-emerald-800">
+                                      <span>🛋️</span>
+                                      <span>Riposo:</span>
                                     </span>
-                                    <span className="bg-rose-600 text-white font-black text-[10.5px] px-1.5 py-0.5 rounded shadow-3xs">
-                                      NO
+                                    <span className="bg-emerald-600 text-white font-black text-[10.5px] px-1.5 py-0.5 rounded shadow-3xs">
+                                      OK {consecutiveDays > 0 ? `(${consecutiveDays}/6)` : ""}
                                     </span>
                                   </div>
                                 )}
                               </div>
 
-                              {/* 2. ORE NELLA SETTIMANA CON AUTOMATISMO >36h E VICINO A 36h */}
+                              {/* 2. ORE NELLA SETTIMANA CON AUTOMATISMO >38h E VICINO A 38h */}
                               <div>
                                 {weeklyStats.isExceeding36 ? (
                                   <div 
                                     className="bg-rose-100 text-rose-900 border border-rose-300 ring-2 ring-rose-500 rounded-md px-2 py-1 font-black animate-pulse flex items-center justify-between shadow-xs"
-                                    title={`SUPERAMENTO LIMITE! ${weeklyStats.totalHours} ore settimanali (limite 36 ore). Lampeggia di rosso.`}
+                                    title={`SUPERAMENTO LIMITE! ${weeklyStats.totalHours} ore settimanali (limite 38 ore). Lampeggia di rosso.`}
                                   >
                                     <span className="flex items-center gap-1 text-[11.5px] text-rose-900 font-extrabold">
                                       <span>🚨</span>
@@ -5614,19 +5681,19 @@ function importaTurniResidenzaVannucci() {
                                     </span>
                                     <div className="flex items-center gap-1">
                                       <span className="underline font-black text-[13px]">{weeklyStats.totalHours}h</span>
-                                      <span className="text-[9.5px] bg-rose-600 text-white px-1.5 py-0.5 rounded font-black">&gt;36h</span>
+                                      <span className="text-[9.5px] bg-rose-600 text-white px-1.5 py-0.5 rounded font-black">&gt;38h</span>
                                     </div>
                                   </div>
                                 ) : weeklyStats.isApproaching36 ? (
                                   <div 
                                     className="bg-amber-50 text-amber-950 border border-amber-300 rounded-md px-2 py-1 font-bold flex items-center justify-between shadow-2xs"
-                                    title={`Attenzione: le ore settimanali si avvicinano al limite contrattuale di 36 ore (${weeklyStats.totalHours} ore)`}
+                                    title={`Attenzione: le ore settimanali si avvicinano al limite contrattuale di 38 ore (${weeklyStats.totalHours} ore)`}
                                   >
                                     <span className="flex items-center gap-1 text-[11.5px] text-amber-900 font-bold">
                                       <span>⚠️</span>
                                       <span>Ore sett:</span>
                                     </span>
-                                    <span className="font-extrabold text-[12.5px] text-amber-950">{weeklyStats.totalHours}h / 36h</span>
+                                    <span className="font-extrabold text-[12.5px] text-amber-950">{weeklyStats.totalHours}h / 38h</span>
                                   </div>
                                 ) : (
                                   <div 
@@ -5637,17 +5704,17 @@ function importaTurniResidenzaVannucci() {
                                       <span>⏱️</span>
                                       <span>Ore sett:</span>
                                     </span>
-                                    <span className="font-black text-slate-900 text-[12.5px]">{weeklyStats.totalHours}h</span>
+                                    <span className="font-black text-slate-900 text-[12.5px]">{weeklyStats.totalHours}h / 38h</span>
                                   </div>
                                 )}
                               </div>
 
                               {/* 3. SETTIMANE DALL'ULTIMA VOLTA CHE HA AVUTO DOMENICA O FESTIVO DI RIPOSO */}
                               <div>
-                                {festiveStats.isExceeding8Weeks ? (
+                                {isExceedingFestive ? (
                                   <div 
                                     className="bg-rose-100 text-rose-900 border border-rose-300 ring-2 ring-rose-500 rounded-md px-2 py-1 font-black animate-pulse flex items-center justify-between shadow-xs"
-                                    title={`ATTENZIONE: Superate le 8 settimane senza riposo festivo o domenicale! (${festiveStats.weeksSinceLastFestiveRest} settimane senza riposo festivo). Lampeggia di rosso.`}
+                                    title={`ATTENZIONE: Superate le 7 settimane senza riposo festivo o domenicale! (${festiveStats.weeksSinceLastFestiveRest} settimane senza riposo festivo). Lampeggia di rosso.`}
                                   >
                                     <span className="flex items-center gap-1 text-[11.5px] text-rose-900 font-extrabold">
                                       <span>🚨</span>
@@ -5655,7 +5722,7 @@ function importaTurniResidenzaVannucci() {
                                     </span>
                                     <div className="flex items-center gap-1">
                                       <span className="underline font-black text-[13px]">{festiveStats.weeksSinceLastFestiveRest} sett.</span>
-                                      <span className="text-[9.5px] bg-rose-600 text-white px-1.5 py-0.5 rounded font-black">&gt;8s</span>
+                                      <span className="text-[9.5px] bg-rose-600 text-white px-1.5 py-0.5 rounded font-black">&gt;7s</span>
                                     </div>
                                   </div>
                                 ) : (
@@ -5887,6 +5954,18 @@ function importaTurniResidenzaVannucci() {
                                   const isHovered = hoveredShiftId === s.id;
                                   const isStaffHovered = hoveredStaffId === s.staffId;
 
+                                  const consecutiveDaysThisShift = (s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie") 
+                                    ? getConsecutiveWorkingDays(s.staffId, s.data) 
+                                    : 0;
+                                  const isExceedingConsecutive = consecutiveDaysThisShift >= 7;
+
+                                  const isDayFestivo = isItalianFestivo(new Date(s.data.includes("T") ? s.data : `${s.data}T12:00:00`)).isFestivo;
+                                  const festiveStatsThisShift = (isDayFestivo && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie")
+                                    ? getMemberFestiveRestStats(s.staffId, s.data)
+                                    : null;
+                                  const isExceedingFestive = !!(festiveStatsThisShift && (festiveStatsThisShift.isExceeding7Weeks || festiveStatsThisShift.weeksSinceLastFestiveRest >= 7));
+                                  const isRuleAlert = isExceedingConsecutive || isExceedingFestive;
+
                                   const isMorningNight = s.tipoTurno === "Notte" && (s.orarioInizio === "00:00" || s.orarioFine === "07:00") && s.orarioInizio !== "23:00";
                                   const isEveningNight = s.tipoTurno === "Notte" && s.orarioInizio === "23:00";
                                   const isPulizie = s.tipoTurno === "Pulizie";
@@ -5894,7 +5973,19 @@ function importaTurniResidenzaVannucci() {
                                   const isHalfShift = isMorningNight || isEveningNight || isPulizie || isServizio;
 
                                   if (isHalfShift) {
-                                    const renderHalfShiftBadge = (shiftItem: Shift) => (
+                                    const renderHalfShiftBadge = (shiftItem: Shift) => {
+                                      const itemConsecutive = (shiftItem.tipoTurno !== "Riposo" && shiftItem.tipoTurno !== "Ferie")
+                                        ? getConsecutiveWorkingDays(shiftItem.staffId, shiftItem.data)
+                                        : 0;
+                                      const itemExceedingConsecutive = itemConsecutive >= 7;
+                                      const itemDayFestivo = isItalianFestivo(new Date(shiftItem.data.includes("T") ? shiftItem.data : `${shiftItem.data}T12:00:00`)).isFestivo;
+                                      const itemFestiveStats = (itemDayFestivo && shiftItem.tipoTurno !== "Riposo" && shiftItem.tipoTurno !== "Ferie")
+                                        ? getMemberFestiveRestStats(shiftItem.staffId, shiftItem.data)
+                                        : null;
+                                      const itemExceedingFestive = !!(itemFestiveStats && (itemFestiveStats.isExceeding7Weeks || itemFestiveStats.weeksSinceLastFestiveRest >= 7));
+                                      const itemRuleAlert = itemExceedingConsecutive || itemExceedingFestive;
+
+                                      return (
                                       <div
                                         key={shiftItem.id}
                                         draggable={!isStaffRole && !isEffectivelyLocked}
@@ -5916,13 +6007,13 @@ function importaTurniResidenzaVannucci() {
                                         className={`group/shift px-2 py-0.5 rounded-lg border text-[10px] font-bold transition-all shadow-2xs relative flex items-center justify-between h-[34px] min-h-[34px] max-h-[34px] ${
                                           isStaffRole || isEffectivelyLocked ? "cursor-pointer hover:shadow-md" : "cursor-grab active:cursor-grabbing"
                                         } ${getShiftBadgeStyle(shiftItem.tipoTurno, shiftItem.orarioInizio, shiftItem.orarioFine, shiftItem.struttura)} ${
-                                          isInvalid ? "animate-pulse ring-2 ring-red-600 !border-red-600 !bg-red-100 !text-red-900" : ""
+                                          isInvalid ? "animate-pulse ring-2 ring-red-600 !border-red-600 !bg-red-100 !text-red-900" : itemRuleAlert ? "animate-pulse ring-2 ring-rose-500 !border-rose-500 shadow-md" : ""
                                         } ${
                                           isHovered ? "ring-2 ring-indigo-600 shadow-md scale-[1.02] z-30" : isStaffHovered ? "ring-1 ring-indigo-400 shadow-xs" : ""
                                         } ${
                                           (activeStrutturaFilters.length > 0 || activeTimeFilter) && !isShiftMatchingFilter(shiftItem) ? "opacity-15 grayscale scale-95 blur-[0.5px] pointer-events-none" : ""
                                         }`}
-                                        title={isInvalid ? `⚠️ ERRORE: ${validity.reason}` : isMorningNight ? "Turno Smonto Notte (00:00 - 07:00) — Clicca per dettagli" : `${shiftItem.tipoTurno} (${shiftItem.orarioInizio} - ${shiftItem.orarioFine})`}
+                                        title={isInvalid ? `⚠️ ERRORE: ${validity.reason}` : itemExceedingConsecutive ? `🚨 FUORI REGOLA: ${itemConsecutive}° turno consecutivo senza riposo (max 6 turni)!` : itemExceedingFestive ? `🚨 FUORI REGOLA: ${itemFestiveStats?.weeksSinceLastFestiveRest} settimane senza riposo festivo!` : isMorningNight ? "Turno Smonto Notte (00:00 - 07:00) — Clicca per dettagli" : `${shiftItem.tipoTurno} (${shiftItem.orarioInizio} - ${shiftItem.orarioFine})`}
                                       >
                                         <div className="flex items-center gap-1 flex-nowrap truncate min-w-0">
                                           {isMorningNight ? (
@@ -5942,6 +6033,16 @@ function importaTurniResidenzaVannucci() {
                                               Smonto
                                             </span>
                                           )}
+                                          {itemExceedingConsecutive && (
+                                            <span className="text-[7.5px] font-black text-white bg-rose-600 px-1 py-0.2 rounded shrink-0 animate-pulse" title={`7° o più turno consecutivo (${itemConsecutive}° turno)`}>
+                                              🚨 &gt;6gg
+                                            </span>
+                                          )}
+                                          {itemExceedingFestive && !itemExceedingConsecutive && (
+                                            <span className="text-[7.5px] font-black text-white bg-rose-600 px-1 py-0.2 rounded shrink-0 animate-pulse" title={`Superate 7 settimane senza riposo festivo`}>
+                                              🚨 &gt;7s
+                                            </span>
+                                          )}
                                         </div>
 
                                         <div className="flex items-center gap-1 shrink-0 font-mono text-[9px] font-bold">
@@ -5959,6 +6060,7 @@ function importaTurniResidenzaVannucci() {
                                         </div>
                                       </div>
                                     );
+                                  };
 
                                     const renderAvailableHalfSlot = (isForNight: boolean) => (
                                       <div
@@ -6042,13 +6144,13 @@ function importaTurniResidenzaVannucci() {
                                       className={`group/shift p-2 rounded-lg border text-[11px] font-bold transition-all shadow-2xs relative flex flex-col justify-between h-[72px] min-h-[72px] max-h-[72px] ${
                                         isStaffRole || isEffectivelyLocked ? "cursor-pointer hover:shadow-md" : "cursor-grab active:cursor-grabbing"
                                       } ${getShiftBadgeStyle(s.tipoTurno, s.orarioInizio, s.orarioFine, s.struttura)} ${
-                                        isInvalid ? "animate-pulse ring-4 ring-red-600 ring-offset-1 !border-red-600 !bg-red-100 !text-red-900" : ""
+                                        isInvalid ? "animate-pulse ring-4 ring-red-600 ring-offset-1 !border-red-600 !bg-red-100 !text-red-900" : isRuleAlert ? "animate-pulse ring-2 ring-rose-500 !border-rose-500 !bg-rose-50/70 shadow-md" : ""
                                       } ${
                                         isHovered ? "ring-2 ring-indigo-600 shadow-lg scale-[1.02] z-30" : isStaffHovered ? "ring-1 ring-indigo-400 shadow-xs" : ""
                                       } ${
                                         (activeStrutturaFilters.length > 0 || activeTimeFilter) && !isShiftMatchingFilter(s) ? "opacity-15 grayscale scale-95 blur-[0.5px] pointer-events-none" : ""
                                       }`}
-                                      title={isInvalid ? `⚠️ ERRORE: ${validity.reason}` : isStaffRole ? `${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine}) - Clicca per dettagli` : s.tipoTurno === "Ferie" ? "🏖️ Ferie — Clicca per dettagli" : isReferenceDay ? "Turno di riferimento - Clicca per dettagli" : lockedDays.includes(dateYMD) ? "Giorno bloccato - Clicca per dettagli" : "Trascina per spostare o duplicare, oppure clicca per dettagli"}
+                                      title={isInvalid ? `⚠️ ERRORE: ${validity.reason}` : isExceedingConsecutive ? `🚨 FUORI REGOLA: ${consecutiveDaysThisShift}° turno consecutivo dall'ultimo riposo (superato limite 6 turni)!` : isExceedingFestive ? `🚨 FUORI REGOLA: ${festiveStatsThisShift?.weeksSinceLastFestiveRest} settimane senza riposo festivo!` : isStaffRole ? `${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine}) - Clicca per dettagli` : s.tipoTurno === "Ferie" ? "🏖️ Ferie — Clicca per dettagli" : isReferenceDay ? "Turno di riferimento - Clicca per dettagli" : lockedDays.includes(dateYMD) ? "Giorno bloccato - Clicca per dettagli" : "Trascina per spostare o duplicare, oppure clicca per dettagli"}
                                     >
                                        {/* Shift Header & Trash Hover Button */}
                                       <div className="flex items-center justify-between gap-1">
@@ -6056,6 +6158,16 @@ function importaTurniResidenzaVannucci() {
                                           <span className="uppercase tracking-wider font-black truncate text-[10px] leading-tight shrink-0">{s.tipoTurno}</span>
                                           {!s.id.startsWith("auto-") && !isReferenceDay && s.tipoTurno !== "Ferie" && s.tipoTurno !== "Riposo" && !lockedDays.includes(dateYMD) && (
                                             <span className="text-[7px] font-black text-amber-800 bg-amber-100 border border-amber-300 px-0.5 rounded-xs shrink-0">📌</span>
+                                          )}
+                                          {isExceedingConsecutive && (
+                                            <span className="text-[7.5px] font-black text-white bg-rose-600 px-1 py-0.2 rounded shrink-0 animate-pulse" title={`7° o più turno consecutivo senza riposo (${consecutiveDaysThisShift}° turno)`}>
+                                              🚨 &gt;6gg
+                                            </span>
+                                          )}
+                                          {isExceedingFestive && !isExceedingConsecutive && (
+                                            <span className="text-[7.5px] font-black text-white bg-rose-600 px-1 py-0.2 rounded shrink-0 animate-pulse" title={`Superate 7 settimane senza riposo festivo`}>
+                                              🚨 &gt;7s
+                                            </span>
                                           )}
                                         </div>
                                         <div className="flex items-center gap-1 shrink-0">
@@ -6136,6 +6248,17 @@ function importaTurniResidenzaVannucci() {
                                   const isHovered = hoveredShiftId === s.id;
                                   const isStaffHovered = hoveredStaffId === s.staffId;
 
+                                  const consecutiveDaysMulti = (s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie") 
+                                    ? getConsecutiveWorkingDays(s.staffId, s.data) 
+                                    : 0;
+                                  const isExceedingConsecutiveMulti = consecutiveDaysMulti >= 7;
+                                  const isDayFestivoMulti = isItalianFestivo(new Date(s.data.includes("T") ? s.data : `${s.data}T12:00:00`)).isFestivo;
+                                  const festiveStatsMulti = (isDayFestivoMulti && s.tipoTurno !== "Riposo" && s.tipoTurno !== "Ferie")
+                                    ? getMemberFestiveRestStats(s.staffId, s.data)
+                                    : null;
+                                  const isExceedingFestiveMulti = !!(festiveStatsMulti && (festiveStatsMulti.isExceeding7Weeks || festiveStatsMulti.weeksSinceLastFestiveRest >= 7));
+                                  const isRuleAlertMulti = isExceedingConsecutiveMulti || isExceedingFestiveMulti;
+
                                   return (
                                     <div
                                       key={s.id}
@@ -6158,13 +6281,13 @@ function importaTurniResidenzaVannucci() {
                                       className={`group/shift px-1.5 py-0.5 rounded-md border text-[10px] font-bold transition-all shadow-2xs relative flex items-center justify-between h-[29px] min-h-[29px] max-h-[29px] ${
                                         isStaffRole || isEffectivelyLocked ? "cursor-pointer hover:shadow-md" : "cursor-grab active:cursor-grabbing"
                                       } ${getShiftBadgeStyle(s.tipoTurno, s.orarioInizio, s.orarioFine, s.struttura)} ${
-                                        isInvalid ? "animate-pulse ring-2 ring-red-600 !border-red-600 !bg-red-100 !text-red-900" : ""
+                                        isInvalid ? "animate-pulse ring-2 ring-red-600 !border-red-600 !bg-red-100 !text-red-900" : isRuleAlertMulti ? "animate-pulse ring-2 ring-rose-500 !border-rose-500 shadow-md" : ""
                                       } ${
                                         isHovered ? "ring-2 ring-indigo-600 shadow-md scale-[1.02] z-30" : isStaffHovered ? "ring-1 ring-indigo-400 shadow-xs" : ""
                                       } ${
                                         (activeStrutturaFilters.length > 0 || activeTimeFilter) && !isShiftMatchingFilter(s) ? "opacity-15 grayscale scale-95 blur-[0.5px] pointer-events-none" : ""
                                       }`}
-                                      title={isInvalid ? `⚠️ ERRORE: ${validity.reason}` : `${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine})`}
+                                      title={isInvalid ? `⚠️ ERRORE: ${validity.reason}` : isExceedingConsecutiveMulti ? `🚨 FUORI REGOLA: ${consecutiveDaysMulti}° turno consecutivo senza riposo (max 6 turni)!` : isExceedingFestiveMulti ? `🚨 FUORI REGOLA: ${festiveStatsMulti?.weeksSinceLastFestiveRest} settimane senza riposo festivo!` : `${s.tipoTurno} (${s.orarioInizio} - ${s.orarioFine})`}
                                     >
                                       <div className="flex items-center gap-1 flex-nowrap truncate min-w-0">
                                         {s.tipoTurno === "Mattina" ? <span>🌅</span> : s.tipoTurno === "Pomeriggio" ? <span>🌆</span> : s.tipoTurno === "Pulizie" ? <span>🪣</span> : s.tipoTurno === "Notte" ? <span>🌙</span> : s.tipoTurno === "Cucina" ? <span>🍲</span> : s.tipoTurno === "Servizio" ? <span>🍽️</span> : s.tipoTurno === "Ferie" ? <span>⛱️🍹</span> : null}
@@ -6175,6 +6298,12 @@ function importaTurniResidenzaVannucci() {
                                           <span className="text-[7.5px] bg-white/95 px-1 rounded font-black text-slate-800 border border-slate-200">
                                             V{s.struttura.replace(/\D/g, '')}{(s.struttura === "Vannucci 2" || s.struttura === "Struttura 2") && s.orarioInizio === "07:00" && s.orarioFine === "08:00" && <span className="text-orange-600 ml-0.5">→ 1</span>}
                                           </span>
+                                        )}
+                                        {isExceedingConsecutiveMulti && (
+                                          <span className="text-[7.5px] font-black text-white bg-rose-600 px-0.5 rounded shrink-0 animate-pulse" title={`7° o più turno consecutivo (${consecutiveDaysMulti}° turno)`}>🚨&gt;6gg</span>
+                                        )}
+                                        {isExceedingFestiveMulti && !isExceedingConsecutiveMulti && (
+                                          <span className="text-[7.5px] font-black text-white bg-rose-600 px-0.5 rounded shrink-0 animate-pulse" title={`Superate 7 settimane senza riposo festivo`}>🚨&gt;7s</span>
                                         )}
                                       </div>
                                       <div className="flex items-center gap-1 shrink-0 font-mono text-[8.5px] font-bold">
@@ -6928,34 +7057,34 @@ function importaTurniResidenzaVannucci() {
                         {/* Riepilogo Ore Settimanali, Festività e Statistiche Sotto il Nome */}
                         {activeStaff && weeklyStats && festiveStats && monthlyStats && (
                           <div className="pt-2 border-t border-indigo-100/80 space-y-1.5 text-xs">
-                            {/* Riga 1: Ore Settimanali con automatismo >36h / vicino 36h */}
+                            {/* Riga 1: Ore Settimanali con automatismo >38h / vicino 38h */}
                             <div className="flex items-center justify-between gap-1">
                               <span className="text-slate-600 font-semibold text-[11px] flex items-center gap-1">
                                 <span>⏱️</span> Ore della settimana:
                               </span>
                               {weeklyStats.isExceeding36 ? (
-                                <span className="bg-rose-100 text-rose-800 border border-rose-300 ring-2 ring-rose-500 px-2 py-0.5 rounded-md font-black text-[11px] animate-pulse flex items-center gap-1" title="Superamento limite 36 ore!">
-                                  <span>🚨 {weeklyStats.totalHours} ore (&gt;36h)</span>
+                                <span className="bg-rose-100 text-rose-800 border border-rose-300 ring-2 ring-rose-500 px-2 py-0.5 rounded-md font-black text-[11px] animate-pulse flex items-center gap-1" title="Superamento limite 38 ore!">
+                                  <span>🚨 {weeklyStats.totalHours} ore (&gt;38h)</span>
                                 </span>
                               ) : weeklyStats.isApproaching36 ? (
-                                <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-md font-extrabold text-[11px] flex items-center gap-1" title="Ore settimanali vicine al limite di 36 ore">
-                                  <span>⚠️ {weeklyStats.totalHours} ore / 36h</span>
+                                <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-md font-extrabold text-[11px] flex items-center gap-1" title="Ore settimanali vicine al limite di 38 ore">
+                                  <span>⚠️ {weeklyStats.totalHours} ore / 38h</span>
                                 </span>
                               ) : (
                                 <span className="bg-white text-slate-800 border border-slate-200 px-2 py-0.5 rounded-md font-extrabold text-[11px]">
-                                  {weeklyStats.totalHours} ore ({weeklyStats.shiftCount} turni)
+                                  {weeklyStats.totalHours} ore / 38h ({weeklyStats.shiftCount} turni)
                                 </span>
                               )}
                             </div>
 
-                            {/* Riga 2: Settimane dall'ultima domenica o festivo a riposo con automatismo >8 settimane */}
+                            {/* Riga 2: Settimane dall'ultima domenica o festivo a riposo con automatismo >7 settimane */}
                             <div className="flex items-center justify-between gap-1">
                               <span className="text-slate-600 font-semibold text-[11px] flex items-center gap-1">
                                 <span>🛋️</span> Settimane dall'ultimo festivo a riposo:
                               </span>
-                              {festiveStats.isExceeding8Weeks ? (
-                                <span className="bg-rose-100 text-rose-800 border border-rose-300 ring-2 ring-rose-500 px-2 py-0.5 rounded-md font-black text-[11px] animate-pulse flex items-center gap-1" title="Superate 8 settimane senza riposo festivo o domenicale!">
-                                  <span>🚨 {festiveStats.weeksSinceLastFestiveRest} settimane (&gt;8 sett.)</span>
+                              {(festiveStats.isExceeding7Weeks || festiveStats.weeksSinceLastFestiveRest >= 7) ? (
+                                <span className="bg-rose-100 text-rose-800 border border-rose-300 ring-2 ring-rose-500 px-2 py-0.5 rounded-md font-black text-[11px] animate-pulse flex items-center gap-1" title="Superate 7 settimane senza riposo festivo o domenicale!">
+                                  <span>🚨 {festiveStats.weeksSinceLastFestiveRest} settimane (&gt;7 sett.)</span>
                                 </span>
                               ) : (
                                 <span className="bg-white text-slate-800 border border-slate-200 px-2 py-0.5 rounded-md font-bold text-[11px]" title={festiveStats.lastRestDateStr ? `Ultimo riposo festivo: ${festiveStats.lastRestLabel} (${festiveStats.lastRestDateStr})` : undefined}>
@@ -6964,20 +7093,29 @@ function importaTurniResidenzaVannucci() {
                               )}
                             </div>
 
-                            {/* Riga 3: Riposo Settimanale */}
+                            {/* Riga 3: Riposo (Regola max 6 turni consecutivi) */}
                             <div className="flex items-center justify-between gap-1">
                               <span className="text-slate-600 font-semibold text-[11px] flex items-center gap-1">
-                                <span>🛋️</span> Riposo settimanale:
+                                <span>🛋️</span> Riposo:
                               </span>
-                              {hasRestDayInCurrentWeek(newStaffId, newDate) ? (
-                                <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-md font-black text-[11px] flex items-center gap-1">
-                                  <span>✅ OK</span>
-                                </span>
-                              ) : (
-                                <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-md font-bold text-[11px] flex items-center gap-1">
-                                  <span>⚠️ Assente</span>
-                                </span>
-                              )}
+                              {(() => {
+                                const consecutive = getConsecutiveWorkingDays(newStaffId, newDate);
+                                const consecutiveIfWorking = getConsecutiveWorkingDaysIfAdded(newStaffId, newDate);
+                                const wouldExceed = consecutive >= 7 || consecutiveIfWorking >= 7;
+                                if (wouldExceed) {
+                                  return (
+                                    <span className="bg-rose-100 text-rose-900 border border-rose-300 ring-2 ring-rose-500 px-2 py-0.5 rounded-md font-black text-[11px] animate-pulse flex items-center gap-1 shadow-xs" title={`ATTENZIONE: Superati 6 turni consecutivi senza riposo (${Math.max(consecutive, consecutiveIfWorking)}° turno)! Lampeggia come fuori regola.`}>
+                                      <span>🚨 FUORI REGOLA ({Math.max(consecutive, consecutiveIfWorking)}° turno)</span>
+                                    </span>
+                                  );
+                                } else {
+                                  return (
+                                    <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-md font-black text-[11px] flex items-center gap-1" title={`${consecutive} turni di lavoro consecutivi dall'ultimo riposo`}>
+                                      <span>✅ OK {consecutive > 0 ? `(${consecutive}/6)` : ""}</span>
+                                    </span>
+                                  );
+                                }
+                              })()}
                             </div>
 
                             {/* Riga 4: Dati Mensili & Ferie Annuali */}
@@ -7315,6 +7453,20 @@ function importaTurniResidenzaVannucci() {
                     )}
                   </div>
 
+                  {/* RIGA COMBO VANNUCCI 4 */}
+                  {newStruttura.toLowerCase().includes("4") && (
+                    <div className="mt-1 pt-2.5 border-t border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => handleAddComboV4Full(newStaffId, newDate)}
+                        className="w-full p-3 rounded-xl border-2 border-lime-500 bg-lime-100 text-lime-950 text-xs font-black hover:bg-lime-200 cursor-pointer flex items-center justify-center gap-2 shadow-sm transition-all"
+                        title="Carica istantaneamente la Combo V4: Mattina (08:00-15:00) + Servizio (17:00-20:00)"
+                      >
+                        <span>⚡ Combo V4: Mattina (08:00-15:00) + Servizio (17:00-20:00)</span>
+                      </button>
+                    </div>
+                  )}
+
                   {/* RIGA 2: TRE TURNI RAPIDI (ONLY FOR VANNUCCI 1) */}
                   {newStruttura.toLowerCase().includes("1") && (
                     <div className="grid grid-cols-3 gap-2 mt-1 pt-2.5 border-t border-slate-200">
@@ -7403,50 +7555,68 @@ function importaTurniResidenzaVannucci() {
                   )}
 
                   {/* RIGA 3: RIPOSO E FERIE */}
-                  <div className="grid grid-cols-2 gap-2.5 mt-1 pt-2.5 border-t border-slate-200">
-                    {/* Riposo */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setNewTipoTurno("Riposo");
-                        setNewOrarioInizio("00:00");
-                        setNewOrarioFine("00:00");
-                      }}
-                      onDoubleClick={(e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        handleFastSubmit({ tipoTurno: "Riposo", orarioInizio: "00:00", orarioFine: "00:00" });
-                      }}
-                      className={`p-3 rounded-xl text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
-                        newTipoTurno === "Riposo" ? "bg-slate-100 !border-double !border-[3px] !border-red-500 text-slate-800 ring-4 ring-red-400/20" : "bg-slate-50 border border-slate-200 hover:bg-slate-100"
-                      }`}
-                      title="Singolo click per selezionare, doppio click per inserire subito il Riposo e chiudere"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-extrabold text-[12px]">🛋️ Riposo</span>
-                        <span className="text-[9px] font-black text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">2x click salva</span>
-                      </div>
-                      <span className="text-[10px] opacity-75 font-normal">Giorno libero (Doppio click per inserire subito)</span>
-                    </button>
+                  {(() => {
+                    const isRiposoSuggested = getConsecutiveWorkingDaysIfAdded(newStaffId, newDate) >= 7;
+                    return (
+                      <div className="grid grid-cols-2 gap-2.5 mt-1 pt-2.5 border-t border-slate-200">
+                        {/* Riposo */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setNewTipoTurno("Riposo");
+                            setNewOrarioInizio("00:00");
+                            setNewOrarioFine("00:00");
+                          }}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            handleFastSubmit({ tipoTurno: "Riposo", orarioInizio: "00:00", orarioFine: "00:00" });
+                          }}
+                          className={`p-3 rounded-xl text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
+                            isRiposoSuggested
+                              ? "animate-pulse ring-4 ring-rose-500 bg-rose-100 text-rose-950 !border-rose-500 font-black shadow-md"
+                              : newTipoTurno === "Riposo"
+                              ? "bg-slate-100 !border-double !border-[3px] !border-red-500 text-slate-800 ring-4 ring-red-400/20"
+                              : "bg-slate-50 border border-slate-200 hover:bg-slate-100"
+                          }`}
+                          title={isRiposoSuggested ? "SUGGERITO: 7° o più turno consecutivo dall'ultimo riposo! Doppio click per inserire subito" : "Singolo click per selezionare, doppio click per inserire subito il Riposo e chiudere"}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-extrabold text-[12px] flex items-center gap-1.5">
+                              <span>🛋️ Riposo</span>
+                              {isRiposoSuggested && (
+                                <span className="text-[8.5px] bg-rose-600 text-white font-black px-1.5 py-0.5 rounded animate-pulse">
+                                  🚨 SUGGERITO (7°gg)
+                                </span>
+                              )}
+                            </span>
+                            <span className="text-[9px] font-black text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">2x click salva</span>
+                          </div>
+                          <span className="text-[10px] opacity-80 font-medium">
+                            {isRiposoSuggested ? "⚠️ Consigliato: 7° giorno consecutivo senza riposo" : "Giorno libero (Doppio click per inserire subito)"}
+                          </span>
+                        </button>
 
-                    {/* Ferie */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleOpenVacationModal(newStaffId, newDate);
-                      }}
-                      className="p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer bg-amber-50/80 border-amber-300 hover:bg-amber-100 text-amber-950 shadow-3xs"
-                      title="Apri gestione ferie con calendario interattivo (dal - al)"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-extrabold text-[12px]">🏖️ Ferie 🍹</span>
-                        <span className="text-[9px] font-black text-amber-900 bg-amber-200/80 px-1.5 py-0.5 rounded border border-amber-300">Calendario</span>
+                        {/* Ferie */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenVacationModal(newStaffId, newDate);
+                          }}
+                          className="p-3 rounded-xl border text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer bg-amber-50/80 border-amber-300 hover:bg-amber-100 text-amber-950 shadow-3xs"
+                          title="Apri gestione ferie con calendario interattivo (dal - al)"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-extrabold text-[12px]">🏖️ Ferie 🍹</span>
+                            <span className="text-[9px] font-black text-amber-900 bg-amber-200/80 px-1.5 py-0.5 rounded border border-amber-300">Calendario</span>
+                          </div>
+                          <span className="text-[10px] opacity-85 font-normal">Apri gestione con calendario (dal - al)</span>
+                        </button>
                       </div>
-                      <span className="text-[10px] opacity-85 font-normal">Apri gestione con calendario (dal - al)</span>
-                    </button>
-                  </div>
+                    );
+                  })()}
 
                   {/* RIGA 4: MALATTIA */}
                   <div className="mt-1">
@@ -7911,15 +8081,15 @@ function importaTurniResidenzaVannucci() {
                                   </span>
                                   {weeklyStats.isExceeding36 ? (
                                     <span className="bg-rose-100 text-rose-800 border border-rose-300 ring-2 ring-rose-500 px-2 py-0.5 rounded-md font-black text-[11px] animate-pulse flex items-center gap-1">
-                                      <span>🚨 {weeklyStats.totalHours} ore (&gt;36h)</span>
+                                      <span>🚨 {weeklyStats.totalHours} ore (&gt;38h)</span>
                                     </span>
                                   ) : weeklyStats.isApproaching36 ? (
                                     <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-md font-extrabold text-[11px]">
-                                      <span>⚠️ {weeklyStats.totalHours} ore / 36h</span>
+                                      <span>⚠️ {weeklyStats.totalHours} ore / 38h</span>
                                     </span>
                                   ) : (
                                     <span className="bg-white text-slate-800 border border-slate-200 px-2 py-0.5 rounded-md font-extrabold text-[11px]">
-                                      {weeklyStats.totalHours} ore ({weeklyStats.shiftCount} turni)
+                                      {weeklyStats.totalHours} ore / 38h ({weeklyStats.shiftCount} turni)
                                     </span>
                                   )}
                                 </div>
@@ -7928,9 +8098,9 @@ function importaTurniResidenzaVannucci() {
                                   <span className="text-slate-600 font-semibold text-[11px] flex items-center gap-1">
                                     <span>🛋️</span> Settimane dall'ultimo festivo:
                                   </span>
-                                  {festiveStats.isExceeding8Weeks ? (
+                                  {(festiveStats.isExceeding7Weeks || festiveStats.weeksSinceLastFestiveRest >= 7) ? (
                                     <span className="bg-rose-100 text-rose-800 border border-rose-300 ring-2 ring-rose-500 px-2 py-0.5 rounded-md font-black text-[11px] animate-pulse flex items-center gap-1">
-                                      <span>🚨 {festiveStats.weeksSinceLastFestiveRest} settimane (&gt;8 sett.)</span>
+                                      <span>🚨 {festiveStats.weeksSinceLastFestiveRest} settimane (&gt;7 sett.)</span>
                                     </span>
                                   ) : (
                                     <span className="bg-white text-slate-800 border border-slate-200 px-2 py-0.5 rounded-md font-bold text-[11px]">
@@ -7939,20 +8109,28 @@ function importaTurniResidenzaVannucci() {
                                   )}
                                 </div>
 
-                                {/* Riposo Settimanale */}
+                                {/* Riposo (Regola max 6 turni consecutivi) */}
                                 <div className="flex items-center justify-between gap-1">
                                   <span className="text-slate-600 font-semibold text-[11px] flex items-center gap-1">
-                                    <span>🛋️</span> Riposo settimanale:
+                                    <span>🛋️</span> Riposo:
                                   </span>
-                                  {hasRestDayInCurrentWeek(targetStaffId, targetDate) ? (
-                                    <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-md font-black text-[11px] flex items-center gap-1">
-                                      <span>✅ OK</span>
-                                    </span>
-                                  ) : (
-                                    <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-md font-bold text-[11px] flex items-center gap-1">
-                                      <span>⚠️ Assente</span>
-                                    </span>
-                                  )}
+                                  {(() => {
+                                    const consecutive = getConsecutiveWorkingDays(targetStaffId, targetDate);
+                                    const wouldExceed = consecutive >= 7;
+                                    if (wouldExceed) {
+                                      return (
+                                        <span className="bg-rose-100 text-rose-900 border border-rose-300 ring-2 ring-rose-500 px-2 py-0.5 rounded-md font-black text-[11px] animate-pulse flex items-center gap-1 shadow-xs" title={`ATTENZIONE: Superati 6 turni consecutivi senza riposo (${consecutive}° turno)! Lampeggia come fuori regola.`}>
+                                          <span>🚨 FUORI REGOLA ({consecutive}° turno)</span>
+                                        </span>
+                                      );
+                                    } else {
+                                      return (
+                                        <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-md font-black text-[11px] flex items-center gap-1" title={`${consecutive} turni di lavoro consecutivi dall'ultimo riposo`}>
+                                          <span>✅ OK {consecutive > 0 ? `(${consecutive}/6)` : ""}</span>
+                                        </span>
+                                      );
+                                    }
+                                  })()}
                                 </div>
 
                                 <div className="grid grid-cols-3 gap-1.5 pt-1 text-center">
@@ -8293,6 +8471,20 @@ function importaTurniResidenzaVannucci() {
                         </div>
                       </div>
 
+                      {/* RIGA COMBO VANNUCCI 4 */}
+                      {editShiftStruttura.toLowerCase().includes("4") && (
+                        <div className="mt-1 pt-2.5 border-t border-slate-200">
+                          <button
+                            type="button"
+                            onClick={() => handleAddComboV4Full(editShiftStaffId || selectedShiftForDetail?.staffId || "", editShiftDate || selectedShiftForDetail?.data || "")}
+                            className="w-full p-3 rounded-xl border-2 border-lime-500 bg-lime-100 text-lime-950 text-xs font-black hover:bg-lime-200 cursor-pointer flex items-center justify-center gap-2 shadow-sm transition-all"
+                            title="Carica istantaneamente la Combo V4: Mattina (08:00-15:00) + Servizio (17:00-20:00)"
+                          >
+                            <span>⚡ Combo V4: Mattina (08:00-15:00) + Servizio (17:00-20:00)</span>
+                          </button>
+                        </div>
+                      )}
+
                       {/* RIGA 2: TRE TURNI RAPIDI (ONLY FOR VANNUCCI 1) */}
                       {editShiftStruttura.toLowerCase().includes("1") && (
                         <div className="grid grid-cols-3 gap-2 mt-1 pt-2.5 border-t border-slate-200">
@@ -8358,59 +8550,80 @@ function importaTurniResidenzaVannucci() {
                       )}
 
                       {/* RIGA 3: RIPOSO E FERIE */}
-                      <div className="grid grid-cols-2 gap-2.5 mt-1 pt-2.5 border-t border-slate-200">
-                        {/* Riposo */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Riposo" } : prev);
-                            setEditShiftInizio("00:00");
-                            setEditShiftFine("00:00");
-                          }}
-                          onDoubleClick={(e) => {
-                            e.stopPropagation();
-                            e.preventDefault();
-                            if (!selectedShiftForDetail) return;
-                            const targetDate = editShiftDate || selectedShiftForDetail.data;
-                            const targetStaffId = editShiftStaffId || selectedShiftForDetail.staffId;
-                            if (lockedDays.includes(selectedShiftForDetail.data) || lockedDays.includes(targetDate)) {
-                              showToast("🔒 Questo giorno è bloccato!");
-                              return;
-                            }
-                            const otherShifts = shifts.filter(s => !(s.id !== selectedShiftForDetail.id && s.staffId === targetStaffId && s.data === targetDate));
-                            const updatedShifts = otherShifts.map(s => {
-                              if (s.id === selectedShiftForDetail.id) {
-                                return {
-                                  ...s,
-                                  id: s.id.startsWith("auto-") ? `shift-edited-${Date.now()}-${Math.random().toString(36).substr(2, 4)}` : s.id,
-                                  staffId: targetStaffId,
-                                  data: targetDate,
-                                  tipoTurno: "Riposo",
-                                  orarioInizio: "00:00",
-                                  orarioFine: "00:00",
-                                  struttura: "",
-                                  note: editShiftNote || s.note || "Riposo"
-                                };
-                              }
-                              return s;
-                            });
-                            applyShiftsUpdate(updatedShifts);
-                            setSelectedShiftForDetail(null);
-                            setEditShiftNote("");
-                            showToast("🛋️ Turno aggiornato a Riposo!");
-                          }}
-                          className={`p-3 rounded-xl text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
-                            selectedShiftForDetail?.tipoTurno === "Riposo" ? "bg-slate-100 !border-double !border-[3px] !border-red-500 text-slate-800 ring-4 ring-red-400/20" : "bg-slate-50 border border-slate-200 hover:bg-slate-100"
-                          }`}
-                          title="Singolo click per selezionare, doppio click per salvare subito Riposo e chiudere"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-extrabold text-[12px]">🛋️ Riposo</span>
-                            <span className="text-[9px] font-black text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">2x click salva</span>
-                          </div>
-                          <span className="text-[9px] opacity-75 font-normal">Giorno libero (Doppio click per confermare subito)</span>
-                        </button>
+                      {(() => {
+                        const targetDateForRiposo = editShiftDate || selectedShiftForDetail?.data;
+                        const targetStaffIdForRiposo = editShiftStaffId || selectedShiftForDetail?.staffId;
+                        const isRiposoSuggestedEdit = (targetStaffIdForRiposo && targetDateForRiposo)
+                          ? getConsecutiveWorkingDays(targetStaffIdForRiposo, targetDateForRiposo) >= 7
+                          : false;
+
+                        return (
+                          <div className="grid grid-cols-2 gap-2.5 mt-1 pt-2.5 border-t border-slate-200">
+                            {/* Riposo */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedShiftForDetail(prev => prev ? { ...prev, tipoTurno: "Riposo" } : prev);
+                                setEditShiftInizio("00:00");
+                                setEditShiftFine("00:00");
+                              }}
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                if (!selectedShiftForDetail) return;
+                                const targetDate = editShiftDate || selectedShiftForDetail.data;
+                                const targetStaffId = editShiftStaffId || selectedShiftForDetail.staffId;
+                                if (lockedDays.includes(selectedShiftForDetail.data) || lockedDays.includes(targetDate)) {
+                                  showToast("🔒 Questo giorno è bloccato!");
+                                  return;
+                                }
+                                const otherShifts = shifts.filter(s => !(s.id !== selectedShiftForDetail.id && s.staffId === targetStaffId && s.data === targetDate));
+                                const updatedShifts = otherShifts.map(s => {
+                                  if (s.id === selectedShiftForDetail.id) {
+                                    return {
+                                      ...s,
+                                      id: s.id.startsWith("auto-") ? `shift-edited-${Date.now()}-${Math.random().toString(36).substr(2, 4)}` : s.id,
+                                      staffId: targetStaffId,
+                                      data: targetDate,
+                                      tipoTurno: "Riposo",
+                                      orarioInizio: "00:00",
+                                      orarioFine: "00:00",
+                                      struttura: "",
+                                      note: editShiftNote || s.note || "Riposo"
+                                    };
+                                  }
+                                  return s;
+                                });
+                                applyShiftsUpdate(updatedShifts);
+                                setSelectedShiftForDetail(null);
+                                setEditShiftNote("");
+                                showToast("🛋️ Turno aggiornato a Riposo!");
+                              }}
+                              className={`p-3 rounded-xl text-left font-bold transition-all text-xs flex flex-col justify-center cursor-pointer ${
+                                isRiposoSuggestedEdit
+                                  ? "animate-pulse ring-4 ring-rose-500 bg-rose-100 text-rose-950 !border-rose-500 font-black shadow-md"
+                                  : selectedShiftForDetail?.tipoTurno === "Riposo"
+                                  ? "bg-slate-100 !border-double !border-[3px] !border-red-500 text-slate-800 ring-4 ring-red-400/20"
+                                  : "bg-slate-50 border border-slate-200 hover:bg-slate-100"
+                              }`}
+                              title={isRiposoSuggestedEdit ? "SUGGERITO: 7° o più turno consecutivo dall'ultimo riposo! Doppio click per salvare subito" : "Singolo click per selezionare, doppio click per salvare subito Riposo e chiudere"}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="font-extrabold text-[12px] flex items-center gap-1.5">
+                                  <span>🛋️ Riposo</span>
+                                  {isRiposoSuggestedEdit && (
+                                    <span className="text-[8.5px] bg-rose-600 text-white font-black px-1.5 py-0.5 rounded animate-pulse">
+                                      🚨 SUGGERITO (7°gg)
+                                    </span>
+                                  )}
+                                </span>
+                                <span className="text-[9px] font-black text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">2x click salva</span>
+                              </div>
+                              <span className="text-[9px] opacity-80 font-medium">
+                                {isRiposoSuggestedEdit ? "⚠️ Consigliato: 7° giorno consecutivo senza riposo" : "Giorno libero (Doppio click per confermare subito)"}
+                              </span>
+                            </button>
 
                         {/* Ferie */}
                         <button
@@ -8429,6 +8642,8 @@ function importaTurniResidenzaVannucci() {
                           <span className="text-[9px] opacity-75 font-normal">Apri gestione con calendario (dal - al)</span>
                         </button>
                       </div>
+                    );
+                  })()}
 
                       {/* RIGA 4: MALATTIA */}
                       <div className="mt-1">

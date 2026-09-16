@@ -47,7 +47,7 @@ export const StaffDirectoryView: React.FC<StaffDirectoryViewProps> = ({
   const [newTelefono, setNewTelefono] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [newCodiceFiscale, setNewCodiceFiscale] = useState("");
-  const [newContratto, setNewContratto] = useState("Tempo Indeterminato 36h");
+  const [newContratto, setNewContratto] = useState("Tempo Indeterminato 38h");
   const [newColoreBadge, setNewColoreBadge] = useState("#0d9488");
 
   const filteredStaff = staff.filter(s => {
@@ -373,7 +373,7 @@ export const StaffDirectoryView: React.FC<StaffDirectoryViewProps> = ({
                     type="text"
                     value={newContratto}
                     onChange={e => setNewContratto(e.target.value)}
-                    placeholder="Tempo Indeterminato 36h"
+                    placeholder="Tempo Indeterminato 38h"
                     className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>

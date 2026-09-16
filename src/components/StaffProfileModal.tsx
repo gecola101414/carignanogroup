@@ -367,7 +367,7 @@ export const StaffProfileModal: React.FC<StaffProfileModalProps> = ({
                       type="text"
                       value={editContratto}
                       onChange={e => setEditContratto(e.target.value)}
-                      placeholder="es. Tempo Indeterminato 36h / Part-time"
+                      placeholder="es. Tempo Indeterminato 38h / Part-time"
                       className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
                   </div>
